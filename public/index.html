@@ -342,6 +342,9 @@ const SAVE = (() => {
     },
     signUp(on){ d.arena.signed = on ? today() : ''; save(); },
     signedToday(){ return d.arena.signed === today(); },
+    // one arena per UTC day; it counts as used the moment it starts, so quitting mid-bracket can't reroll it
+    arenaUsedToday(){ return d.arena.day === today(); },
+    arenaUse(){ d.arena.day = today(); save(); },
     clubResult(r){ d.club[r] = (d.club[r]||0) + 1; save(); },
     clubDog(id){ d.club.dog = id; save(); },
     arenaDone(r){ d.arena.runs++; d.arena.best = Math.max(d.arena.best, r.won); d.arena.last = r; save(); },
@@ -889,6 +892,13 @@ function runGhostArena(){
   sq.forEach(d => SAVE.award(d.id, won > 0, Math.round(xp / sq.length), true));
   SAVE.arenaDone({won, xp, live:false, lines});
   return {won, xp, lines};
+}
+/* Live players get one arena a day; the demo stays unlimited (it never reaches the ladder). */
+const arenaLimited = () => LIVE() && !WALLET.demo;
+const arenaLocked = () => arenaLimited() && SAVE.arenaUsedToday();
+function untilUtcMidnight(){
+  const n = new Date(), t = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1));
+  return until(t);
 }
 function startLiveArena(){
   const sq = squadDefs();
@@ -1933,9 +1943,11 @@ function arenaView(){
   </div>
   <div class="card">
     <div class="row">
-      <button id="runArena" ${A.squad.length ? '' : 'disabled'}>${signed ? '▶ Fight today\'s arena' : '👻 Let the ghosts fight it'}</button>
+      <button id="runArena" ${A.squad.length && !arenaLocked() ? '' : 'disabled'}>${arenaLocked() ? '✅ Today\'s arena is done' : signed ? '▶ Fight today\'s arena' : '👻 Let the ghosts fight it'}</button>
     </div>
-    <p class="mini" style="margin:10px 0 0;text-align:center">Demo: run it whenever you like. Live, it opens once a day at ${ARENA_HOUR}:00 UTC and everyone's bracket resolves together.</p>
+    <p class="mini" style="margin:10px 0 0;text-align:center">${arenaLimited()
+      ? (arenaLocked() ? `One arena a day. The next one opens in <b>${untilUtcMidnight()}</b> (00:00 UTC).` : 'One arena a day — make it count. Leaving mid-bracket still uses it up.')
+      : 'Demo: run it as often as you like. Live, there is one arena a day.'}</p>
   </div>
   <div id="ghostRes"></div>
   ${last}`;
@@ -2014,7 +2026,8 @@ function menu(){
   const ra = document.getElementById('runArena');
   if (ra) ra.onclick = () => {
     S.unlock(); S.click();
-    if (!SAVE.data.arena.squad.length) return;
+    if (!SAVE.data.arena.squad.length || arenaLocked()) return;
+    if (arenaLimited()) SAVE.arenaUse();
     if (SAVE.signedToday()) { startLiveArena(); return; }
     const r = runGhostArena();
     r.won === 3 ? S.win() : (r.won ? S.heal() : S.lose());
