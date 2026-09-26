@@ -215,6 +215,11 @@ button.sm:hover{border-color:var(--accent);color:var(--ink)}
 @media(max-width:560px){.pnl{grid-template-columns:1fr}}
 @media(max-width:560px){.stage{height:270px}.fighter{width:144px}.fighter img{width:144px;height:144px;margin-bottom:-10px}
   .fighter.left{left:0}.fighter.right{right:0}.acts{grid-template-columns:1fr}.hud{width:46%}}
+.pst{width:100%;border-collapse:collapse;font-size:11px;margin:6px 0 4px}
+.pst th,.pst td{padding:3px 4px;text-align:right;border-bottom:1px solid var(--panelB)}
+.pst th:first-child,.pst td:first-child{text-align:left;color:var(--ink2)}
+.pst th{font-weight:600;color:var(--ink2)}
+.pst tr.avg td{color:var(--accent)}
 .recap{position:fixed;inset:0;z-index:50;background:rgba(10,16,28,.62);display:flex;align-items:center;justify-content:center;padding:16px}
 .recap .card{max-width:440px;width:100%;max-height:calc(100vh - 32px);overflow:auto;margin:0}
 .recap h2{font-family:'Press Start 2P',monospace;font-size:12px;margin:2px 0 4px;color:var(--accent);text-align:center}
@@ -333,8 +338,8 @@ const SAVE = (() => {
     if (d.week !== w){
       // only the week that just ended counts as "last week"; a skipped week means nothing to carry
       d.lastWk = (d.week === weekOf(Date.now() - 7*864e5) && d.wk) || {wins:0,xp:0,streak:0};
-      d.wk = {wins:0, xp:0, streak:0};
-      if (d.pending){ d.pack = d.pending; d.pending = null; }   // transfers land Monday
+      d.wk = {wins:0, losses:0, xp:0, streak:0};
+      if (d.pending){ d.pack = d.pending === '-' ? null : d.pending; d.pending = null; }   // moves (and leaving) land Monday
       d.week = w;
     }
     if (d.day !== t){
@@ -371,7 +376,7 @@ const SAVE = (() => {
     clubDog(id){ d.club.dog = id; save(); },
     arenaDone(r){ d.arena.runs++; d.arena.best = Math.max(d.arena.best, r.won); d.arena.last = r;
       // each arena fight won counts once for the wins board; only fights you fought yourself touch the streak
-      d.wk.wins += r.won;
+      d.wk.wins += r.won; d.wk.losses = (d.wk.losses||0) + r.lines.filter(l => !l.w).length;
       if (r.live) r.lines.forEach(l => streakAfter(l.w));
       if (typeof postStats === 'function') postStats(d.wk);
       if (d.today) (d.today.arenas = d.today.arenas || []).push({won:r.won, xp:r.xp, live:r.live});
@@ -383,10 +388,17 @@ const SAVE = (() => {
     dayComplete(){ return !!d.today && (d.tickets||0) <= 0 && this.arenaDoneToday() >= ARENA_RUNS && !(typeof arenaRun !== 'undefined' && arenaRun && !arenaRun.done); },
     recapShown(){ if (d.today){ d.today.shown = true; save(); } },
     weekRecapSeen(wk){ d.recapWeek = wk; save(); },
-    joinPack(id){ if (!d.pack && !d.pending) d.pack = id; else d.pending = id; save(); },
+    // one pack a week: joining with no pack is instant and locks the week; after that
+    // a switch or leaving is only queued for Monday ('-' = leave on Monday)
+    packLocked(){ return !!d.pack || d.packLock === weekOf(); },
+    joinPack(id){
+      if (!this.packLocked()){ d.pack = id; d.pending = null; d.packLock = weekOf(); }
+      else d.pending = d.pack === id ? null : id;
+      save();
+    },
     cancelMove(){ d.pending = null; save(); },
-    leavePack(){ d.pack = null; d.pending = null; save(); },
-    setPack(pack, pending){ d.pack = pack || null; d.pending = pending || null; save(); },
+    leavePack(){ if (d.pack) d.pending = '-'; save(); },
+    setPack(pack, pending, locked){ d.pack = pack || null; d.pending = pending || null; if (locked) d.packLock = weekOf(); save(); },
     trainerLvl(){ return 1 + Math.floor(d.trainerXp / 250); },
     trainerInto(){ return d.trainerXp % 250; },
     bump(qid, n){
@@ -410,7 +422,7 @@ const SAVE = (() => {
       if (!ranked) { out.xp = 0; return out; }            // casual: no XP, and the streak is left alone
       g.xp += xp; d.trainerXp += Math.round(xp/2); d.wk.xp += xp;
       // Arena XP is shared across the squad; its wins and streak are booked per fight in arenaDone.
-      if (!fromArena){ d.fights++; if (win) d.wk.wins++; win ? g.w++ : g.l++; }
+      if (!fromArena){ d.fights++; win ? d.wk.wins++ : (d.wk.losses = (d.wk.losses||0) + 1); win ? g.w++ : g.l++; }
       while (g.lvl < BOND.maxLevel && g.xp >= BOND.need(g.lvl)){
         g.xp -= BOND.need(g.lvl); g.lvl++;
         out.levels.push(g.lvl);
@@ -454,9 +466,9 @@ function standings(weekKey){
     const src = (PACKDATA && PACKDATA.weeks[weekKey]) || [];
     const you = SAVE.data.pack;
     return PACKS.map(p => {
-      const r = src.find(x => x.id === p.id) || {members:0, wins:0, xp:0, streak:0};
+      const r = src.find(x => x.id === p.id) || {members:0, wins:0, losses:0, xp:0, streak:0};
       const n = r.members || 0;
-      return {...p, members:n, wins:r.wins, xp:r.xp, streak:r.streak, you: p.id === you,
+      return {...p, members:n, wins:r.wins, losses:r.losses || 0, xp:r.xp, streak:r.streak, you: p.id === you,
               avgW: n ? r.wins/n : 0, avgX: n ? r.xp/n : 0};
     });
   }
@@ -474,7 +486,7 @@ function standings(weekKey){
     const p = rows.find(x => x.id === you);
     if (p){ p.members = Math.min(PACK_MAX, p.members+1); p.wins += w.wins; p.xp += w.xp; p.streak = Math.max(p.streak, w.streak); p.you = true; }
   }
-  rows.forEach(p => { p.avgW = p.wins/p.members; p.avgX = p.xp/p.members; });
+  rows.forEach(p => { p.avgW = p.wins/p.members; p.avgX = p.xp/p.members; if (p.losses == null) p.losses = Math.round(p.wins * .8); });
   return rows;
 }
 
@@ -537,7 +549,7 @@ function applyPacks(j){
   if (j.me && !j.me.pack && !j.me.pending && SAVE.data.pack && !packMigrated){
     packMigrated = true; packAction('join', SAVE.data.pack); return;
   }
-  if (j.me) SAVE.setPack(j.me.pack, j.me.pending);     // the server's word on membership
+  if (j.me) SAVE.setPack(j.me.pack, j.me.pending, j.me.locked);     // the server's word on membership
   if (tab === 'packs') menu();
 }
 async function packAction(action, id){
@@ -1574,7 +1586,7 @@ async function loadKennel(fresh){
 /* ---- the real weekly ladder ---- */
 function postStats(wk){
   if (!LIVE() || !WALLET.token || WALLET.demo) return;
-  api('/stats', {method:'POST', body:{wins:wk.wins, xp:wk.xp, streak:wk.streak}}).catch(()=>{});
+  api('/stats', {method:'POST', body:{wins:wk.wins, losses:wk.losses||0, xp:wk.xp, streak:wk.streak}}).catch(()=>{});
 }
 async function fillLadder(){
   const box = document.getElementById('ladderBox'); if (!box) return;
@@ -1994,33 +2006,47 @@ function ladderDemo(){
     <div class="row" style="margin-top:10px"><button class="sm" data-weekrecap="1">📊 Last week's results</button></div></div>`;
 }
 
+/* The full numbers of one pack: totals and per member, wins and losses apart. */
+function packStats(p){
+  const n = p.members || 0, per = v => n ? (v / n).toFixed(1) : '0.0';
+  const fights = p.wins + p.losses, rate = fights ? Math.round(100 * p.wins / fights) + '%' : '—';
+  return `<table class="pst">
+    <tr><th></th><th>Wins</th><th>Losses</th><th>Fights</th><th>XP</th></tr>
+    <tr><td>Pack total</td><td>${p.wins}</td><td>${p.losses}</td><td>${fights}</td><td>${p.xp}</td></tr>
+    <tr class="avg"><td>Ø per member</td><td><b>${per(p.wins)}</b></td><td>${per(p.losses)}</td><td>${per(fights)}</td><td>${n ? Math.round(p.xp / n) : 0}</td></tr>
+    <tr><td>Win rate</td><td colspan="4">${rate}</td></tr>
+  </table>`;
+}
 function packsView(){
   const wkNow = SAVE.weekOf(), wkLast = SAVE.weekOf(Date.now()-7*864e5);
   const rows = standings(wkNow), won = awards(wkLast), mine = SAVE.data.pack;
   const byBonus = Object.fromEntries(Object.entries(won).map(([k,v])=>[v,k]));
-  const pend = SAVE.data.pending;
+  const pend = SAVE.data.pending, locked = SAVE.packLocked();
   const list = rows.slice().sort((a,b)=>b.avgW-a.avgW).map(p => {
     const bk = byBonus[p.id];
     const held = bk ? holdOf(wkLast, bk) : 0;
     return `<div class="pk ${p.id===mine?'mine':''} ${p.id===pend?'pend':''}">
       <div class="pkh"><b>${p.emoji} ${esc(p.name)}</b>
         ${bk?`<span class="bdg">${BONUS[bk].emoji} ${BONUS[bk].name}${held>1?' ×'+held:''}</span>`:''}</div>
-      <div class="mini">${p.members}/${PACK_MAX} members · ${p.wins} wins · ${p.xp} XP · best streak ${p.streak}
-        <br>avg ${p.avgW.toFixed(1)} wins · ${Math.round(p.avgX)} XP per member
-        ${held>=MAX_HOLD?'<br><b>Barred from that board next week</b> — three in a row is the cap.'
-          :(held>0?'<br>Defending next week needs +'+Math.round(DEFEND[Math.min(held,DEFEND.length-1)]*100)+'% over the runner-up.':'')}</div>
+      <div class="mini">${p.members}/${PACK_MAX} members · best streak ${p.streak}🔥</div>
+      ${packStats(p)}
+      <div class="mini">
+        ${held>=MAX_HOLD?'<b>Barred from that board next week</b> — three in a row is the cap.'
+          :(held>0?'Defending next week needs +'+Math.round(DEFEND[Math.min(held,DEFEND.length-1)]*100)+'% over the runner-up.':'')}</div>
       ${p.id===mine
-        ? `<button class="sm" data-leave="1">Leave pack</button>`
+        ? (pend === '-' ? `<span class="mini"><b>You leave Monday.</b></span> <button class="sm" data-cancel="1">Stay</button>`
+           : pend ? `<span class="mini">Your pack until Monday.</span>`
+           : `<button class="sm" data-leave="1">Leave on Monday</button>`)
         : p.id===pend
           ? `<span class="mini"><b>You join Monday.</b></span> <button class="sm" data-cancel="1">Cancel</button>`
           : (p.members>=PACK_MAX ? `<span class="mini">full</span>`
-             : `<button class="sm" data-join="${p.id}">${mine||pend?'Move here Monday':'Join'}</button>`)}
+             : `<button class="sm" data-join="${p.id}">${locked ? 'Move here Monday' : 'Join'}</button>`)}
     </div>`;
   }).join('');
   return `<div class="card">
     <div class="row" style="justify-content:flex-end;margin:0 0 8px"><button class="sm" data-weekrecap="1">📊 Last week's results</button></div>
-    <p class="mini" style="margin:0 0 11px"><b>Packs.</b> Up to ${PACK_MAX} members. Ranked by the <b>average per member</b>, so a small sharp pack beats a big lazy one.
-    ${mine||pend ? '<br><b>Transfers land Monday.</b> Your first pack is instant; after that a move is queued to the week roll, so nobody hops into whichever pack is about to collect a bonus. Leaving is immediate — and costs you the bonus on the spot.' : ''}</p>
+    <p class="mini" style="margin:0 0 11px"><b>Packs.</b> Up to ${PACK_MAX} members. Ranked by <b>wins per member</b> (Ø per member · Wins), so a small sharp pack beats a big lazy one. Losses don't subtract — but they show, and so does each pack's win rate.
+    <br><b>One pack a week.</b> Joining is instant if you have no pack — and then you're in for the week. Switching or leaving can only be queued, and it happens Monday 00:00 UTC, so nobody hops into whichever pack is about to collect a bonus.${locked && !mine ? ' <b>You already had a pack this week</b>, so a new one starts Monday.' : ''}</p>
     <div class="pkg">${list}</div>
   </div>
   <div class="card">
@@ -2189,7 +2215,7 @@ function weekRecapHtml(wk, lad){
     const bk = byPack[p.id];
     return `<div class="pr ${p.id===mine?'mine':''}"><span>${medal(i)}</span>
       <span><span class="n">${p.emoji} ${esc(p.name)}</span>${p.id===mine?' <span class="mini">(your pack)</span>':''}
-      <br><span class="mini">${p.members} member${p.members===1?'':'s'} · ${p.wins} wins · ${p.xp} XP · streak ${p.streak}</span>
+      <br><span class="mini">${p.members} member${p.members===1?'':'s'} · ${p.wins}W–${p.losses||0}L · ${p.xp} XP · streak ${p.streak}</span>
       ${bk ? `<br><span class="mini">${BONUS[bk].emoji} <b>Earned ${BONUS[bk].name}</b> for this week — ${esc(BONUS[bk].txt)}</span>` : ''}</span>
       <b>${p.avgW.toFixed(1)}</b></div>`;
   }).join('');
@@ -2215,7 +2241,7 @@ function weekRecapHtml(wk, lad){
     </div>
     ${!lad.players && !rows.some(p => p.members) ? '<p class="mini" style="text-align:center;margin:12px 0 0"><b>No results for that week yet.</b> Nobody had played — this fills in once a week with real fights has ended.</p>' : ''}
     <h3>PACK STANDINGS</h3>
-    <p class="mini" style="margin:0 0 8px">Ranked by average wins per member.</p>
+    <p class="mini" style="margin:0 0 8px">Ranked by wins per member (the number on the right).</p>
     ${packs}
     <h3>PLAYER RANKING</h3>
     <div class="pnl3">${board('xp','MOST XP')}${board('wins','MOST WINS')}${board('streak','LONGEST STREAK','🔥')}</div>

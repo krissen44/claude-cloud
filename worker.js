@@ -109,6 +109,8 @@ async function packTable(DB) {
   if (packTableReady) return;
   await DB.prepare(`CREATE TABLE IF NOT EXISTS packs (account TEXT PRIMARY KEY, pack TEXT, pending TEXT, week TEXT)`).run();
   try { await DB.prepare(`ALTER TABLE weekly ADD COLUMN pack TEXT`).run(); } catch {}   // already there
+  try { await DB.prepare(`ALTER TABLE weekly ADD COLUMN losses INTEGER DEFAULT 0`).run(); } catch {}
+  try { await DB.prepare(`ALTER TABLE packs ADD COLUMN lock_week TEXT`).run(); } catch {}
   packTableReady = true;
 }
 /* Cloudflare passes a D1 database as env.DB; the Node server passes env.STORE. */
@@ -118,10 +120,10 @@ function storeOf(env) {
   return {
     ping: () => DB.prepare("SELECT 1").first(),
     seen: (a, t) => DB.prepare(`INSERT INTO players (account, seen) VALUES (?1, ?2) ON CONFLICT(account) DO UPDATE SET seen = ?2`).bind(a, t).run(),
-    weekly: (a, wk, wins, xp, streak, t) => DB.prepare(
-      `INSERT INTO weekly (account, week, wins, xp, streak, updated) VALUES (?1,?2,?3,?4,?5,?6)
+    weekly: async (a, wk, wins, xp, streak, t, losses) => { await packTable(DB); return DB.prepare(
+      `INSERT INTO weekly (account, week, wins, xp, streak, updated, losses) VALUES (?1,?2,?3,?4,?5,?6,?7)
        ON CONFLICT(account, week) DO UPDATE SET wins = MAX(weekly.wins, ?3), xp = MAX(weekly.xp, ?4),
-         streak = MAX(weekly.streak, ?5), updated = ?6`).bind(a, wk, wins, xp, streak, t).run(),
+         streak = MAX(weekly.streak, ?5), updated = ?6, losses = MAX(COALESCE(weekly.losses, 0), ?7)`).bind(a, wk, wins, xp, streak, t, losses || 0).run(); },
     top: async (wk, col) => (await DB.prepare(`SELECT account, ${col} AS v FROM weekly WHERE week = ?1 AND ${col} > 0 ORDER BY ${col} DESC LIMIT 10`).bind(wk).all()).results || [],
     rank: async (wk, col, a) => {
       const me = await DB.prepare(`SELECT ${col} AS v FROM weekly WHERE week = ?1 AND account = ?2`).bind(wk, a).first();
@@ -137,13 +139,13 @@ function storeOf(env) {
     },
     packGet: async (a) => {
       await packTable(DB);
-      const r = await DB.prepare(`SELECT pack, pending, week FROM packs WHERE account = ?1`).bind(a).first();
+      const r = await DB.prepare(`SELECT pack, pending, week, lock_week AS lockWeek FROM packs WHERE account = ?1`).bind(a).first();
       return r || null;
     },
     packSet: async (a, rec) => {
       await packTable(DB);
-      await DB.prepare(`INSERT INTO packs (account, pack, pending, week) VALUES (?1, ?2, ?3, ?4)
-        ON CONFLICT(account) DO UPDATE SET pack = ?2, pending = ?3, week = ?4`).bind(a, rec.pack, rec.pending, rec.week).run();
+      await DB.prepare(`INSERT INTO packs (account, pack, pending, week, lock_week) VALUES (?1, ?2, ?3, ?4, ?5)
+        ON CONFLICT(account) DO UPDATE SET pack = ?2, pending = ?3, week = ?4, lock_week = ?5`).bind(a, rec.pack, rec.pending, rec.week, rec.lockWeek || null).run();
     },
     packAll: async () => { await packTable(DB); return (await DB.prepare(`SELECT account, pack, pending, week FROM packs`).all()).results || []; },
     weeklyPack: async (a, wk, pack) => {
@@ -151,7 +153,7 @@ function storeOf(env) {
       await DB.prepare(`INSERT INTO weekly (account, week, wins, xp, streak, updated, pack) VALUES (?1, ?2, 0, 0, 0, ?3, ?4)
         ON CONFLICT(account, week) DO UPDATE SET pack = ?4`).bind(a, wk, Date.now(), pack || null).run();
     },
-    weekRows: async (wk) => { await packTable(DB); return (await DB.prepare(`SELECT account, wins, xp, streak, pack FROM weekly WHERE week = ?1`).bind(wk).all()).results || []; },
+    weekRows: async (wk) => { await packTable(DB); return (await DB.prepare(`SELECT account, wins, losses, xp, streak, pack FROM weekly WHERE week = ?1`).bind(wk).all()).results || []; },
     taken: async () => {
       await DB.prepare(`CREATE TABLE IF NOT EXISTS holdings (account TEXT PRIMARY KEY, tokens TEXT, updated INTEGER)`).run();
       const rows = (await DB.prepare(`SELECT tokens FROM holdings`).all()).results || [];
@@ -261,13 +263,14 @@ async function authStatus(env, uuid) {
 const PACK_IDS = ["ledger", "moon", "bone", "static"];
 const PACK_MAX = 10;
 const PACK_WEEKS = 9;                       // this week + the 8 the bonus history looks back on
+const LEAVE = "-";                          // a queued "leave on Monday"
 
 /* Transfers land on the week roll: a queued move becomes the pack on Monday. */
 async function myPack(env, account) {
   const st = storeOf(env), wk = weekOf();
   const rec = (await st.packGet(account)) || {pack: null, pending: null, week: wk};
   if (rec.week !== wk) {
-    if (rec.pending) { rec.pack = rec.pending; rec.pending = null; }
+    if (rec.pending) { rec.pack = rec.pending === LEAVE ? null : rec.pending; rec.pending = null; }
     rec.week = wk;
     await st.packSet(account, rec);
     await st.weeklyPack(account, wk, rec.pack);
@@ -276,10 +279,10 @@ async function myPack(env, account) {
 }
 async function packRows(env, wk) {
   const rows = await storeOf(env).weekRows(wk), by = {};
-  for (const id of PACK_IDS) by[id] = {id, members: 0, wins: 0, xp: 0, streak: 0};
+  for (const id of PACK_IDS) by[id] = {id, members: 0, wins: 0, losses: 0, xp: 0, streak: 0};
   for (const r of rows) {
     const p = by[r.pack]; if (!p) continue;
-    p.members++; p.wins += r.wins | 0; p.xp += r.xp | 0; p.streak = Math.max(p.streak, r.streak | 0);
+    p.members++; p.wins += r.wins | 0; p.losses += r.losses | 0; p.xp += r.xp | 0; p.streak = Math.max(p.streak, r.streak | 0);
   }
   return Object.values(by);
 }
@@ -290,7 +293,7 @@ async function packs(env, account) {
   for (const r of await st.packAll()) {
     const rec = r.account === account ? await myPack(env, r.account) : r;
     let pack = rec.pack;
-    if (rec.week !== wk && rec.pending) pack = rec.pending;       // their Monday move, even before they log in
+    if (rec.week !== wk && rec.pending) pack = rec.pending === LEAVE ? null : rec.pending;   // their Monday move, even before they log in
     if (pack && cur.get(r.account) !== pack) await st.weeklyPack(r.account, wk, pack);
   }
   const weeks = {};
@@ -299,19 +302,25 @@ async function packs(env, account) {
     weeks[w] = await packRows(env, w);
   }
   const me = account ? await myPack(env, account) : null;
-  return json({week: wk, weeks, max: PACK_MAX, me: me && {pack: me.pack, pending: me.pending}});
+  return json({week: wk, weeks, max: PACK_MAX, me: me && {pack: me.pack, pending: me.pending, locked: isLocked(me, wk)}});
 }
+/* One pack per week. Joining with no pack is instant, and from then on the
+   week is locked: switching or leaving only queues a move for Monday. Having
+   been in a pack this week also locks it, so leave-and-rejoin can't hop. */
+const isLocked = (rec, wk) => !!rec.pack || rec.lockWeek === wk;
 async function packMove(env, account, b) {
   const st = storeOf(env), wk = weekOf(), rec = await myPack(env, account);
   const id = String(b.id || "");
+  if (rec.pack && rec.lockWeek !== wk) rec.lockWeek = wk;       // a pack held from before counts as this week's
   if (b.action === "join") {
     if (!PACK_IDS.includes(id)) return json({error: "bad_pack"}, 400);
     const size = (await packRows(env, wk)).find(p => p.id === id).members;
-    if (size >= PACK_MAX) return json({error: "pack_full"}, 409);
-    if (!rec.pack && !rec.pending) { rec.pack = id; await st.weeklyPack(account, wk, id); }   // first pack: instant
-    else if (rec.pack !== id) rec.pending = id;                                                // later moves: Monday
+    if (size >= PACK_MAX && rec.pack !== id) return json({error: "pack_full"}, 409);
+    if (!isLocked(rec, wk)) { rec.pack = id; rec.pending = null; rec.lockWeek = wk; await st.weeklyPack(account, wk, id); }
+    else rec.pending = rec.pack === id ? null : id;             // your own pack = stay; any other = move on Monday
   } else if (b.action === "leave") {
-    rec.pack = null; rec.pending = null; await st.weeklyPack(account, wk, null);               // leaving is immediate
+    if (!rec.pack) return json({error: "no_pack"}, 400);
+    rec.pending = LEAVE;                                         // leaves on Monday, not now
   } else if (b.action === "cancel") {
     rec.pending = null;
   } else return json({error: "bad_action"}, 400);
@@ -322,7 +331,8 @@ async function packMove(env, account, b) {
 async function postStats(env, account, b) {
   const wk = weekOf();
   const wins = Math.max(0, Math.min(500, b.wins|0)), xp = Math.max(0, Math.min(20000, b.xp|0)), streak = Math.max(0, Math.min(200, b.streak|0));
-  await storeOf(env).weekly(account, wk, wins, xp, streak, Date.now());
+  const losses = Math.max(0, Math.min(500, b.losses|0));
+  await storeOf(env).weekly(account, wk, wins, xp, streak, Date.now(), losses);
   const rec = await myPack(env, account);
   await storeOf(env).weeklyPack(account, wk, rec.pack);
   return json({ok:true, week:wk});

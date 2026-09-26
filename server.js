@@ -36,9 +36,10 @@ for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, () => { try { flush(); 
 const STORE = {
   async ping() { return true; },
   async seen(a, t) { db.players[a] = t; dirty = true; },
-  async weekly(a, wk, wins, xp, streak, t) {
+  async weekly(a, wk, wins, xp, streak, t, losses) {
     const k = wk + "|" + a, r = db.weekly[k] || { account: a, week: wk, wins: 0, xp: 0, streak: 0 };
     r.wins = Math.max(r.wins, wins); r.xp = Math.max(r.xp, xp); r.streak = Math.max(r.streak, streak); r.updated = t;
+    r.losses = Math.max(r.losses || 0, losses || 0);
     db.weekly[k] = r; dirty = true;
   },
   async top(wk, col) {
