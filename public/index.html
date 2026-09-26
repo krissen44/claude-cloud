@@ -288,13 +288,14 @@ const SAVE = (() => {
     tickets:5, pack:null, pending:null, week:'', wk:{wins:0, xp:0, streak:0}, lastWk:{wins:0, xp:0, streak:0},
     arena:{squad:[], signed:'', best:0, runs:0, last:null}, club:{w:0,l:0,d:0,dog:null}, today:null});
   /* What happened today, for the daily recap. */
-  const freshToday = day => ({day, ranked:0, wins:0, losses:0, xp:0, questXp:0, levels:[], arena:null, shown:false});
+  const freshToday = day => ({day, ranked:0, wins:0, losses:0, xp:0, questXp:0, levels:[], arenas:[], shown:false});
   let d;
   function load(){
     try { d = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch(e){ d = fresh(); }
     if (!d || d.v !== 1) d = fresh();
     if (!d.arena) d.arena = {squad:[], signed:'', best:0, runs:0, last:null};
     if (!d.club) d.club = {w:0,l:0,d:0,dog:null};
+    if (d.wk && d.streak > d.best) d.streak = d.best;   // casual wins used to inflate the live streak
   }
   load();
   function save(){ try { localStorage.setItem(KEY, JSON.stringify(d)); } catch(e){} }
@@ -316,6 +317,12 @@ const SAVE = (() => {
   function rollQuests(){
     const pick = QUESTS.slice().sort(()=>Math.random()-.5).slice(0,3);
     d.quests = pick.map(q => ({...q, n:0, got:false}));
+  }
+  /* One streak for the whole game: consecutive wins in fights that count
+     (ranked fights and live arena fights). Casual fights and ghosts don't touch it. */
+  function streakAfter(win){
+    if (win){ d.streak++; d.best = Math.max(d.best, d.streak); d.wk.streak = Math.max(d.wk.streak, d.streak); }
+    else d.streak = 0;
   }
   function dailyGrant(){
     const owned = Object.keys(d.dogs).length || 1;
@@ -356,15 +363,20 @@ const SAVE = (() => {
     signUp(on){ d.arena.signed = on ? today() : ''; save(); },
     signedToday(){ return d.arena.signed === today(); },
     // one arena per UTC day; it counts as used the moment it starts, so quitting mid-bracket can't reroll it
-    arenaUsedToday(){ return d.arena.day === today(); },
-    arenaUse(){ d.arena.day = today(); save(); },
+    // tournaments started today; one counts the moment it starts, so quitting mid-bracket can't reroll it
+    arenaRunsToday(){ return d.arena.day === today() ? (d.arena.dayRuns ?? 1) : 0; },   // ?? 1: used under the old one-a-day rule
+    arenaUse(){ const n = this.arenaRunsToday(); d.arena.day = today(); d.arena.dayRuns = n + 1; save(); },
     clubResult(r){ d.club[r] = (d.club[r]||0) + 1; save(); },
     clubDog(id){ d.club.dog = id; save(); },
     arenaDone(r){ d.arena.runs++; d.arena.best = Math.max(d.arena.best, r.won); d.arena.last = r;
-      if (d.today) d.today.arena = {won:r.won, xp:r.xp, live:r.live};
+      // each arena fight won counts once for the wins board; only fights you fought yourself touch the streak
+      d.wk.wins += r.won;
+      if (r.live) r.lines.forEach(l => streakAfter(l.w));
+      if (typeof postStats === 'function') postStats(d.wk);
+      if (d.today) (d.today.arenas = d.today.arenas || []).push({won:r.won, xp:r.xp, live:r.live});
       save(); },
     // the day is done: every ranked fight used and today's arena fought
-    dayComplete(){ return !!(d.today && d.today.arena && (d.tickets||0) <= 0); },
+    dayComplete(){ return !!(d.today && (d.today.arenas || []).length >= ARENA_RUNS && (d.tickets||0) <= 0); },
     recapShown(){ if (d.today){ d.today.shown = true; save(); } },
     weekRecapSeen(wk){ d.recapWeek = wk; save(); },
     joinPack(id){ if (!d.pack && !d.pending) d.pack = id; else d.pending = id; save(); },
@@ -391,17 +403,16 @@ const SAVE = (() => {
         T.xp += xp;
         if (!fromArena){ T.ranked++; win ? T.wins++ : T.losses++; }
       }
-      if (!ranked) { out.xp = 0; if (win) d.streak++; else d.streak = 0; save(); return out; }
-      g.xp += xp; d.trainerXp += Math.round(xp/2); d.fights++;
-      d.wk.xp += xp; if (win) d.wk.wins++;
-      win ? g.w++ : g.l++;
+      if (!ranked) { out.xp = 0; return out; }            // casual: no XP, and the streak is left alone
+      g.xp += xp; d.trainerXp += Math.round(xp/2); d.wk.xp += xp;
+      // Arena XP is shared across the squad; its wins and streak are booked per fight in arenaDone.
+      if (!fromArena){ d.fights++; if (win) d.wk.wins++; win ? g.w++ : g.l++; }
       while (g.lvl < BOND.maxLevel && g.xp >= BOND.need(g.lvl)){
         g.xp -= BOND.need(g.lvl); g.lvl++;
         out.levels.push(g.lvl);
         if (T) T.levels.push({id, lvl:g.lvl});
       }
-      if (win){ d.streak++; d.best = Math.max(d.best, d.streak); d.wk.streak = Math.max(d.wk.streak, d.streak); }
-      else d.streak = 0;
+      if (!fromArena) streakAfter(win);
       save();
       if (typeof postStats === 'function') postStats(d.wk);
       return out;
@@ -916,12 +927,13 @@ function pickOpponent(exceptId){
 }
 
 /* ============================ arena ============================ */
-/* Once a day the arena runs three fights, and all three are played: a loss
-   costs that fight's XP but never knocks you out. Win all three for Champion.
+/* The arena is a knockout tournament of three fights (quarter-final, semi,
+   final): a loss ends that tournament. Everyone gets three tournaments a day.
    Sign up and you fight it yourself. Don't, and your squad still enters —
    as ghosts that play your dogs for you. Live pays full XP, ghosts half. */
 const ARENA_HOUR = 19;                       // UTC
-const ARENA_XP = [0, 35, 60, 100];           // by fights won out of three: none … champion
+const ARENA_XP = [0, 35, 60, 100];           // by rounds won: out in round 1 … champion
+const ARENA_RUNS = 3;                        // tournaments per day
 const HANDLES = ['DiamondPaw','xrpChad','scrappymom','LedgerLad','Nakamoto.dog','pixelwhale','bonehodler','goodboy404','Taxon0','fetchking','rugproof','memeboi'];
 
 function nextArena(){
@@ -959,7 +971,8 @@ function runGhostArena(){
     const me = sq[r % sq.length], o = ghostOpp(r);
     const w = simFight(me, SAVE.dog(me.id).lvl, o.def, o.lvl);
     lines.push({r, me: me.name, opp: o.def.name, who: o.who, w});
-    if (w) won++;
+    if (!w) break;
+    won++;
   }
   const xp = Math.round(ARENA_XP[won] / 2);
   sq.forEach(d => SAVE.award(d.id, won > 0, Math.round(xp / sq.length), true, true));
@@ -968,7 +981,7 @@ function runGhostArena(){
 }
 /* Live players get one arena a day; the demo stays unlimited (it never reaches the ladder). */
 const arenaLimited = () => LIVE() && !WALLET.demo;
-const arenaLocked = () => arenaLimited() && SAVE.arenaUsedToday();
+const arenaLocked = () => arenaLimited() && SAVE.arenaRunsToday() >= ARENA_RUNS;
 function untilUtcMidnight(){
   const n = new Date(), t = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate() + 1));
   return until(t);
@@ -988,7 +1001,7 @@ function arenaAfterFight(win){
   const r = arenaRun;
   r.lines.push({r:r.round, me:P.def.name, opp:E.def.name, who:r.opp.who, w:win});
   if (win) r.won++;
-  const finished = r.round >= 2;                 // all three are fought, win or lose
+  const finished = !win || r.round >= 2;         // knockout: a loss ends this tournament
   if (finished){
     const xp = ARENA_XP[r.won];
     r.sq.forEach(d => SAVE.award(d.id, r.won > 0, Math.round(xp / r.sq.length), true, true));
@@ -997,7 +1010,7 @@ function arenaAfterFight(win){
   } else r.round++;
 }
 function arenaLines(lines){
-  const names = ['Fight 1','Fight 2','Fight 3'];
+  const names = ['Quarter-final','Semi-final','Final'];
   return lines.map(l => `<p class="q">${l.w?'✅':'❌'} <span><b>${names[l.r]}</b> — ${esc(l.me)} vs ${esc(l.who)}'s ${esc(l.opp)}</span></p>`).join('');
 }
 
@@ -1775,7 +1788,7 @@ function renderControls(){
     const r = arenaRun;
     c.innerHTML = `<div class="card res">
       <div class="big">${verdict()}</div>
-      <div class="mini">🏟️ Arena · ${r.done ? (r.won===3 ? '<b>CHAMPION</b>' : 'won '+r.won+' of 3') : (r.won+' of '+r.round+' won so far · fight '+(r.round+1)+' of 3 next')}</div>
+      <div class="mini">🏟️ Arena · ${r.done ? (r.won===3 ? '<b>CHAMPION</b>' : 'out after '+r.won+' win'+(r.won===1?'':'s')) : 'round '+(r.round+1)+' of 3 next'}</div>
       <div style="text-align:left;margin:10px auto;max-width:420px">${arenaLines(r.lines)}</div>
       ${r.done ? `<div class="mini">+${r.xp} XP shared across your squad — full XP, because you fought it live.</div>` : ''}
       <div class="row" style="margin-top:12px">
@@ -1906,7 +1919,7 @@ function kennelView(){
       <h3>TRAINER</h3>
       <div class="mini"><span class="lvl">LEVEL ${tl}</span></div>
       <div class="xp"><i style="width:${Math.round(100*ti/250)}%"></i></div>
-      <div class="mini">${ti} / 250 XP · ${D.fights} ranked fights<br>Streak ${D.streak} · best ${D.best}</div>
+      <div class="mini">${ti} / 250 XP · ${D.fights} ranked fights<br>Streak now ${D.streak} · this week's best ${D.wk.streak} · all-time best ${D.best}</div>
       <div class="tix">🎟️ <b>${D.tickets}</b> ranked fights left<div class="mini">+${SAVE.grant()} a day, banks up to 15. Out of them? Casual still runs — no XP, no ladder.</div></div>
       ${mb ? `<div class="bon">${mb.emoji} <b>${mb.name}</b> — ${esc(mb.txt)}<div class="mini">Your pack earned it last week.</div></div>` : ''}
     </div>
@@ -1936,7 +1949,7 @@ function ladderDemo(){
   const r = seeded('ladder'+SAVE.weekOf());
   const names = ['DiamondPaw','xrpChad','scrappymom','LedgerLad','Nakamoto.dog','pixelwhale','bonehodler','goodboy404','Taxon0','fetchking'];
   const rows = names.map(n => ({n, xp: Math.round(300+r()*2200), w: Math.round(8+r()*70), s: 2+Math.floor(r()*11)}));
-  rows.push({n:'YOU', xp:D.wk.xp, w:D.wk.wins, s:D.best, you:true});
+  rows.push({n:'YOU', xp:D.wk.xp, w:D.wk.wins, s:D.wk.streak, you:true});
   const board = (key, label, fmt) => {
     const sorted = rows.slice().sort((a,b)=>b[key]-a[key]).slice(0,8);
     return `<div><h3>${label}</h3>${sorted.map((x,i)=>
@@ -2001,13 +2014,13 @@ function arenaView(){
       ${pos>=0 ? `<br><b style="color:var(--accent)">SQUAD #${pos+1}</b>` : ''}</span></button>`;
   }).join('');
   const last = A.last ? `<div class="card"><h3 class="h3">LAST ARENA</h3>
-      <p class="mini" style="margin:0 0 8px">${A.last.live ? 'Fought live' : 'Your ghosts fought'} · ${A.last.won===3?'<b>Champion</b> — 3 of 3':A.last.won+' of 3 won'} · +${A.last.xp} XP</p>
+      <p class="mini" style="margin:0 0 8px">${A.last.live ? 'Fought live' : 'Your ghosts fought'} · ${A.last.won===3?'<b>Champion</b>':'out after '+A.last.won+' win'+(A.last.won===1?'':'s')} · +${A.last.xp} XP</p>
       ${arenaLines(A.last.lines)}</div>` : '';
   return `<div class="card">
     <div class="wal">
       <div><b style="font-size:12px">🏟️ Daily Arena</b>
         <div class="mini">Every day at <b>${ARENA_HOUR}:00 UTC</b> (${local} your time) · next in <b>${until(t)}</b><br>
-        Three fights, and every one is played — a loss never knocks you out. Win all three for Champion.</div></div>
+        Three tournaments a day. Each is a knockout of three rounds — win all three for Champion.</div></div>
       <button id="sign" class="${signed?'on':''}">${signed ? '✅ Signed up for today' : 'Sign up for today'}</button>
     </div>
     <p class="mini" style="margin:10px 0 0">${signed
@@ -2020,11 +2033,12 @@ function arenaView(){
   </div>
   <div class="card">
     <div class="row">
-      <button id="runArena" ${A.squad.length && !arenaLocked() ? '' : 'disabled'}>${arenaLocked() ? '✅ Today\'s arena is done' : signed ? '▶ Fight today\'s arena' : '👻 Let the ghosts fight it'}</button>
+      <button id="runArena" ${A.squad.length && !arenaLocked() ? '' : 'disabled'}>${arenaLocked() ? '✅ All 3 tournaments done' : (signed ? '▶ Fight' : '👻 Ghosts fight') + ' tournament ' + (SAVE.arenaRunsToday() + 1) + ' of ' + ARENA_RUNS}</button>
     </div>
     <p class="mini" style="margin:10px 0 0;text-align:center">${arenaLimited()
-      ? (arenaLocked() ? `One arena a day. The next one opens in <b>${untilUtcMidnight()}</b> (00:00 UTC).` : 'One arena a day — make it count. Leaving mid-bracket still uses it up.')
-      : 'Demo: run it as often as you like. Live, there is one arena a day.'}</p>
+      ? (arenaLocked() ? `All ${ARENA_RUNS} tournaments played. New ones open in <b>${untilUtcMidnight()}</b> (00:00 UTC).`
+        : `<b>${ARENA_RUNS - SAVE.arenaRunsToday()} of ${ARENA_RUNS}</b> tournaments left today. Leaving mid-bracket still uses one up.`)
+      : `Demo: run it as often as you like. Live, there are ${ARENA_RUNS} tournaments a day.`}</p>
   </div>
   <div id="ghostRes"></div>
   ${last}`;
@@ -2068,8 +2082,10 @@ function clubView(){
 /* Pops up once, the moment the last ranked fight and today's arena are both
    done. It can be reopened from the TODAY panel until midnight UTC. */
 function recapHtml(){
-  const D = SAVE.data, T = D.today, a = T.arena;
-  const arenaTxt = a.won === 3 ? '🏆 Champion — 3 of 3 won' : `${a.won} of 3 won`;
+  const D = SAVE.data, T = D.today, runs = T.arenas || [];
+  const best = Math.max(0, ...runs.map(r => r.won)), arenaXp = runs.reduce((n, r) => n + r.xp, 0);
+  const res = w => w === 3 ? '🏆 Champion' : w ? `out after ${w} win${w===1?'':'s'}` : 'out in the quarter-final';
+  const arenaTxt = runs.map((r, i) => `#${i+1} ${res(r.won)}`).join(' · ');
   const lv = T.levels.map(l => { const f = findDog(l.id); return `<p class="q">⬆️ <span><b>${esc(f ? f.name : 'A Scrappy')}</b> reached Bond ${l.lvl}</span></p>`; }).join('');
   const qDone = (D.quests||[]).filter(q => q.got).length, qAll = (D.quests||[]).length;
   let pack = '';
@@ -2080,14 +2096,14 @@ function recapHtml(){
   }
   return `<div class="card" role="dialog" aria-label="Daily recap">
     <h2>DAY COMPLETE</h2>
-    <p class="mini" style="text-align:center;margin:0">Every ranked fight used and today's arena fought. Nice work.</p>
+    <p class="mini" style="text-align:center;margin:0">Every ranked fight used and all three tournaments fought. Nice work.</p>
     <div class="grid">
       <div class="stat"><b>${T.wins}–${T.losses}</b><span class="mini">ranked fights W–L</span></div>
       <div class="stat"><b>+${T.xp + T.questXp}</b><span class="mini">XP today${T.questXp ? ' (' + T.questXp + ' from quests)' : ''}</span></div>
-      <div class="stat"><b>${a.won}/3</b><span class="mini">arena · ${a.live ? 'fought live' : 'ghosts'}</span></div>
-      <div class="stat"><b>🔥 ${D.streak}</b><span class="mini">win streak (best ${D.best})</span></div>
+      <div class="stat"><b>${runs.filter(r => r.won === 3).length}× 🏆</b><span class="mini">champion in ${runs.length} tournaments · best ${best}/3</span></div>
+      <div class="stat"><b>🔥 ${D.streak}</b><span class="mini">streak now · week's best ${D.wk.streak}</span></div>
     </div>
-    <p class="q">🏟️ <span><b>Arena:</b> ${arenaTxt} · +${a.xp} XP</span></p>
+    <p class="q">🏟️ <span><b>Arena:</b> ${arenaTxt} · +${arenaXp} XP</span></p>
     <p class="q">📋 <span><b>Quests:</b> ${qDone} of ${qAll} done</span></p>
     <p class="q">🎓 <span><b>Trainer level ${SAVE.trainerLvl()}</b> · ${SAVE.trainerInto()} / 250 XP</span></p>
     ${pack}${lv}
@@ -2105,7 +2121,8 @@ function showRecap(){
   el.querySelector('#recapClose').onclick = () => { S.click(); close(); };
   el.onclick = e => { if (e.target === el) close(); };
   document.addEventListener('keydown', esc_);
-  if (SAVE.data.today.arena.won === 3 || SAVE.data.today.wins > SAVE.data.today.losses) S.win();
+  const T = SAVE.data.today;
+  if ((T.arenas || []).some(r => r.won === 3) || T.wins > T.losses) S.win();
 }
 
 /* ============================ weekly results ============================ */
