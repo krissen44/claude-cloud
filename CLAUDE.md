@@ -97,7 +97,7 @@ v6/v11 arena limit (now 3 tournaments/day) · v7 packs made real on the server (
 v8 daily recap · v9 weekly results · v11 streak inflation fixed (casual wins + per-dog arena counting) ·
 v12 playtest fixes ("Fight again" re-used the same rival; demo dogs leaked in; recap for newcomers) ·
 v13 exploit fix (always-bite won 77%) → pattern-reading AI + guard snap-back; recap counted abandoned tournaments ·
-v14 one-pack-a-week rule, losses tracked, full pack stats table · v15 `ACCESS_KEY` gate · v16 `/api/public/board`.
+v14 one-pack-a-week rule, losses tracked, full pack stats table · v15 `ACCESS_KEY` gate · v16 `/api/public/board` · v17 wallet chooser + Joey extension sign-in · v18 Joey app over WalletConnect (confirmed working live by the owner).
 
 ### Testing locally
 ```bash
