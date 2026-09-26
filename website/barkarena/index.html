@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bark Arena — the Pixel Scrappy game</title>
+<!-- Not public yet: kept out of search engines and not linked from the site. -->
+<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="Bark Arena: fight with the Pixel Scrappys in your wallet. Daily tournaments, packs and a weekly ladder.">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<meta name="theme-color" content="#1b8ce3">
+<link rel="preload" href="/assets/fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin>
+<script src="/pixelscrappy/pixel-title.js" defer></script>
+<style>
+@font-face{font-family:"Figtree";font-style:normal;font-display:swap;font-weight:100 900;src:url(/assets/fonts/figtree-latin.woff2) format("woff2")}
+@font-face{font-family:"Gabarito";font-style:normal;font-display:swap;font-weight:400 900;src:url(/assets/fonts/gabarito-latin.woff2) format("woff2")}
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-display:swap;font-weight:100 800;src:url(/assets/fonts/jetbrains-mono-latin.woff2) format("woff2")}
+:root{
+  --bg:#eef4fa; --surface:#fff; --raised:#f7fafd; --fg:#0e1726;
+  --muted:#40506a; --subtle:#586780; --accent:#0f76c6; --accent-fg:#fff;
+  --sky:#d6ebfb; --line:#d2e0ee;
+  --scrappy:#1b8ce3; --scrappy-deep:#0a4f8f; --scrappy-hi:#8fd0fb;
+  --sans:"Figtree",ui-sans-serif,system-ui,sans-serif;
+  --display:"Gabarito",ui-sans-serif,system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg)}
+body{font:16px/1.55 var(--sans);background-image:linear-gradient(180deg,#eef4fa 0%,#e4eef8 100%);background-attachment:fixed;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+img{image-rendering:pixelated;display:block;max-width:100%}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px 72px}
+header{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  padding:16px 0;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(12px)}
+.brand img{height:28px;width:auto;image-rendering:auto}
+.nav{display:flex;gap:6px;flex-wrap:wrap}
+.nav a{padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-decoration:none}
+.nav a:hover{background:var(--raised);color:var(--fg)}
+.nav a.on{background:var(--accent);color:var(--accent-fg)}
+.kicker{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:0 0 10px}
+h2{font-family:var(--display);letter-spacing:-.03em;margin:0;font-size:clamp(24px,3vw,32px)}
+.lead{margin:16px 0 0;max-width:38rem;color:var(--muted)}
+.meta{font:11px var(--mono);color:var(--subtle)}
+section{margin-top:56px}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+.btn{display:inline-block;border:0;border-radius:10px;padding:12px 16px;cursor:pointer;background:var(--accent);color:var(--accent-fg);font:700 14px var(--sans);text-decoration:none}
+.btn:hover{text-decoration:none;filter:brightness(1.06)}
+.btn.ghost{background:var(--raised);color:var(--fg);box-shadow:0 0 0 1px var(--line)}
+.card{background:var(--surface);border-radius:16px;padding:18px;box-shadow:0 0 0 1px var(--line),0 12px 28px -18px rgb(14 23 38 / 22%)}
+.grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:18px}
+@media(min-width:640px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:960px){.grid{grid-template-columns:repeat(4,1fr)}}
+.card h3{margin:6px 0 6px;font-family:var(--display);font-size:18px}
+.card p{margin:0;color:var(--muted);font-size:14px}
+.ico{font-size:24px}
+.beta{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:#fff4d6;color:#7a5b12;font:700 11px var(--sans);letter-spacing:.08em;text-transform:uppercase;box-shadow:0 0 0 1px #f0dca0}
+.rps{display:grid;gap:10px;margin-top:18px}
+@media(min-width:760px){.rps{grid-template-columns:repeat(3,1fr)}}
+.rps .card b{font-family:var(--display);font-size:17px}
+
+/* hero, shared look with the Pixel Scrappy page */
+.pxhero{position:relative;overflow:hidden;margin-top:6px;border-radius:24px;display:grid;gap:8px;padding:32px 22px 0;
+  background:
+    linear-gradient(transparent 23px,rgb(255 255 255 / 35%) 24px) 0 0/24px 24px,
+    linear-gradient(90deg,transparent 23px,rgb(255 255 255 / 35%) 24px) 0 0/24px 24px,
+    linear-gradient(180deg,#bfe3fc 0%,#e6f4fe 70%,#f4fafe 100%);
+  box-shadow:0 0 0 1px var(--line),0 24px 48px -32px rgb(15 118 198 / 55%)}
+@media(min-width:880px){.pxhero{grid-template-columns:1.25fr .75fr;align-items:end;padding:48px 44px 0;gap:24px}}
+.pxhero-in{position:relative;z-index:1;padding-bottom:28px}
+@media(min-width:880px){.pxhero-in{padding-bottom:44px}}
+.pxhero .lead{color:#2c3d57}
+.pxtitle{margin:12px 0 0;line-height:1}
+.px-words{display:flex;flex-wrap:wrap;gap:14px 3.2%}
+.px-words svg{display:block;height:clamp(46px,9.5vw,104px);width:auto;overflow:visible}
+.px-face rect{fill:var(--scrappy)}
+.px-face rect.px-hi{fill:var(--scrappy-hi)}
+.px-shadow rect{fill:var(--scrappy-deep)}
+.px-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.pxtitle:not(.px-ready){font-family:var(--display);color:var(--scrappy);font-size:clamp(40px,8vw,88px)}
+.duel{position:relative;z-index:1;display:flex;align-items:flex-end;justify-content:center;gap:4%}
+.duel img{width:min(36vw,170px);height:auto;border-radius:16px 16px 0 0;box-shadow:0 0 0 4px #fff,0 18px 40px -18px rgb(10 79 143 / 60%)}
+.duel img:last-child{transform:scaleX(-1)}
+.vs{font-family:var(--display);font-weight:900;font-size:22px;color:var(--scrappy-deep);align-self:center}
+@media(prefers-reduced-motion:no-preference){
+  .px-ch{animation:pxbob 2.6s ease-in-out infinite;animation-delay:calc(var(--i) * -.16s)}
+  @keyframes pxbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-.9px)}}
+  .px-words svg{animation:pxglow 2.6s ease-in-out infinite}
+  @keyframes pxglow{0%,100%{filter:drop-shadow(0 0 0 rgb(27 140 227 / 0))}50%{filter:drop-shadow(0 0 14px rgb(27 140 227 / 55%))}}
+  .duel img:first-child{animation:lunge 2.2s ease-in-out infinite}
+  .duel img:last-child{animation:lungeR 2.2s ease-in-out infinite 1.1s}
+  @keyframes lunge{0%,70%,100%{transform:none}80%{transform:translateX(10px) rotate(3deg)}}
+  @keyframes lungeR{0%,70%,100%{transform:scaleX(-1)}80%{transform:scaleX(-1) translateX(10px) rotate(3deg)}}
+}
+
+/* ---- page sections ---------------------------------------------------- */
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.toc a{padding:7px 14px;border-radius:999px;background:var(--surface);border:2px solid var(--ink);box-shadow:0 2px 0 0 var(--ink);
+  font:800 14px var(--display);color:var(--ink);text-decoration:none}
+.toc a:hover{transform:translateY(-2px);box-shadow:0 4px 0 0 var(--ink)}
+/* leaderboard */
+.lbtabs{display:inline-flex;gap:4px;padding:4px;border-radius:999px;background:var(--surface);border:2px solid var(--ink);box-shadow:0 2px 0 0 var(--ink);margin-top:18px}
+.lbtabs button{border:0;border-radius:999px;padding:7px 14px;font:800 14px var(--display);background:none;color:var(--muted);cursor:pointer}
+.lbtabs button[aria-selected=true]{background:var(--accent);color:#fff}
+.lbmeta{margin:12px 0 0}
+.boards{display:grid;gap:14px;margin-top:16px}
+@media(min-width:820px){.boards{grid-template-columns:repeat(3,1fr)}}
+.board h3{margin:0 0 10px;font-size:15px;letter-spacing:.02em;display:flex;justify-content:space-between;align-items:baseline}
+.board ol{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.board li{display:grid;grid-template-columns:30px 1fr auto;gap:8px;align-items:center;padding:7px 8px;border-radius:10px;font:13px var(--mono)}
+.board li:nth-child(odd){background:var(--raised)}
+.board li b{font-family:var(--display);font-size:15px;font-weight:800}
+.board li .rk{font-weight:700;color:var(--subtle)}
+.board li:nth-child(-n+3) .rk{color:var(--ink)}
+.board .empty{color:var(--subtle);font-size:14px;margin:6px 0 0}
+.ptable{width:100%;border-collapse:collapse;font-size:14px;margin-top:4px}
+.ptable th,.ptable td{padding:9px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+.ptable th:first-child,.ptable td:first-child,.ptable th:nth-child(2),.ptable td:nth-child(2){text-align:left}
+.ptable th{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--subtle)}
+.ptable td.hl{font-family:var(--display);font-weight:800;color:var(--sky-ink)}
+.tablewrap{overflow-x:auto}
+/* guide */
+.guide{display:grid;gap:16px;margin-top:22px}
+.step{display:grid;grid-template-columns:44px 1fr;gap:14px;align-items:start}
+.step .n{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--accent);color:#fff;
+  font:900 20px var(--display);border:2px solid var(--ink);box-shadow:0 3px 0 0 var(--ink)}
+.step h3{margin:6px 0 6px;font-size:20px}
+.step p,.card li{color:var(--muted);font-size:15px;line-height:1.6;margin:0}
+.card ul{margin:10px 0 0;padding-left:18px;display:grid;gap:6px}
+.facts{display:grid;gap:12px;margin-top:16px}
+@media(min-width:760px){.facts{grid-template-columns:repeat(2,1fr)}}
+.facts .card h3{margin:0 0 8px;font-size:18px}
+.facts .card p{margin:0;color:var(--muted);font-size:15px;line-height:1.6}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin-top:10px;font-size:14px}
+.kv dt{font:600 12px var(--mono);color:var(--subtle);padding-top:2px}
+.kv dd{margin:0;color:var(--fg)}
+.tip{margin-top:16px;padding:14px 16px;border-radius:14px;background:#fff4d6;border:2px solid var(--ink);box-shadow:0 2px 0 0 var(--ink);font-size:15px}
+details.card{padding:0}
+details.card summary{cursor:pointer;list-style:none;padding:16px 18px;font:800 17px var(--display);display:flex;justify-content:space-between;gap:12px}
+details.card summary::-webkit-details-marker{display:none}
+details.card summary::after{content:"+";font-size:22px;line-height:1;color:var(--sky-ink)}
+details.card[open] summary::after{content:"–"}
+details.card .body{padding:0 18px 18px}
+details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
+</style>
+<link rel="stylesheet" href="/pixelscrappy/scrappy-theme.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="brand" href="https://scrappyxrp.fun/"><img src="https://scrappyxrp.fun/assets/brand/wordmark-2x.webp" alt="$SCRAP"></a>
+    <nav class="nav" aria-label="Site">
+      <a href="https://scrappyxrp.fun/">$SCRAP</a>
+      <a href="/pixelscrappy/">Pixel Scrappy</a>
+      <a class="on" href="/barkarena/" aria-current="page">Bark Arena</a>
+      <a class="pill" href="https://game.scrappyxrp.fun/">Play</a>
+    </nav>
+  </header>
+
+  <section class="pxhero" style="margin-top:6px">
+    <div class="pxhero-in">
+      <span class="beta">🔒 Private beta</span>
+      <h1 class="pxtitle" data-px="BARK ARENA">Bark Arena</h1>
+      <p class="lead">Your Pixel Scrappys, in the ring. Sign in with Xaman and the dogs in your wallet fight with the traits they actually carry — no transaction, no fee.</p>
+      <div class="row" style="margin-top:20px">
+        <a class="btn" href="https://game.scrappyxrp.fun/">Play Bark Arena</a>
+        <a class="btn ghost" href="#how">How to play</a>
+      </div>
+    </div>
+    <div class="duel" aria-hidden="true">
+      <img src="/pixelscrappy/nfts/259.png" alt="" width="170" height="170" onerror="this.onerror=null;this.src='/pixelscrappy/scrappy-5000/01_bilder/259.png'">
+      <span class="vs">VS</span>
+      <img src="/pixelscrappy/nfts/11.png" alt="" width="170" height="170" onerror="this.onerror=null;this.src='/pixelscrappy/scrappy-5000/01_bilder/11.png'">
+    </div>
+  </section>
+
+  <nav class="toc" aria-label="On this page">
+    <a href="#leaderboard">🏆 Leaderboard</a>
+    <a href="#how">📖 How to play</a>
+    <a href="#fight">🥊 Fighting</a>
+    <a href="#arena">🏟️ Arena</a>
+    <a href="#packs">🐾 Packs</a>
+    <a href="#faq">❓ FAQ</a>
+  </nav>
+
+  <!-- ===================================================== leaderboard -->
+  <section id="leaderboard">
+    <p class="kicker">Live standings</p>
+    <h2>Leaderboard</h2>
+    <p class="lead">Ranked fights and the arena count. Every board resets Monday 00:00 UTC.</p>
+    <div class="lbtabs" role="tablist" aria-label="Week">
+      <button role="tab" aria-selected="true" data-wk="now">This week</button>
+      <button role="tab" aria-selected="false" data-wk="last">Last week — final</button>
+    </div>
+    <p class="meta lbmeta" id="lbmeta">Loading the standings…</p>
+    <div class="boards" id="boards"></div>
+    <div class="card" style="margin-top:14px">
+      <h3 style="margin:0 0 4px;font-size:18px">🐾 Pack standings</h3>
+      <p class="meta" style="margin:0 0 8px">Ranked by wins per member.</p>
+      <div class="tablewrap"><table class="ptable" id="ptable"></table></div>
+    </div>
+  </section>
+
+  <!-- ===================================================== how to play -->
+  <section id="how">
+    <p class="kicker">How to play</p>
+    <h2>From wallet to first win</h2>
+    <div class="guide">
+      <div class="card step"><span class="n">1</span><div>
+        <h3>Hold a Pixel Scrappy</h3>
+        <p>The game fights with the dogs in your wallet. Collect one on <a href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener">xrp.cafe</a> — any rarity works; a Common can still drop a Legendary. No Scrappy yet? The demo lets you play with sample dogs (nothing counts for the leaderboard).</p>
+      </div></div>
+      <div class="card step"><span class="n">2</span><div>
+        <h3>Sign in with Xaman</h3>
+        <p>Scan the QR code with Xaman, or open it on your phone. It's a sign-in only — no transaction, no fee, nothing leaves your wallet. The kennel then reads your Pixel Scrappys straight from the XRP Ledger.</p>
+      </div></div>
+      <div class="card step"><span class="n">3</span><div>
+        <h3>Pick a dog and fight</h3>
+        <p>Tap a Scrappy in your kennel to start a ranked fight. Each round you choose <b>Bite</b>, <b>Guard</b>, <b>Taunt</b> — or one of your dog's trait abilities. Ten rounds; the healthiest dog at the bell wins.</p>
+      </div></div>
+      <div class="card step"><span class="n">4</span><div>
+        <h3>Come back every day</h3>
+        <p>New fight tickets and quests every day at 00:00 UTC, three arena tournaments, a pack to fight for and a weekly leaderboard. Finish everything and you get a daily recap; every Monday a full weekly result.</p>
+      </div></div>
+    </div>
+  </section>
+
+  <!-- ===================================================== fighting -->
+  <section id="fight">
+    <p class="kicker">Fighting</p>
+    <h2>Bite, guard, taunt</h2>
+    <p class="lead">Every round both dogs choose at the same time. Each move beats one and loses to another — read your opponent and don't fall into a rhythm.</p>
+    <div class="rps">
+      <div class="card"><b>🦷 Bite</b><p>4–7 damage (15% chance to miss). Beats a taunt for +2 extra. Blocked by a guard.</p></div>
+      <div class="card"><b>🛡️ Guard</b><p>Blocks a bite and snaps back for 2. Gives +1 energy. Loses to a taunt.</p></div>
+      <div class="card"><b>🐶 Taunt</b><p>+2 energy and chips 2 damage through a guard. Takes extra from a bite.</p></div>
+    </div>
+    <div class="facts">
+      <div class="card"><h3>⚡ Energy & abilities</h3>
+        <p>You start with 2 energy (◆) and gain 1 every round, up to 9. Guard and taunt add more. Abilities from your dog's traits cost energy — shields, heavy hits, heals, energy drains and more.</p></div>
+      <div class="card"><h3>🧬 Your dog's kit</h3>
+        <p>Each Scrappy carries eight traits, one per layer. Only its <b>three rarest</b> traits fight — and at most one of them is an active ability. So the rarity of each single trait decides how a dog plays. Themed Mythic sets add a set bonus on top; the 20 Legendaries have hand-built signature kits.</p></div>
+      <div class="card"><h3>❤️ Health</h3>
+        <p>Every dog starts at 16 health, plus a rarity bonus: Uncommon and Rare +1, Epic +2, Legendary +2, Mythic +3.</p></div>
+      <div class="card"><h3>🔥 Frenzy</h3>
+        <p>From round 7 the fight heats up: every bite hits 1 harder each round (+1, +2, +3, +4). Late rounds decide close fights.</p></div>
+      <div class="card"><h3>🧠 The opponent reads you</h3>
+        <p>Rivals remember your moves — which one you lean on, and which one tends to follow your last one or two. Always biting, or alternating bite and guard, gets read and punished. Mix it up and react to what you see.</p></div>
+      <div class="card"><h3>🐕 Who you meet</h3>
+        <p>Rivals are drawn from the whole collection of 5,000, with a Legendary now and then — never a Scrappy that another player fights with. Their bond level matches yours, give or take one.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">Progress</p>
+    <h2>Tickets, XP and bond</h2>
+    <div class="facts">
+      <div class="card"><h3>🎟️ Ranked fights</h3>
+        <p>Each ranked fight uses a ticket and pays XP. Out of tickets? Casual fights run for free — no XP, no leaderboard.</p>
+        <dl class="kv"><dt>Per day</dt><dd>5 tickets, +1 for every extra Scrappy you hold (max 10)</dd><dt>Banked</dt><dd>up to 15</dd><dt>Win</dt><dd>30 XP</dd><dt>Loss</dt><dd>12 XP</dd><dt>Rarer rival</dt><dd>+10 XP</dd></dl></div>
+      <div class="card"><h3>💞 Bond levels</h3>
+        <p>Every Scrappy levels its own bond, up to level 10 — and the bond stays with the NFT. Sell it and the new owner inherits the training.</p>
+        <dl class="kv"><dt>Bond 2</dt><dd>+1 starting energy</dd><dt>Bond 4</dt><dd>+2 max health</dd><dt>Bond 6</dt><dd>Second Wind — heal 3 once, below a quarter health</dd><dt>Bond 8</dt><dd>+2 max health</dd><dt>Bond 10</dt><dd>abilities cost 1 less</dd></dl></div>
+      <div class="card"><h3>📋 Daily quests</h3>
+        <p>Three quests a day for extra trainer XP, for example: win 2 fights (60 XP), land a hit of 8+ (40 XP), use 3 abilities (40 XP), fight 3 times (30 XP).</p></div>
+      <div class="card"><h3>🔥 Streak & trainer level</h3>
+        <p>Your streak counts wins in a row in ranked fights and live arena fights. Casual fights and ghosts don't touch it. Your trainer level rises every 250 XP.</p></div>
+    </div>
+  </section>
+
+  <!-- ===================================================== arena -->
+  <section id="arena">
+    <p class="kicker">Daily arena</p>
+    <h2>Three tournaments a day</h2>
+    <p class="lead">Pick a squad of up to three Scrappys. Each tournament is a knockout: quarter-final, semi-final, final — a loss ends that run. Win all three rounds and you're champion.</p>
+    <div class="facts">
+      <div class="card"><h3>🥊 Live or ghosts</h3>
+        <p>Sign up and you fight every round yourself for full XP. Don't, and your squad enters as ghosts that play for you — half XP. Opponents get tougher each round.</p></div>
+      <div class="card"><h3>🏅 Arena XP</h3>
+        <dl class="kv"><dt>Out in round 1</dt><dd>0 XP</dd><dt>1 win</dt><dd>35 XP</dd><dt>2 wins</dt><dd>60 XP</dd><dt>Champion</dt><dd>100 XP</dd></dl>
+        <p style="margin-top:8px">Shared across the squad. A tournament counts the moment it starts — leaving mid-bracket still uses it up.</p></div>
+    </div>
+  </section>
+
+  <!-- ===================================================== packs -->
+  <section id="packs">
+    <p class="kicker">Packs</p>
+    <h2>Fight for your pack</h2>
+    <p class="lead">Four packs, up to ten members each. A pack is ranked by <b>wins per member</b>, so a small, sharp pack beats a big, lazy one.</p>
+    <div class="facts">
+      <div class="card"><h3>📅 One pack a week</h3>
+        <p>Joining with no pack is instant — and then you're in for the week. Switching or leaving is only queued and happens Monday 00:00 UTC, so nobody hops into the pack that's about to win a bonus.</p></div>
+      <div class="card"><h3>🎁 Weekly bonuses</h3>
+        <dl class="kv"><dt>🦷 Fang</dt><dd>most wins → +1 bite damage</dd><dt>🛡️ Hide</dt><dd>most XP → bites against you hit 1 softer</dd><dt>✨ Spirit</dt><dd>longest streak → +1 starting energy</dd></dl>
+        <p style="margin-top:8px">Bonuses apply to ranked fights for the whole following week.</p></div>
+      <div class="card"><h3>⚖️ No dynasties</h3>
+        <p>One bonus per pack: top two boards and the runner-up inherits the second. Defending a bonus needs +10% over the runner-up, then +20%; after three weeks in a row the holder sits that board out.</p></div>
+      <div class="card"><h3>📊 Everything on the table</h3>
+        <p>Pack cards show totals and per-member numbers: wins, losses, fights, XP and win rate. Every Monday the weekly results show the final pack order and who earned which bonus.</p></div>
+    </div>
+    <div class="tip">💡 <b>Tip:</b> use every ticket and all three tournaments — your wins lift your whole pack's average.</div>
+  </section>
+
+  <!-- ===================================================== faq -->
+  <section id="faq">
+    <p class="kicker">FAQ</p>
+    <h2>Questions</h2>
+    <div class="guide">
+      <details class="card"><summary>Does signing in cost anything or move my NFTs?</summary><div class="body"><p>No. The Xaman sign-in only proves which wallet is yours. There is no transaction, no fee, and nothing leaves your wallet.</p></div></details>
+      <details class="card"><summary>I hold Scrappys but my kennel is empty.</summary><div class="body"><p>Hit ↻ Refresh in the kennel — ownership is read fresh from the ledger. The first load of a big wallet can take a moment while the images come in. If a Scrappy can't be loaded, the kennel says which and why.</p></div></details>
+      <details class="card"><summary>What happens to my progress if I sell a Scrappy?</summary><div class="body"><p>The bond level stays with the NFT, so the new owner inherits the training. Your trainer level and weekly stats stay with you.</p></div></details>
+      <details class="card"><summary>When do things reset?</summary><div class="body"><p>Tickets, quests and arena tournaments: every day at 00:00 UTC. Leaderboard, pack standings and pack moves: every Monday at 00:00 UTC.</p></div></details>
+      <details class="card"><summary>Why do I keep losing when I always bite?</summary><div class="body"><p>Rivals learn your habits. A fixed pattern gets countered — and a guard that blocks your bite snaps back for 2. Vary your moves and watch what the opponent does.</p></div></details>
+      <details class="card"><summary>Can I play without a Pixel Scrappy?</summary><div class="body"><p>Yes, in the demo with sample dogs. Demo fights don't count for the leaderboard or packs.</p></div></details>
+    </div>
+  </section>
+
+  <footer style="margin:56px 0 8px;padding-top:24px;border-top:1px solid var(--line)">
+    <div class="row" style="justify-content:space-between;align-items:flex-start;gap:16px">
+      <div class="row" style="margin:0;gap:14px;flex-wrap:wrap">
+        <a class="btn ghost" href="https://scrappyxrp.fun/">← $SCRAP</a>
+        <a class="btn ghost" href="/pixelscrappy/">Pixel Scrappy</a>
+      </div>
+      <p class="meta" style="margin:0;text-align:right">Website by <a href="https://x.com/rTheRealLehmi" target="_blank" rel="noopener noreferrer">@rTheRealLehmi</a></p>
+    </div>
+  </footer>
+</div>
+<script>
+/* Live leaderboard from the game server's public endpoint. */
+(function(){
+  var API = "https://game.scrappyxrp.fun/api/public/board";
+  var PACKS = {ledger:"⛓️ Ledger Hounds", moon:"🌙 Moon Diggers", bone:"🦴 Bone Collectors", static:"⚡ Static Pack"};
+  var data = null, view = "now";
+  var $ = function(id){ return document.getElementById(id); };
+  var esc = function(t){ return String(t).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };
+  function board(title, rows, sfx){
+    return '<div class="card board"><h3>' + title + '</h3>' + (rows && rows.length
+      ? '<ol>' + rows.map(function(r, i){ return '<li><span class="rk">' + (["🥇","🥈","🥉"][i] || (i + 1) + ".") + '</span><span>' + esc(r.who) + '</span><b>' + r.v + (sfx || "") + '</b></li>'; }).join("") + '</ol>'
+      : '<p class="empty">Nobody on this board yet.</p>') + '</div>';
+  }
+  function packs(rows){
+    rows = (rows || []).map(function(p){ var n = p.members || 0, f = p.wins + (p.losses || 0);
+      return {id:p.id, n:n, w:p.wins, l:p.losses || 0, xp:p.xp, st:p.streak, avg:n ? p.wins / n : 0, rate:f ? Math.round(100 * p.wins / f) + "%" : "—"}; })
+      .sort(function(a, b){ return b.avg - a.avg || b.xp - a.xp; });
+    return '<thead><tr><th>#</th><th>Pack</th><th>Wins / member</th><th>Members</th><th>W–L</th><th>Win rate</th><th>XP</th><th>Best streak</th></tr></thead><tbody>' +
+      rows.map(function(p, i){ return '<tr><td>' + (i + 1) + '</td><td>' + (PACKS[p.id] || esc(p.id)) + '</td><td class="hl">' + p.avg.toFixed(1) + '</td><td>' + p.n + '/10</td><td>' + p.w + '–' + p.l + '</td><td>' + p.rate + '</td><td>' + p.xp + '</td><td>' + p.st + '🔥</td></tr>'; }).join("") + '</tbody>';
+  }
+  function render(){
+    if (!data) return;
+    var d = view === "now" ? data : data.last;
+    $("lbmeta").textContent = (view === "now" ? "Week of " : "Final results · week of ") + d.week + " · " + d.players + " player" + (d.players === 1 ? "" : "s") + (view === "now" ? " · resets Monday 00:00 UTC" : "");
+    $("boards").innerHTML = board("⭐ Most XP", d.xp) + board("🥊 Most wins", d.wins) + board("🔥 Longest streak", d.streak, "🔥");
+    $("ptable").innerHTML = packs(d.packs);
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".lbtabs button"), function(b){
+    b.onclick = function(){
+      view = b.getAttribute("data-wk");
+      Array.prototype.forEach.call(document.querySelectorAll(".lbtabs button"), function(x){ x.setAttribute("aria-selected", x === b); });
+      render();
+    };
+  });
+  function load(){
+    fetch(API, {cache:"no-store"}).then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function(j){ data = j; render(); })
+      .catch(function(){ if (!data) $("lbmeta").textContent = "The leaderboard can't be reached right now — try again in a moment."; });
+  }
+  load(); setInterval(load, 60000);
+})();
+</script>
+</body>
+</html>

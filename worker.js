@@ -347,6 +347,26 @@ async function ladder(env, me, week) {
   const mine = me ? {xp: await st.rank(wk, "xp", me), wins: await st.rank(wk, "wins", me), streak: await st.rank(wk, "streak", me)} : null;
   return json({week:wk, players: await st.count(wk), xp: fmt(x), wins: fmt(w), streak: fmt(s), mine});
 }
+/* Public, read-only standings for the website (scrappyxrp.fun/barkarena/):
+   this week's player boards, packs this week and how last week ended.
+   No sign-in, wallets shortened, cached for a minute. */
+async function publicBoard(env) {
+  const k = "public:board";
+  const c = env.KV ? await env.KV.get(k, "json") : null;
+  if (c) return c;
+  const st = storeOf(env), wk = weekOf(), last = weekOf(new Date(Date.now() - 7 * 864e5));
+  const fmt = rows => rows.map(r => ({who: shortAcct(r.account), v: r.v}));
+  const [x, w, s] = await Promise.all([st.top(wk, "xp"), st.top(wk, "wins"), st.top(wk, "streak")]);
+  const [lx, lw, ls] = await Promise.all([st.top(last, "xp"), st.top(last, "wins"), st.top(last, "streak")]);
+  const out = {
+    week: wk, players: await st.count(wk), xp: fmt(x), wins: fmt(w), streak: fmt(s),
+    packs: await packRows(env, wk),
+    last: {week: last, players: await st.count(last), xp: fmt(lx), wins: fmt(lw), streak: fmt(ls), packs: await packRows(env, last)},
+    updated: new Date().toISOString(),
+  };
+  if (env.KV) await env.KV.put(k, JSON.stringify(out), {expirationTtl: 60});
+  return out;
+}
 async function check(env, account) {
   const rep = {ok:true, config:{
     issuer: env.ISSUER && env.ISSUER.startsWith("r") ? env.ISSUER : "FEHLT",
@@ -414,6 +434,12 @@ export default {
     try {
       const p = url.pathname;
       if (p === "/" ) return withCors(json({ok:true, service:"bark-arena"}), cors);
+      if (p === "/public/board") {
+        const r = json(await publicBoard(env));
+        r.headers.set("access-control-allow-origin", "*");          // any site may show the board
+        r.headers.set("cache-control", "public, max-age=60");
+        return r;
+      }
       if (p === "/check") return withCors(await check(env, url.searchParams.get("account")), cors);
       if (p === "/auth/start" && req.method === "POST") return withCors(await authStart(env), cors);
       if (p === "/auth/status") return withCors(await authStatus(env, url.searchParams.get("uuid") || ""), cors);

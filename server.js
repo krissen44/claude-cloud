@@ -146,7 +146,8 @@ http.createServer(async (req, res) => {
       res.writeHead(302, {"set-cookie": `${ACCESS_COOKIE}=${accessToken}; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax`, location: "/"});
       res.end(); return;
     }
-    if (!hasAccess(req)) {
+    // the public leaderboard stays readable for the website during the private beta
+    if (!hasAccess(req) && !url.pathname.startsWith("/api/public/")) {
       const api = url.pathname === "/api" || url.pathname.startsWith("/api/");
       res.writeHead(api ? 403 : 200, {"content-type": api ? "application/json" : "text/html; charset=utf-8", "cache-control": "no-store"});
       res.end(api ? JSON.stringify({error: "private_beta"}) : SOON); return;
