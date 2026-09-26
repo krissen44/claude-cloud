@@ -215,6 +215,12 @@ button.sm:hover{border-color:var(--accent);color:var(--ink)}
 @media(max-width:560px){.pnl{grid-template-columns:1fr}}
 @media(max-width:560px){.stage{height:270px}.fighter{width:144px}.fighter img{width:144px;height:144px;margin-bottom:-10px}
   .fighter.left{left:0}.fighter.right{right:0}.acts{grid-template-columns:1fr}.hud{width:46%}}
+.recap{position:fixed;inset:0;z-index:50;background:rgba(10,16,28,.62);display:flex;align-items:center;justify-content:center;padding:16px}
+.recap .card{max-width:440px;width:100%;max-height:calc(100vh - 32px);overflow:auto;margin:0}
+.recap h2{font-family:'Press Start 2P',monospace;font-size:12px;margin:2px 0 4px;color:var(--accent);text-align:center}
+.recap .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.recap .stat{border:2px solid var(--panelB);border-radius:8px;padding:8px;text-align:center}
+.recap .stat b{display:block;font-size:18px}
 </style>
 </head>
 <body>
@@ -276,7 +282,9 @@ const SAVE = (() => {
   let KEY = 'ba_save_v1';
   const fresh = () => ({v:1, dogs:{}, trainerXp:0, streak:0, best:0, day:'', quests:[], fights:0,
     tickets:5, pack:null, pending:null, week:'', wk:{wins:0, xp:0, streak:0}, lastWk:{wins:0, xp:0, streak:0},
-    arena:{squad:[], signed:'', best:0, runs:0, last:null}, club:{w:0,l:0,d:0,dog:null}});
+    arena:{squad:[], signed:'', best:0, runs:0, last:null}, club:{w:0,l:0,d:0,dog:null}, today:null});
+  /* What happened today, for the daily recap. */
+  const freshToday = day => ({day, ranked:0, wins:0, losses:0, xp:0, questXp:0, levels:[], arena:null, shown:false});
   let d;
   function load(){
     try { d = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch(e){ d = fresh(); }
@@ -324,6 +332,7 @@ const SAVE = (() => {
       d.tickets = Math.min(BANK_MAX, (d.tickets||0) + dailyGrant());
       d.day = t; rollQuests(); save();
     }
+    if (!d.today || d.today.day !== t){ d.today = freshToday(t); save(); }
   }
   checkDay();
   return {
@@ -347,7 +356,12 @@ const SAVE = (() => {
     arenaUse(){ d.arena.day = today(); save(); },
     clubResult(r){ d.club[r] = (d.club[r]||0) + 1; save(); },
     clubDog(id){ d.club.dog = id; save(); },
-    arenaDone(r){ d.arena.runs++; d.arena.best = Math.max(d.arena.best, r.won); d.arena.last = r; save(); },
+    arenaDone(r){ d.arena.runs++; d.arena.best = Math.max(d.arena.best, r.won); d.arena.last = r;
+      if (d.today) d.today.arena = {won:r.won, xp:r.xp, live:r.live};
+      save(); },
+    // the day is done: every ranked fight used and today's arena fought
+    dayComplete(){ return !!(d.today && d.today.arena && (d.tickets||0) <= 0); },
+    recapShown(){ if (d.today){ d.today.shown = true; save(); } },
     joinPack(id){ if (!d.pack && !d.pending) d.pack = id; else d.pending = id; save(); },
     cancelMove(){ d.pending = null; save(); },
     leavePack(){ d.pack = null; d.pending = null; save(); },
@@ -361,11 +375,17 @@ const SAVE = (() => {
         q.n = Math.min(q.goal, q.n + (n||1));
         if (q.n >= q.goal){ q.got = true; d.trainerXp += q.xp; paid += q.xp; }
       });
+      if (paid && d.today) d.today.questXp += paid;
       if (paid) save();
       return paid;
     },
-    award(id, win, xp, ranked){
+    award(id, win, xp, ranked, fromArena){
       const g = dog(id), out = {xp, levels:[], before:g.lvl};
+      const T = d.today;
+      if (T && ranked){
+        T.xp += xp;
+        if (!fromArena){ T.ranked++; win ? T.wins++ : T.losses++; }
+      }
       if (!ranked) { out.xp = 0; if (win) d.streak++; else d.streak = 0; save(); return out; }
       g.xp += xp; d.trainerXp += Math.round(xp/2); d.fights++;
       d.wk.xp += xp; if (win) d.wk.wins++;
@@ -373,6 +393,7 @@ const SAVE = (() => {
       while (g.lvl < BOND.maxLevel && g.xp >= BOND.need(g.lvl)){
         g.xp -= BOND.need(g.lvl); g.lvl++;
         out.levels.push(g.lvl);
+        if (T) T.levels.push({id, lvl:g.lvl});
       }
       if (win){ d.streak++; d.best = Math.max(d.best, d.streak); d.wk.streak = Math.max(d.wk.streak, d.streak); }
       else d.streak = 0;
@@ -936,7 +957,7 @@ function runGhostArena(){
     won++;
   }
   const xp = Math.round(ARENA_XP[won] / 2);
-  sq.forEach(d => SAVE.award(d.id, won > 0, Math.round(xp / sq.length), true));
+  sq.forEach(d => SAVE.award(d.id, won > 0, Math.round(xp / sq.length), true, true));
   SAVE.arenaDone({won, xp, live:false, lines});
   return {won, xp, lines};
 }
@@ -965,7 +986,7 @@ function arenaAfterFight(win){
   const finished = !win || r.round >= 2;
   if (finished){
     const xp = ARENA_XP[r.won];
-    r.sq.forEach(d => SAVE.award(d.id, r.won > 0, Math.round(xp / r.sq.length), true));
+    r.sq.forEach(d => SAVE.award(d.id, r.won > 0, Math.round(xp / r.sq.length), true, true));
     SAVE.arenaDone({won:r.won, xp, live:true, lines:r.lines});
     r.done = true; r.xp = xp;
   } else r.round++;
@@ -1888,6 +1909,7 @@ function kennelView(){
       <h3>TODAY</h3>
       ${quests || '<p class="mini">No quests today.</p>'}
       <div class="mini" style="margin-top:6px">Resets at midnight UTC. Miss a day and the streak goes.</div>
+      ${SAVE.dayComplete() ? '<button id="recapOpen" class="sm" style="margin-top:8px">📋 Daily recap</button>' : ''}
     </div>
   </div>
   <div class="card">
@@ -2034,6 +2056,50 @@ function clubView(){
   </div>`;
 }
 
+/* ============================ daily recap ============================ */
+/* Pops up once, the moment the last ranked fight and today's arena are both
+   done. It can be reopened from the TODAY panel until midnight UTC. */
+function recapHtml(){
+  const D = SAVE.data, T = D.today, a = T.arena;
+  const arenaTxt = a.won === 3 ? '🏆 Champion' : a.won ? `Out after ${a.won} win${a.won===1?'':'s'}` : 'Out in the quarter-final';
+  const lv = T.levels.map(l => { const f = findDog(l.id); return `<p class="q">⬆️ <span><b>${esc(f ? f.name : 'A Scrappy')}</b> reached Bond ${l.lvl}</span></p>`; }).join('');
+  const qDone = (D.quests||[]).filter(q => q.got).length, qAll = (D.quests||[]).length;
+  let pack = '';
+  if (D.pack){
+    const rows = standings(SAVE.weekOf()).slice().sort((x,y) => y.avgW - x.avgW);
+    const i = rows.findIndex(p => p.id === D.pack);
+    if (i >= 0) pack = `<p class="q">${rows[i].emoji} <span><b>${esc(rows[i].name)}</b> — #${i+1} of ${rows.length} this week (${rows[i].avgW.toFixed(1)} wins per member)</span></p>`;
+  }
+  return `<div class="card" role="dialog" aria-label="Daily recap">
+    <h2>DAY COMPLETE</h2>
+    <p class="mini" style="text-align:center;margin:0">Every ranked fight used and today's arena fought. Nice work.</p>
+    <div class="grid">
+      <div class="stat"><b>${T.wins}–${T.losses}</b><span class="mini">ranked fights W–L</span></div>
+      <div class="stat"><b>+${T.xp + T.questXp}</b><span class="mini">XP today${T.questXp ? ' (' + T.questXp + ' from quests)' : ''}</span></div>
+      <div class="stat"><b>${a.won}/3</b><span class="mini">arena · ${a.live ? 'fought live' : 'ghosts'}</span></div>
+      <div class="stat"><b>🔥 ${D.streak}</b><span class="mini">win streak (best ${D.best})</span></div>
+    </div>
+    <p class="q">🏟️ <span><b>Arena:</b> ${arenaTxt} · +${a.xp} XP</span></p>
+    <p class="q">📋 <span><b>Quests:</b> ${qDone} of ${qAll} done</span></p>
+    <p class="q">🎓 <span><b>Trainer level ${SAVE.trainerLvl()}</b> · ${SAVE.trainerInto()} / 250 XP</span></p>
+    ${pack}${lv}
+    <p class="mini" style="margin:10px 0 0">New tickets and quests at 00:00 UTC — next day in <b>${untilUtcMidnight()}</b>. Casual fights still run in the meantime.</p>
+    <div class="row" style="margin-top:12px"><button id="recapClose">Close</button></div>
+  </div>`;
+}
+function showRecap(){
+  if (document.querySelector('.recap')) return;
+  const el = document.createElement('div'); el.className = 'recap'; el.innerHTML = recapHtml();
+  document.body.appendChild(el);
+  SAVE.recapShown();
+  const close = () => { el.remove(); document.removeEventListener('keydown', esc_); };
+  const esc_ = e => { if (e.key === 'Escape') close(); };
+  el.querySelector('#recapClose').onclick = () => { S.click(); close(); };
+  el.onclick = e => { if (e.target === el) close(); };
+  document.addEventListener('keydown', esc_);
+  if (SAVE.data.today.arena.won === 3 || SAVE.data.today.wins > SAVE.data.today.losses) S.win();
+}
+
 function menu(){
   SAVE.checkDay();
   app.innerHTML = nav() +
@@ -2044,6 +2110,8 @@ function menu(){
 
   app.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { S.unlock(); S.click(); tab = b.dataset.t; menu();
     if (tab === 'packs') loadPacks(); });
+  const rc = document.getElementById('recapOpen'); if (rc) rc.onclick = () => { S.click(); showRecap(); };
+  if (SAVE.dayComplete() && !SAVE.data.today.shown && !WALLET.loading && !needLogin()) showRecap();
   app.querySelectorAll('[data-f]').forEach(b => b.onclick = () => {
     S.unlock(); S.click();
     const me = findDog(b.dataset.f); if (!me) return;
