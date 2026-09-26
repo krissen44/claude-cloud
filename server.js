@@ -112,6 +112,25 @@ const env = {
 
 const GAME = fs.readFileSync(path.join(ROOT, "public", "index.html"));
 
+/* Private beta: with ACCESS_KEY set, the game (page and API) only opens for
+   people who came in once through https://game…/?key=ACCESS_KEY — that visit
+   leaves a cookie for a year. Without ACCESS_KEY the game is public. */
+const ACCESS_KEY = process.env.ACCESS_KEY || "";
+const ACCESS_COOKIE = "ba_access";
+const accessToken = ACCESS_KEY ? crypto.createHmac("sha256", ACCESS_KEY).update("bark-arena-access").digest("hex").slice(0, 32) : "";
+function hasAccess(req) {
+  if (!ACCESS_KEY) return true;
+  const c = String(req.headers.cookie || "").split(/;\s*/).find(x => x.startsWith(ACCESS_COOKIE + "="));
+  return !!c && c.slice(ACCESS_COOKIE.length + 1) === accessToken;
+}
+const SOON = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>Bark Arena — coming soon</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:linear-gradient(180deg,#bfe3fc,#eef4fa);font:16px/1.5 system-ui,sans-serif;color:#0e1726;text-align:center;padding:24px}
+h1{font:900 clamp(32px,8vw,64px)/1 system-ui,sans-serif;color:#1b8ce3;letter-spacing:.04em;margin:0 0 12px;text-shadow:3px 3px 0 #0a4f8f}
+a{color:#0f76c6;font-weight:700}</style></head>
+<body><div><h1>BARK ARENA</h1><p>The Pixel Scrappy game is in private beta.<br>It opens to everyone soon.</p>
+<p><a href="https://scrappyxrp.fun/pixelscrappy/">← Pixel Scrappy</a></p></div></body></html>`;
+
 function readBody(req) {
   return new Promise((ok, fail) => {
     const chunks = []; let n = 0;
@@ -123,6 +142,15 @@ function readBody(req) {
 http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://local");
+    if (ACCESS_KEY && url.searchParams.get("key") === ACCESS_KEY) {
+      res.writeHead(302, {"set-cookie": `${ACCESS_COOKIE}=${accessToken}; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax`, location: "/"});
+      res.end(); return;
+    }
+    if (!hasAccess(req)) {
+      const api = url.pathname === "/api" || url.pathname.startsWith("/api/");
+      res.writeHead(api ? 403 : 200, {"content-type": api ? "application/json" : "text/html; charset=utf-8", "cache-control": "no-store"});
+      res.end(api ? JSON.stringify({error: "private_beta"}) : SOON); return;
+    }
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
       const headers = {};
       for (const h of ["authorization", "content-type", "origin"]) if (req.headers[h]) headers[h] = req.headers[h];

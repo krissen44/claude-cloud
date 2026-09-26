@@ -24,6 +24,7 @@
 <meta name="twitter:description" content="All 126 Pixel Scrappy traits, Legendary to Uncommon, and a theater of every one of the 5,000 dogs.">
 <meta name="twitter:image" content="https://scrappyxrp.fun/pixelscrappy/og.jpg">
 <link rel="preload" href="/assets/fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin>
+<script src="/pixelscrappy/pixel-title.js" defer></script>
 <link rel="preload" href="/assets/fonts/gabarito-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
 @font-face{font-family:"Figtree";font-style:normal;font-display:swap;font-weight:100 900;
@@ -180,6 +181,60 @@ section{margin-top:56px}
 .sheet-traits{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:16px}
 @media(min-width:640px){.sheet-traits{grid-template-columns:repeat(4,1fr)}}
 
+/* ---- Hero opener ----------------------------------------------------- */
+:root{--scrappy:#1b8ce3;--scrappy-deep:#0a4f8f;--scrappy-hi:#8fd0fb}
+.pxhero{
+  position:relative;overflow:hidden;margin-top:6px;border-radius:24px;
+  display:grid;gap:8px;padding:32px 22px 0;
+  background:
+    linear-gradient(transparent 23px,rgb(255 255 255 / 35%) 24px) 0 0/24px 24px,
+    linear-gradient(90deg,transparent 23px,rgb(255 255 255 / 35%) 24px) 0 0/24px 24px,
+    linear-gradient(180deg,#bfe3fc 0%,#e6f4fe 70%,#f4fafe 100%);
+  box-shadow:0 0 0 1px var(--line),0 24px 48px -32px rgb(15 118 198 / 55%);
+}
+@media(min-width:880px){.pxhero{grid-template-columns:1.25fr .75fr;align-items:end;padding:48px 44px 0;gap:24px}}
+.pxhero-in{position:relative;z-index:1;padding-bottom:28px}
+@media(min-width:880px){.pxhero-in{padding-bottom:44px}}
+.pxhero .kicker{color:var(--scrappy-deep)}
+.pxhero .lead{color:#2c3d57}
+.pxhero-cta{margin-top:20px}
+.pxtitle{margin:6px 0 0;line-height:1}
+.px-words{display:flex;flex-wrap:wrap;gap:14px 3.2%}
+.px-words svg{display:block;height:clamp(46px,9.5vw,104px);width:auto;overflow:visible}
+.px-face rect{fill:var(--scrappy)}
+.px-face rect.px-hi{fill:var(--scrappy-hi)}
+.px-shadow rect{fill:var(--scrappy-deep)}
+.px-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.pxtitle:not(.px-ready){font-family:var(--display);color:var(--scrappy);font-size:clamp(40px,8vw,88px)}
+.pxhero-dog{
+  position:relative;z-index:1;justify-self:center;align-self:end;
+  width:min(72vw,320px);padding:0;border:0;background:none;cursor:pointer;
+}
+.pxhero-dog img{width:100%;height:auto;border-radius:18px 18px 0 0;box-shadow:0 0 0 4px #fff,0 18px 40px -18px rgb(10 79 143 / 60%)}
+.pxhero-dog .meta{position:absolute;left:12px;top:10px;padding:3px 8px;border-radius:999px;background:rgb(255 255 255 / 85%);color:var(--scrappy-deep);font-weight:700}
+.pxhero-sky{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.btn.ghost{background:var(--raised);color:var(--fg);box-shadow:0 0 0 1px var(--line);text-decoration:none}
+a.btn{display:inline-block;text-decoration:none}
+@media(max-width:560px){header{flex-wrap:wrap}.nav a{padding:7px 9px;font-size:11px}}
+.pxhero-sky i{position:absolute;display:block;height:14px;background:#fff;opacity:.85;border-radius:2px;
+  box-shadow:14px -14px 0 #fff,28px 0 0 #fff,42px -7px 0 #fff}
+.pxhero-sky i:nth-child(1){top:22px;left:58%;width:42px}
+.pxhero-sky i:nth-child(2){top:92px;left:8%;width:28px;opacity:.6}
+.pxhero-sky i:nth-child(3){top:40px;left:84%;width:34px;opacity:.7}
+@media(prefers-reduced-motion:no-preference){
+  /* the letters roll through a wave while the whole title breathes in Scrappy blue */
+  .px-ch{animation:pxbob 2.6s ease-in-out infinite;animation-delay:calc(var(--i) * -.16s)}
+  @keyframes pxbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-.9px)}}
+  .px-words svg{animation:pxglow 2.6s ease-in-out infinite}
+  @keyframes pxglow{0%,100%{filter:drop-shadow(0 0 0 rgb(27 140 227 / 0))}50%{filter:drop-shadow(0 0 14px rgb(27 140 227 / 55%))}}
+  .pxhero-dog img{animation:pxdog 3.2s ease-in-out infinite}
+  @keyframes pxdog{0%,100%{transform:translateY(6px)}50%{transform:translateY(-4px)}}
+  .pxhero-sky i{animation:pxcloud 38s linear infinite}
+  .pxhero-sky i:nth-child(2){animation-duration:52s;animation-delay:-20s}
+  .pxhero-sky i:nth-child(3){animation-duration:46s;animation-delay:-8s}
+  @keyframes pxcloud{from{transform:translateX(-70vw)}to{transform:translateX(70vw)}}
+}
+
 </style>
 </head>
 <body>
@@ -188,12 +243,30 @@ section{margin-top:56px}
     <a class="brand" href="https://scrappyxrp.fun/">
       <img src="https://scrappyxrp.fun/assets/brand/wordmark-2x.webp" alt="$SCRAP">
     </a>
-    <span class="kicker" style="margin:0">Pixel Scrappy</span>
+    <nav class="nav" aria-label="Site">
+      <a href="https://scrappyxrp.fun/">$SCRAP</a>
+      <a class="on" href="/pixelscrappy/" aria-current="page">Pixel Scrappy</a>
+      <a href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener">xrp.cafe ↗</a>
+    </nav>
   </header>
 
-  <p class="kicker">5,000 Pixel Scrappys coming to the XRPL</p>
-  <h1>Pixel Scrappy Collection</h1>
-  <p class="lead">Twenty hand-composed legendaries. Forty-nine mythics — twenty of them themed sets that the generator could not roll by accident. Then the rest of the 5,000, rarity by rarity.</p>
+  <section class="pxhero" aria-labelledby="pxhero-title">
+    <div class="pxhero-sky" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="pxhero-in">
+      <p class="kicker">5,000 pixel dogs on the XRP Ledger</p>
+      <h1 class="pxtitle" id="pxhero-title" data-px="PIXEL SCRAPPY">Pixel Scrappy</h1>
+      <p class="lead">Twenty hand-composed legendaries. Forty-nine mythics — twenty of them themed sets that the generator could not roll by accident. Then the rest of the 5,000, rarity by rarity.</p>
+      <div class="row pxhero-cta">
+        <a class="btn" href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener">Collect on xrp.cafe</a>
+        <a class="btn ghost" href="#theater">Browse all 5,000</a>
+      </div>
+    </div>
+    <button type="button" class="pxhero-dog" data-id="259" aria-label="Open Pixel Scrappy #259">
+      <img src="/pixelscrappy/nfts/259.png" alt="Pixel Scrappy #259" width="320" height="320" fetchpriority="high"
+        onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src='/pixelscrappy/scrappy-5000/01_bilder/259.png';}">
+      <span class="meta">#259</span>
+    </button>
+  </section>
 
   <section class="mint-mid" id="mint">
     <p class="kicker">Public mint</p>
@@ -315,7 +388,6 @@ section{margin-top:56px}
     <div class="row" style="justify-content:space-between;align-items:flex-start;gap:16px">
       <div class="row" style="margin:0;gap:14px;flex-wrap:wrap">
         <a class="btn ghost" href="https://scrappyxrp.fun/">← $SCRAP</a>
-        <a class="btn ghost" href="/whitelist/">Whitelist</a>
         <a class="btn ghost" href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener noreferrer">xrp.cafe</a>
       </div>
       <p class="meta" style="margin:0;text-align:right">
@@ -389,6 +461,7 @@ $("sheet").onclick = (e) => { if(e.target===$("sheet")) $("sheet").classList.rem
 $("sheet-prev").onclick = (e) => { e.stopPropagation(); inspect(id<=1?SUPPLY:id-1); };
 $("sheet-next").onclick = (e) => { e.stopPropagation(); inspect(id>=SUPPLY?1:id+1); };
 $("hero").onclick = () => inspect(id);
+document.querySelector(".pxhero-dog").onclick = (e) => inspect(+e.currentTarget.dataset.id);
 $("rarity-counts").innerHTML = RARITIES.map(r => '<a href="#rarity-'+r.id.toLowerCase()+'" class="stat"><span class="chip '+RCLS[r.id]+'">'+r.id+'</span><b>'+r.count.toLocaleString("en-US")+'</b></a>').join("");
 $("legendaries").innerHTML = LEGENDARIES.map(p => '<button type="button" class="tcard" data-id="'+p.id+'">'+imgTag(p.id)+'<div class="p"><p class="meta">#'+p.id+'</p><h3>'+p.name+'</h3></div></button>').join("");
 $("legendaries").onclick = (e) => { const b=e.target.closest("button"); if(b) openNft(+b.dataset.id); };
