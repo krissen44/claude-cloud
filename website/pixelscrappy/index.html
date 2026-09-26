@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel Scrappy — 5,000 collection</title>
+<meta name="description" content="All 126 Pixel Scrappy traits, Legendary to Uncommon, and a theater of every one of the 5,000 dogs.">
+<link rel="canonical" href="https://scrappyxrp.fun/pixelscrappy/">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<meta name="theme-color" content="#0f76c6">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="$SCRAP">
+<meta property="og:locale" content="en">
+<meta property="og:url" content="https://scrappyxrp.fun/pixelscrappy/">
+<meta property="og:title" content="Pixel Scrappy — 5,000 on the XRPL">
+<meta property="og:description" content="All 126 Pixel Scrappy traits, Legendary to Uncommon, and a theater of every one of the 5,000 dogs.">
+<meta property="og:image" content="https://scrappyxrp.fun/pixelscrappy/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Pixel Scrappy — 5,000 pixel dogs on the XRP Ledger">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@scrappyxrp">
+<meta name="twitter:title" content="Pixel Scrappy — 5,000 on the XRPL">
+<meta name="twitter:description" content="All 126 Pixel Scrappy traits, Legendary to Uncommon, and a theater of every one of the 5,000 dogs.">
+<meta name="twitter:image" content="https://scrappyxrp.fun/pixelscrappy/og.jpg">
+<link rel="preload" href="/assets/fonts/figtree-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/gabarito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:"Figtree";font-style:normal;font-display:swap;font-weight:100 900;
+  src:url(/assets/fonts/figtree-latin-ext.woff2) format("woff2");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:"Figtree";font-style:normal;font-display:swap;font-weight:100 900;
+  src:url(/assets/fonts/figtree-latin.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Gabarito";font-style:normal;font-display:swap;font-weight:400 900;
+  src:url(/assets/fonts/gabarito-latin.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-display:swap;font-weight:100 800;
+  src:url(/assets/fonts/jetbrains-mono-latin.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+</style>
+<style>
+:root{
+  --bg:#eef4fa; --surface:#fff; --raised:#f7fafd; --fg:#0e1726;
+  --muted:#40506a; --subtle:#586780; --accent:#0f76c6; --accent-fg:#fff;
+  --sky:#d6ebfb; --line:#d2e0ee;
+  --sans:"Figtree",ui-sans-serif,system-ui,sans-serif;
+  --display:"Gabarito",ui-sans-serif,system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg)}
+body{
+  font:16px/1.55 var(--sans);
+  background-image:linear-gradient(180deg,#eef4fa 0%,#e4eef8 100%);
+  background-attachment:fixed;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+img{image-rendering:pixelated;display:block;max-width:100%}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px 72px}
+header{
+  position:sticky;top:0;z-index:20;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:16px 0;background:color-mix(in srgb,var(--bg) 90%,transparent);
+  backdrop-filter:blur(12px);
+}
+.brand{display:flex;align-items:center;gap:10px;color:var(--fg);font-weight:800;font-family:var(--display);text-decoration:none}
+.brand img{height:28px;width:auto;image-rendering:auto}
+.tcard,.pack button,.rarity-counts a,.rest .card{
+  cursor:pointer;
+  border-radius:16px;
+  transition:transform .15s ease, box-shadow .15s ease;
+}
+.tcard:hover,.pack button:hover,.rarity-counts a:hover{
+  transform:translateY(-4px);
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 55%,transparent),0 14px 28px -18px rgb(14 23 38 / 35%);
+  text-decoration:none;
+}
+.tcard{padding:8px 8px 0;overflow:hidden}
+.tcard img,.pack img,.stage img,.sheet-card img{
+  border-radius:10px;
+  object-fit:cover;
+}
+.stage .iconbtn{
+  position:absolute;top:50%;width:36px;height:36px;border-radius:999px;z-index:2;
+  background:var(--surface);box-shadow:0 0 0 1px var(--line);
+}
+.stage #prev,.sheet .stage #sheet-prev{left:8px;right:auto;transform:translateY(-50%)}
+.stage #next,.sheet .stage #sheet-next{right:8px;left:auto;transform:translateY(-50%)}
+.nav{display:flex;gap:6px;flex-wrap:wrap}
+.nav a{
+  padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-decoration:none;
+}
+.nav a:hover{background:var(--raised);color:var(--fg);text-decoration:none}
+.nav a.on{background:var(--accent);color:var(--accent-fg)}
+.kicker{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:0 0 10px}
+h1,h2{font-family:var(--display);letter-spacing:-.03em;margin:0}
+h1{font-size:clamp(32px,5vw,48px);line-height:1.08}
+h2{font-size:clamp(24px,3vw,32px)}
+.lead{margin:16px 0 0;max-width:36rem;color:var(--muted)}
+.hero{display:grid;gap:28px;padding-top:8px}
+@media(min-width:960px){.hero{grid-template-columns:1.1fr .9fr;gap:48px;padding-top:16px}}
+.stats{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+.stat{background:var(--surface);border-radius:12px;padding:12px 16px;box-shadow:0 0 0 1px var(--line)}
+.stat b{display:block;font-family:var(--display);font-size:22px}
+.stat span{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--subtle)}
+.card{background:var(--surface);border-radius:16px;padding:16px;box-shadow:0 0 0 1px var(--line),0 12px 28px -18px rgb(14 23 38 / 22%)}
+.stage{position:relative;width:min(100%,320px);aspect-ratio:1;margin:12px auto 0}
+.stage img{width:100%;height:100%;object-fit:cover;object-position:center;background:var(--sky);border-radius:12px;display:block}
+.strip{display:flex;gap:6px;overflow:auto;padding:4px 0;margin-top:10px;justify-content:center}
+.card#theater{max-width:420px;margin:0 auto;padding:14px}
+.iconbtn{
+  width:44px;height:44px;border:0;border-radius:10px;cursor:pointer;
+  background:var(--raised);color:var(--fg);font-size:20px;flex-shrink:0;
+}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+button.btn, .btn{
+  border:0;border-radius:10px;padding:11px 14px;cursor:pointer;
+  background:var(--accent);color:var(--accent-fg);font:700 14px var(--sans);
+}
+button.ghost{background:var(--raised);color:var(--fg);box-shadow:0 0 0 1px var(--line)}
+input[type=range]{width:100%;margin-top:12px;accent-color:var(--accent)}
+input[type=number], input[type=text]{
+  flex:1;min-width:100px;padding:11px 12px;border-radius:10px;
+  border:1px solid var(--line);font:14px var(--mono);background:var(--surface);color:var(--fg);
+}
+.strip button{padding:0;border:0;background:none;cursor:pointer;border-radius:8px;overflow:hidden;flex:0 0 auto}
+.strip img{width:44px;height:44px;object-fit:contain;background:var(--sky)}
+.strip .on{outline:2px solid var(--accent);outline-offset:1px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.chip{
+  border:0;border-radius:999px;padding:7px 12px;cursor:pointer;
+  font:700 11px var(--sans);letter-spacing:.05em;text-transform:uppercase;
+}
+.chip.on{box-shadow:0 0 0 2px var(--accent)}
+.L{background:#f3e6b8;color:#7a5b12}
+.M{background:var(--sky);color:var(--accent)}
+.E{background:var(--raised);color:var(--fg)}
+.R{background:var(--surface);color:var(--muted);box-shadow:0 0 0 1px var(--line)}
+.U{background:var(--bg);color:var(--subtle);box-shadow:0 0 0 1px var(--line)}
+.A{background:var(--fg);color:var(--accent-fg)}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(min-width:560px){.grid{grid-template-columns:repeat(3,1fr)}}
+@media(min-width:800px){.grid{grid-template-columns:repeat(4,1fr)}}
+@media(min-width:1000px){.grid.five{grid-template-columns:repeat(5,1fr)}}
+.tcard{background:var(--surface);border-radius:12px;overflow:hidden;box-shadow:0 0 0 1px var(--line)}
+.tcard img{width:100%;aspect-ratio:1;object-fit:contain;background:var(--sky)}
+.tcard .p{padding:10px 12px 14px}
+.tcard h3{margin:2px 0 6px;font-family:var(--display);font-size:16px;line-height:1.15}
+.meta{font:11px var(--mono);color:var(--subtle)}
+.pack{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+@media(min-width:640px){.pack{grid-template-columns:repeat(6,1fr)}}
+@media(min-width:900px){.pack{grid-template-columns:repeat(10,1fr)}}
+.pack button{padding:0;border:0;background:var(--surface);border-radius:8px;overflow:hidden;cursor:pointer;box-shadow:0 0 0 1px var(--line)}
+.pack img{width:100%;aspect-ratio:1;object-fit:contain;background:var(--sky)}
+.pack span{display:block;text-align:center;font:10px var(--mono);color:var(--subtle);padding:4px 0}
+
+.bar{display:flex;height:16px;border-radius:999px;overflow:hidden;margin-top:16px;box-shadow:0 0 0 1px var(--line)}
+.bar i{display:block;min-width:8px}
+.bar .L{background:#c9a227}
+.bar .M{background:var(--accent)}
+.bar .E{background:#4fb3f5}
+.bar .R{background:#b7c9dc}
+.bar .U{background:var(--line)}
+.bar .C{background:var(--raised)}
+.rarity-counts,.rest{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:16px}
+@media(min-width:800px){.rarity-counts{grid-template-columns:repeat(6,1fr)}.rest{grid-template-columns:repeat(4,1fr)}}
+.Cchip{background:#d2e0ee;color:var(--subtle)}
+
+
+.mint-mid{margin:36px auto 8px;max-width:720px;text-align:center}
+.mint-mid .kicker{margin-bottom:8px}
+.mint-mid h2{margin:0 0 10px}
+.mint-mid .lead{margin:0 auto 18px}
+.mint-widget{display:flex;justify-content:center;width:100%}
+section{margin-top:56px}
+.sheet{position:fixed;inset:0;z-index:40;background:rgba(14,23,38,.35);display:none;align-items:flex-end;justify-content:center;padding:12px}
+.sheet.open{display:flex}
+.sheet-card{background:var(--surface);border-radius:16px 16px 0 0;max-height:92dvh;overflow:auto;width:min(100%,640px);padding:20px 20px 28px;box-shadow:0 0 0 1px var(--line)}
+@media(min-width:640px){.sheet{align-items:center}.sheet-card{border-radius:16px}}
+.sheet-traits{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:16px}
+@media(min-width:640px){.sheet-traits{grid-template-columns:repeat(4,1fr)}}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="brand" href="https://scrappyxrp.fun/">
+      <img src="https://scrappyxrp.fun/assets/brand/wordmark-2x.webp" alt="$SCRAP">
+    </a>
+    <span class="kicker" style="margin:0">Pixel Scrappy</span>
+  </header>
+
+  <p class="kicker">5,000 Pixel Scrappys coming to the XRPL</p>
+  <h1>Pixel Scrappy Collection</h1>
+  <p class="lead">Twenty hand-composed legendaries. Forty-nine mythics — twenty of them themed sets that the generator could not roll by accident. Then the rest of the 5,000, rarity by rarity.</p>
+
+  <section class="mint-mid" id="mint">
+    <p class="kicker">Public mint</p>
+    <h2>Mint</h2>
+    <p class="lead">Public mint is live. Connect your wallet and mint your Pixel Scrappy.</p>
+    <div class="mint-widget">
+      <script src="https://xrp.cafe/embed/mint.js"
+              data-vanity="pixel-scrappy"
+              data-theme="dark"
+              data-width="100%"
+              data-max-width="460px"
+              async></script>
+    </div>
+    <p class="lead" style="margin-top:14px">
+      <a href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener">Open mint on xrp.cafe →</a>
+    </p>
+  </section>
+
+  <section>
+    <p class="kicker">Rarity</p>
+    <h2>6 different rarity types</h2>
+    <div class="bar" aria-hidden="true">
+      <i class="L" style="flex:20"></i><i class="M" style="flex:49"></i><i class="E" style="flex:200"></i><i class="R" style="flex:498"></i><i class="U" style="flex:1245"></i><i class="C" style="flex:2988"></i>
+    </div>
+    <div class="rarity-counts" id="rarity-counts"></div>
+  </section>
+
+  <section id="rarity-legendary">
+    <p class="kicker">Legendary · 20</p>
+    <h2>20 1/1 custom-designed Pixel Scrappys</h2>
+    <p class="lead">Full-body pieces in the collection format. Each legendary is its own script — not a generator output.</p>
+    <div class="grid five" id="legendaries"></div>
+  </section>
+
+  <section id="rarity-mythic">
+    <p class="kicker">Mythic · 49</p>
+    <h2>Mythic Pixel Scrappys with wild trait combos</h2>
+    <p class="lead">20 of the 49 Mythic Scrappys have some very interesting trait combinations.</p>
+    <div id="mythics"></div>
+    <p class="meta" style="margin-top:16px">29 other mythics are independent rolls — not a set.</p>
+  </section>
+
+  <section>
+    <div class="rest" id="rest"></div>
+  </section>
+
+  <section>
+    <p class="kicker">Theater</p>
+    <h2>All 5,000 Pixel Scrappys</h2>
+    <p class="lead">Every Pixel Scrappy, in order. Play, shuffle, or jump.</p>
+    <div class="card" id="theater">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+        <p class="kicker" style="margin:0">Collection theater</p>
+        <p class="meta" id="num"></p>
+      </div>
+      <div class="stage">
+        <button class="iconbtn" id="prev" aria-label="Previous">‹</button>
+        <img id="hero" alt="Pixel Scrappy">
+        <button class="iconbtn" id="next" aria-label="Next">›</button>
+      </div>
+      <input type="range" id="slider" min="1" max="5000" value="1">
+      <div class="strip" id="strip"></div>
+      <div class="row">
+        <button class="btn" id="play">Pause</button>
+        <button class="btn ghost" id="shuffle">Shuffle</button>
+        <input type="number" id="jump" min="1" max="5000" placeholder="Jump to #">
+        <button class="btn ghost" id="go">Go</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">Hunt pieces</p>
+    <h2>Capped. Counted. Worth chasing.</h2>
+    <p class="lead">Twenty-three traits were allotted, not rolled. Golden Bone lands on four dogs. Royal Crown on seven. Fire Aura on twelve.</p>
+    <div class="grid" id="hunt"></div>
+  </section>
+
+
+  <section id="build">
+    <p class="kicker">How a Scrappy is made</p>
+    <h2>Rolled, trait by trait</h2>
+    <p class="lead">Every generated Scrappy is a roll across eight layers. Here is one coming together.</p>
+    <div class="buildgrid">
+      <div class="buildstage">
+        <img id="build-final" alt="" width="512" height="512">
+        <p class="meta" id="build-badge"></p>
+      </div>
+      <ol class="buildlist" id="build-list"></ol>
+    </div>
+    <div class="row">
+      <button class="btn" id="build-roll">Roll another</button>
+      <button class="btn ghost" id="build-open">Open this one</button>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">Trait encyclopedia</p>
+    <h2>Legendary down to uncommon</h2>
+    <div class="chips" id="tiers"></div>
+    <div class="chips" id="layers"></div>
+    <div class="grid five" id="traits"></div>
+  </section>
+
+  <section>
+    <p class="kicker">All 5,000</p>
+    <h2>Browse the Scrappys</h2>
+    <p class="lead">All Pixel Scrappys to click through.</p>
+    <div class="pack" id="pack"></div>
+    <div class="row" style="justify-content:space-between;margin-top:16px">
+      <p class="meta" id="packlab"></p>
+      <div class="row" style="margin:0">
+        <button class="btn ghost" id="packprev">Previous pack</button>
+        <button class="btn ghost" id="packnext">Next pack</button>
+      </div>
+    </div>
+  </section>
+  <footer style="margin:56px 0 8px;padding-top:24px;border-top:1px solid var(--line)">
+    <div class="row" style="justify-content:space-between;align-items:flex-start;gap:16px">
+      <div class="row" style="margin:0;gap:14px;flex-wrap:wrap">
+        <a class="btn ghost" href="https://scrappyxrp.fun/">← $SCRAP</a>
+        <a class="btn ghost" href="/whitelist/">Whitelist</a>
+        <a class="btn ghost" href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener noreferrer">xrp.cafe</a>
+      </div>
+      <p class="meta" style="margin:0;text-align:right">
+        Website by <a href="https://x.com/rTheRealLehmi" target="_blank" rel="noopener noreferrer">@rTheRealLehmi</a>
+      </p>
+    </div>
+    <p class="meta" style="margin-top:18px;max-width:70ch">
+      Pixel Scrappy is a community NFT collection with no company behind it and no promise of return.
+      Mint and trade at your own risk, always check the collection address before you buy, and never
+      spend more than you are willing to lose entirely. Nothing here is financial advice.
+    </p>
+  </footer>
+</div>
+<div class="sheet" id="sheet">
+  <div class="sheet-card">
+    <div class="row" style="justify-content:space-between;margin:0 0 8px">
+      <p class="meta" id="sheet-num"></p>
+      <button class="btn ghost" id="sheet-close">Close</button>
+    </div>
+    <h2 id="sheet-name"></h2>
+    <p class="lead" id="sheet-rarity" style="margin-top:6px"></p>
+    <div class="stage" style="width:min(100%,280px)">
+      <button class="iconbtn" id="sheet-prev" aria-label="Previous">‹</button>
+      <img id="sheet-img" alt="">
+      <button class="iconbtn" id="sheet-next" aria-label="Next">›</button>
+    </div>
+    <div class="sheet-traits" id="sheet-traits"></div>
+  </div>
+</div>
+<script>
+const CATALOG = {"supply":5000,"layers":[{"id":"Background","dir":"01_background","optional":false},{"id":"Ground Item","dir":"02_ground-item","optional":true},{"id":"Fur","dir":"03_fur","optional":false},{"id":"Neckwear","dir":"06_neckwear","optional":true},{"id":"Eyes","dir":"07_eyes","optional":false},{"id":"Muzzle","dir":"08_muzzle","optional":false},{"id":"Headwear","dir":"09_headwear","optional":true},{"id":"Overlay","dir":"11_overlay","optional":true}],"tiers":["Legendary","Mythic","Epic","Rare","Uncommon"],"traits":[{"layer":"Background","name":"Bone Pattern","slug":"bone-pattern","file":"/pixelscrappy/traits/01_background/bone-pattern.png","count":156,"pct":3.12,"tier":"Epic","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Cream","slug":"cream","file":"/pixelscrappy/traits/01_background/cream.png","count":476,"pct":9.52,"tier":"Rare","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Deep Blue","slug":"deep-blue","file":"/pixelscrappy/traits/01_background/deep-blue.png","count":214,"pct":4.28,"tier":"Epic","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Gold Radial","slug":"gold-radial","file":"/pixelscrappy/traits/01_background/gold-radial.png","count":53,"pct":1.06,"tier":"Legendary","allotted":true,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Lavender","slug":"lavender","file":"/pixelscrappy/traits/01_background/lavender.png","count":437,"pct":8.74,"tier":"Rare","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Mint","slug":"mint","file":"/pixelscrappy/traits/01_background/mint.png","count":490,"pct":9.8,"tier":"Rare","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Moon","slug":"moon","file":"/pixelscrappy/traits/01_background/moon.png","count":99,"pct":1.98,"tier":"Legendary","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Night Sky","slug":"night-sky","file":"/pixelscrappy/traits/01_background/night-sky.png","count":92,"pct":1.84,"tier":"Legendary","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Paw Print Pattern","slug":"paw-print-pattern","file":"/pixelscrappy/traits/01_background/paw-print-pattern.png","count":170,"pct":3.4,"tier":"Epic","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Peach","slug":"peach","file":"/pixelscrappy/traits/01_background/peach.png","count":415,"pct":8.3,"tier":"Rare","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Sage","slug":"sage","file":"/pixelscrappy/traits/01_background/sage.png","count":334,"pct":6.68,"tier":"Rare","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Sand","slug":"sand","file":"/pixelscrappy/traits/01_background/sand.png","count":333,"pct":6.66,"tier":"Rare","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Sky Blue","slug":"sky-blue","file":"/pixelscrappy/traits/01_background/sky-blue.png","count":569,"pct":11.38,"tier":"Rare","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Slate","slug":"slate","file":"/pixelscrappy/traits/01_background/slate.png","count":315,"pct":6.3,"tier":"Rare","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Soft Pink","slug":"soft-pink","file":"/pixelscrappy/traits/01_background/soft-pink.png","count":528,"pct":10.56,"tier":"Rare","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Sunset","slug":"sunset","file":"/pixelscrappy/traits/01_background/sunset.png","count":217,"pct":4.34,"tier":"Epic","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Background","name":"Xrpl Grid","slug":"xrpl-grid","file":"/pixelscrappy/traits/01_background/xrpl-grid.png","count":82,"pct":1.64,"tier":"Legendary","allotted":false,"optional":false,"layerDir":"01_background"},{"layer":"Ground Item","name":"Banana","slug":"banana","file":"/pixelscrappy/traits/02_ground-item/banana.png","count":110,"pct":2.2,"tier":"Legendary","allotted":false,"optional":true,"layerDir":"02_ground-item"},{"layer":"Ground Item","name":"Bone","slug":"bone","file":"/pixelscrappy/traits/02_ground-item/bone.png","count":226,"pct":4.52,"tier":"Epic","allotted":false,"optional":true,"layerDir":"02_ground-item"},{"layer":"Ground Item","name":"Cake","slug":"cake","file":"/pixelscrappy/traits/02_ground-item/cake.png","count":45,"pct":0.9,"tier":"Mythic","allotted":false,"optional":true,"layerDir":"02_ground-item"},{"layer":"Ground Item","name":"Food Bowl","slug":"food-bowl","file":"/pixelscrappy/traits/02_ground-item/food-bowl.png","count":158,"pct":3.16,"tier":"Epic","allotted":false,"optional":true,"layerDir":"02_ground-item"},{"layer":"Ground Item","name":"Stick","slug":"stick","file":"/pixelscrappy/traits/02_ground-item/stick.png","count":148,"pct":2.96,"tier":"Legendary","allotted":false,"optional":true,"layerDir":"02_ground-item"},{"layer":"Ground Item","name":"Tennis Ball","slug":"tennis-ball","file":"/pixelscrappy/traits/02_ground-item/tennis-ball.png","count":273,"pct":5.46,"tier":"Epic","allotted":false,"optional":true,"layerDir":"02_ground-item"},{"layer":"Ground Item","name":"Trophy","slug":"trophy","file":"/pixelscrappy/traits/02_ground-item/trophy.png","count":38,"pct":0.76,"tier":"Mythic","allotted":true,"optional":true,"layerDir":"02_ground-item"},{"layer":"Ground Item","name":"Xrp Coins","slug":"xrp-coins","file":"/pixelscrappy/traits/02_ground-item/xrp-coins.png","count":94,"pct":1.88,"tier":"Legendary","allotted":false,"optional":true,"layerDir":"02_ground-item"},{"layer":"Fur","name":"Alien","slug":"alien","file":"/pixelscrappy/traits/03_fur/alien.png","count":13,"pct":0.26,"tier":"Mythic","allotted":true,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Bear","slug":"bear","file":"/pixelscrappy/traits/03_fur/bear.png","count":151,"pct":3.02,"tier":"Epic","allotted":false,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Black","slug":"black","file":"/pixelscrappy/traits/03_fur/black.png","count":294,"pct":5.88,"tier":"Epic","allotted":false,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Brown","slug":"brown","file":"/pixelscrappy/traits/03_fur/brown.png","count":375,"pct":7.5,"tier":"Rare","allotted":false,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Camouflage","slug":"camouflage","file":"/pixelscrappy/traits/03_fur/camouflage.png","count":87,"pct":1.74,"tier":"Legendary","allotted":false,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Cream","slug":"cream","file":"/pixelscrappy/traits/03_fur/cream.png","count":1123,"pct":22.46,"tier":"Uncommon","allotted":false,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Diamond","slug":"diamond","file":"/pixelscrappy/traits/03_fur/diamond.png","count":7,"pct":0.14,"tier":"Mythic","allotted":true,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Ghost White","slug":"ghost-white","file":"/pixelscrappy/traits/03_fur/ghost-white.png","count":52,"pct":1.04,"tier":"Legendary","allotted":true,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Gold","slug":"gold","file":"/pixelscrappy/traits/03_fur/gold.png","count":7,"pct":0.14,"tier":"Mythic","allotted":true,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Golden","slug":"golden","file":"/pixelscrappy/traits/03_fur/golden.png","count":664,"pct":13.28,"tier":"Uncommon","allotted":false,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Grey","slug":"grey","file":"/pixelscrappy/traits/03_fur/grey.png","count":405,"pct":8.1,"tier":"Rare","allotted":false,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Patched","slug":"patched","file":"/pixelscrappy/traits/03_fur/patched.png","count":154,"pct":3.08,"tier":"Epic","allotted":false,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Spotted","slug":"spotted","file":"/pixelscrappy/traits/03_fur/spotted.png","count":227,"pct":4.54,"tier":"Epic","allotted":false,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Tan","slug":"tan","file":"/pixelscrappy/traits/03_fur/tan.png","count":497,"pct":9.94,"tier":"Rare","allotted":false,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"White","slug":"white","file":"/pixelscrappy/traits/03_fur/white.png","count":902,"pct":18.04,"tier":"Uncommon","allotted":false,"optional":false,"layerDir":"03_fur"},{"layer":"Fur","name":"Zombie","slug":"zombie","file":"/pixelscrappy/traits/03_fur/zombie.png","count":22,"pct":0.44,"tier":"Mythic","allotted":true,"optional":false,"layerDir":"03_fur"},{"layer":"Neckwear","name":"Bandana","slug":"bandana","file":"/pixelscrappy/traits/06_neckwear/bandana.png","count":482,"pct":9.64,"tier":"Rare","allotted":false,"optional":true,"layerDir":"06_neckwear"},{"layer":"Neckwear","name":"Bow Tie","slug":"bow-tie","file":"/pixelscrappy/traits/06_neckwear/bow-tie.png","count":428,"pct":8.56,"tier":"Rare","allotted":false,"optional":true,"layerDir":"06_neckwear"},{"layer":"Neckwear","name":"Chain Gold","slug":"chain-gold","file":"/pixelscrappy/traits/06_neckwear/chain-gold.png","count":64,"pct":1.28,"tier":"Legendary","allotted":true,"optional":true,"layerDir":"06_neckwear"},{"layer":"Neckwear","name":"Chain Silver","slug":"chain-silver","file":"/pixelscrappy/traits/06_neckwear/chain-silver.png","count":144,"pct":2.88,"tier":"Legendary","allotted":false,"optional":true,"layerDir":"06_neckwear"},{"layer":"Neckwear","name":"Collar Blue","slug":"collar-blue","file":"/pixelscrappy/traits/06_neckwear/collar-blue.png","count":555,"pct":11.1,"tier":"Rare","allotted":false,"optional":true,"layerDir":"06_neckwear"},{"layer":"Neckwear","name":"Collar Green","slug":"collar-green","file":"/pixelscrappy/traits/06_neckwear/collar-green.png","count":451,"pct":9.02,"tier":"Rare","allotted":false,"optional":true,"layerDir":"06_neckwear"},{"layer":"Neckwear","name":"Collar Red","slug":"collar-red","file":"/pixelscrappy/traits/06_neckwear/collar-red.png","count":600,"pct":12.0,"tier":"Rare","allotted":false,"optional":true,"layerDir":"06_neckwear"},{"layer":"Neckwear","name":"Collar Spiked","slug":"collar-spiked","file":"/pixelscrappy/traits/06_neckwear/collar-spiked.png","count":374,"pct":7.48,"tier":"Rare","allotted":false,"optional":true,"layerDir":"06_neckwear"},{"layer":"Neckwear","name":"Dog Tag","slug":"dog-tag","file":"/pixelscrappy/traits/06_neckwear/dog-tag.png","count":419,"pct":8.38,"tier":"Rare","allotted":false,"optional":true,"layerDir":"06_neckwear"},{"layer":"Neckwear","name":"Flower Collar","slug":"flower-collar","file":"/pixelscrappy/traits/06_neckwear/flower-collar.png","count":135,"pct":2.7,"tier":"Legendary","allotted":false,"optional":true,"layerDir":"06_neckwear"},{"layer":"Neckwear","name":"Scarf","slug":"scarf","file":"/pixelscrappy/traits/06_neckwear/scarf.png","count":285,"pct":5.7,"tier":"Epic","allotted":false,"optional":true,"layerDir":"06_neckwear"},{"layer":"Eyes","name":"3d Glasses","slug":"3d-glasses","file":"/pixelscrappy/traits/07_eyes/3d-glasses.png","count":83,"pct":1.66,"tier":"Legendary","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Classic","slug":"classic","file":"/pixelscrappy/traits/07_eyes/classic.png","count":919,"pct":18.38,"tier":"Uncommon","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Coder Glasses","slug":"coder-glasses","file":"/pixelscrappy/traits/07_eyes/coder-glasses.png","count":150,"pct":3.0,"tier":"Legendary","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Crying","slug":"crying","file":"/pixelscrappy/traits/07_eyes/crying.png","count":90,"pct":1.8,"tier":"Legendary","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Dollar Eyes","slug":"dollar-eyes","file":"/pixelscrappy/traits/07_eyes/dollar-eyes.png","count":41,"pct":0.82,"tier":"Mythic","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Glowing","slug":"glowing","file":"/pixelscrappy/traits/07_eyes/glowing.png","count":15,"pct":0.3,"tier":"Mythic","allotted":true,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Happy Closed","slug":"happy-closed","file":"/pixelscrappy/traits/07_eyes/happy-closed.png","count":574,"pct":11.48,"tier":"Rare","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Heart Eyes","slug":"heart-eyes","file":"/pixelscrappy/traits/07_eyes/heart-eyes.png","count":78,"pct":1.56,"tier":"Legendary","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Laser Green","slug":"laser-green","file":"/pixelscrappy/traits/07_eyes/laser-green.png","count":7,"pct":0.14,"tier":"Mythic","allotted":true,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Laser Red","slug":"laser-red","file":"/pixelscrappy/traits/07_eyes/laser-red.png","count":9,"pct":0.18,"tier":"Mythic","allotted":true,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Laser Yellow","slug":"laser-yellow","file":"/pixelscrappy/traits/07_eyes/laser-yellow.png","count":8,"pct":0.16,"tier":"Mythic","allotted":true,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Matrix Glasses","slug":"matrix-glasses","file":"/pixelscrappy/traits/07_eyes/matrix-glasses.png","count":55,"pct":1.1,"tier":"Legendary","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Puppy Eyes","slug":"puppy-eyes","file":"/pixelscrappy/traits/07_eyes/puppy-eyes.png","count":361,"pct":7.22,"tier":"Rare","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Round Glasses","slug":"round-glasses","file":"/pixelscrappy/traits/07_eyes/round-glasses.png","count":185,"pct":3.7,"tier":"Epic","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Side Eye","slug":"side-eye","file":"/pixelscrappy/traits/07_eyes/side-eye.png","count":560,"pct":11.2,"tier":"Rare","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Ski Goggles","slug":"ski-goggles","file":"/pixelscrappy/traits/07_eyes/ski-goggles.png","count":157,"pct":3.14,"tier":"Epic","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Sleepy","slug":"sleepy","file":"/pixelscrappy/traits/07_eyes/sleepy.png","count":422,"pct":8.44,"tier":"Rare","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Sunglasses","slug":"sunglasses","file":"/pixelscrappy/traits/07_eyes/sunglasses.png","count":220,"pct":4.4,"tier":"Epic","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Suspicious","slug":"suspicious","file":"/pixelscrappy/traits/07_eyes/suspicious.png","count":265,"pct":5.3,"tier":"Epic","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Third Eye","slug":"third-eye","file":"/pixelscrappy/traits/07_eyes/third-eye.png","count":12,"pct":0.24,"tier":"Mythic","allotted":true,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Wide","slug":"wide","file":"/pixelscrappy/traits/07_eyes/wide.png","count":405,"pct":8.1,"tier":"Rare","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Wink","slug":"wink","file":"/pixelscrappy/traits/07_eyes/wink.png","count":294,"pct":5.88,"tier":"Epic","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Eyes","name":"Zombie Eyes","slug":"zombie-eyes","file":"/pixelscrappy/traits/07_eyes/zombie-eyes.png","count":70,"pct":1.4,"tier":"Legendary","allotted":false,"optional":false,"layerDir":"07_eyes"},{"layer":"Muzzle","name":"Ball In Mouth","slug":"ball-in-mouth","file":"/pixelscrappy/traits/08_muzzle/ball-in-mouth.png","count":222,"pct":4.44,"tier":"Epic","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Bone In Mouth","slug":"bone-in-mouth","file":"/pixelscrappy/traits/08_muzzle/bone-in-mouth.png","count":318,"pct":6.36,"tier":"Rare","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Boop","slug":"boop","file":"/pixelscrappy/traits/08_muzzle/boop.png","count":405,"pct":8.1,"tier":"Rare","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Cigarette","slug":"cigarette","file":"/pixelscrappy/traits/08_muzzle/cigarette.png","count":65,"pct":1.3,"tier":"Legendary","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Flower In Mouth","slug":"flower-in-mouth","file":"/pixelscrappy/traits/08_muzzle/flower-in-mouth.png","count":141,"pct":2.82,"tier":"Legendary","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Gold Tooth","slug":"gold-tooth","file":"/pixelscrappy/traits/08_muzzle/gold-tooth.png","count":33,"pct":0.66,"tier":"Mythic","allotted":true,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Grumpy","slug":"grumpy","file":"/pixelscrappy/traits/08_muzzle/grumpy.png","count":391,"pct":7.82,"tier":"Rare","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Joint","slug":"joint","file":"/pixelscrappy/traits/08_muzzle/joint.png","count":41,"pct":0.82,"tier":"Mythic","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Lipstick","slug":"lipstick","file":"/pixelscrappy/traits/08_muzzle/lipstick.png","count":102,"pct":2.04,"tier":"Legendary","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Moustache","slug":"moustache","file":"/pixelscrappy/traits/08_muzzle/moustache.png","count":153,"pct":3.06,"tier":"Epic","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Neutral","slug":"neutral","file":"/pixelscrappy/traits/08_muzzle/neutral.png","count":949,"pct":18.98,"tier":"Uncommon","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Newspaper In Mouth","slug":"newspaper-in-mouth","file":"/pixelscrappy/traits/08_muzzle/newspaper-in-mouth.png","count":172,"pct":3.44,"tier":"Epic","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Open Happy","slug":"open-happy","file":"/pixelscrappy/traits/08_muzzle/open-happy.png","count":571,"pct":11.42,"tier":"Rare","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Show Teeth","slug":"show-teeth","file":"/pixelscrappy/traits/08_muzzle/show-teeth.png","count":232,"pct":4.64,"tier":"Epic","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Smile","slug":"smile","file":"/pixelscrappy/traits/08_muzzle/smile.png","count":900,"pct":18.0,"tier":"Uncommon","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Muzzle","name":"Stick In Mouth","slug":"stick-in-mouth","file":"/pixelscrappy/traits/08_muzzle/stick-in-mouth.png","count":285,"pct":5.7,"tier":"Epic","allotted":false,"optional":false,"layerDir":"08_muzzle"},{"layer":"Headwear","name":"Astronaut Helmet","slug":"astronaut-helmet","file":"/pixelscrappy/traits/09_headwear/astronaut-helmet.png","count":22,"pct":0.44,"tier":"Mythic","allotted":true,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Beanie","slug":"beanie","file":"/pixelscrappy/traits/09_headwear/beanie.png","count":275,"pct":5.5,"tier":"Epic","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Bone Balanced","slug":"bone-balanced","file":"/pixelscrappy/traits/09_headwear/bone-balanced.png","count":139,"pct":2.78,"tier":"Legendary","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Bow Blue","slug":"bow-blue","file":"/pixelscrappy/traits/09_headwear/bow-blue.png","count":358,"pct":7.16,"tier":"Rare","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Bow Pink","slug":"bow-pink","file":"/pixelscrappy/traits/09_headwear/bow-pink.png","count":379,"pct":7.58,"tier":"Rare","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Bow Red","slug":"bow-red","file":"/pixelscrappy/traits/09_headwear/bow-red.png","count":350,"pct":7.0,"tier":"Rare","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Chef Hat","slug":"chef-hat","file":"/pixelscrappy/traits/09_headwear/chef-hat.png","count":213,"pct":4.26,"tier":"Epic","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Conical Hat","slug":"conical-hat","file":"/pixelscrappy/traits/09_headwear/conical-hat.png","count":189,"pct":3.78,"tier":"Epic","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Cowboy Hat","slug":"cowboy-hat","file":"/pixelscrappy/traits/09_headwear/cowboy-hat.png","count":177,"pct":3.54,"tier":"Epic","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Crown","slug":"crown","file":"/pixelscrappy/traits/09_headwear/crown.png","count":13,"pct":0.26,"tier":"Mythic","allotted":true,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Cylinder Hat","slug":"cylinder-hat","file":"/pixelscrappy/traits/09_headwear/cylinder-hat.png","count":271,"pct":5.42,"tier":"Epic","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Devil Horns","slug":"devil-horns","file":"/pixelscrappy/traits/09_headwear/devil-horns.png","count":22,"pct":0.44,"tier":"Mythic","allotted":true,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Flower Crown","slug":"flower-crown","file":"/pixelscrappy/traits/09_headwear/flower-crown.png","count":229,"pct":4.58,"tier":"Epic","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Golden Bone","slug":"golden-bone","file":"/pixelscrappy/traits/09_headwear/golden-bone.png","count":4,"pct":0.08,"tier":"Mythic","allotted":true,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Halo","slug":"halo","file":"/pixelscrappy/traits/09_headwear/halo.png","count":22,"pct":0.44,"tier":"Mythic","allotted":true,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Jester Hat","slug":"jester-hat","file":"/pixelscrappy/traits/09_headwear/jester-hat.png","count":196,"pct":3.92,"tier":"Epic","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Open Brain","slug":"open-brain","file":"/pixelscrappy/traits/09_headwear/open-brain.png","count":17,"pct":0.34,"tier":"Mythic","allotted":true,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Paper Hat","slug":"paper-hat","file":"/pixelscrappy/traits/09_headwear/paper-hat.png","count":180,"pct":3.6,"tier":"Epic","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Party Hat","slug":"party-hat","file":"/pixelscrappy/traits/09_headwear/party-hat.png","count":225,"pct":4.5,"tier":"Epic","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Royal Crown","slug":"royal-crown","file":"/pixelscrappy/traits/09_headwear/royal-crown.png","count":7,"pct":0.14,"tier":"Mythic","allotted":true,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Straw Hat","slug":"straw-hat","file":"/pixelscrappy/traits/09_headwear/straw-hat.png","count":148,"pct":2.96,"tier":"Legendary","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Tinfoil Hat","slug":"tinfoil-hat","file":"/pixelscrappy/traits/09_headwear/tinfoil-hat.png","count":92,"pct":1.84,"tier":"Legendary","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Viking Helmet","slug":"viking-helmet","file":"/pixelscrappy/traits/09_headwear/viking-helmet.png","count":141,"pct":2.82,"tier":"Legendary","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Headwear","name":"Wizard Hat","slug":"wizard-hat","file":"/pixelscrappy/traits/09_headwear/wizard-hat.png","count":237,"pct":4.74,"tier":"Epic","allotted":false,"optional":true,"layerDir":"09_headwear"},{"layer":"Overlay","name":"Bubbles","slug":"bubbles","file":"/pixelscrappy/traits/11_overlay/bubbles.png","count":174,"pct":3.48,"tier":"Epic","allotted":false,"optional":true,"layerDir":"11_overlay"},{"layer":"Overlay","name":"Fire Aura","slug":"fire-aura","file":"/pixelscrappy/traits/11_overlay/fire-aura.png","count":12,"pct":0.24,"tier":"Mythic","allotted":true,"optional":true,"layerDir":"11_overlay"},{"layer":"Overlay","name":"Floating Hearts","slug":"floating-hearts","file":"/pixelscrappy/traits/11_overlay/floating-hearts.png","count":290,"pct":5.8,"tier":"Epic","allotted":false,"optional":true,"layerDir":"11_overlay"},{"layer":"Overlay","name":"Golden Glow","slug":"golden-glow","file":"/pixelscrappy/traits/11_overlay/golden-glow.png","count":27,"pct":0.54,"tier":"Mythic","allotted":true,"optional":true,"layerDir":"11_overlay"},{"layer":"Overlay","name":"Lightning","slug":"lightning","file":"/pixelscrappy/traits/11_overlay/lightning.png","count":127,"pct":2.54,"tier":"Legendary","allotted":false,"optional":true,"layerDir":"11_overlay"},{"layer":"Overlay","name":"Matrix Rain","slug":"matrix-rain","file":"/pixelscrappy/traits/11_overlay/matrix-rain.png","count":138,"pct":2.76,"tier":"Legendary","allotted":false,"optional":true,"layerDir":"11_overlay"},{"layer":"Overlay","name":"Rain","slug":"rain","file":"/pixelscrappy/traits/11_overlay/rain.png","count":181,"pct":3.62,"tier":"Epic","allotted":false,"optional":true,"layerDir":"11_overlay"},{"layer":"Overlay","name":"Rain Cloud","slug":"rain-cloud","file":"/pixelscrappy/traits/11_overlay/rain-cloud.png","count":120,"pct":2.4,"tier":"Legendary","allotted":false,"optional":true,"layerDir":"11_overlay"},{"layer":"Overlay","name":"Snow","slug":"snow","file":"/pixelscrappy/traits/11_overlay/snow.png","count":93,"pct":1.86,"tier":"Legendary","allotted":false,"optional":true,"layerDir":"11_overlay"},{"layer":"Overlay","name":"Sparkles","slug":"sparkles","file":"/pixelscrappy/traits/11_overlay/sparkles.png","count":446,"pct":8.92,"tier":"Rare","allotted":false,"optional":true,"layerDir":"11_overlay"},{"layer":"Overlay","name":"Zzz","slug":"zzz","file":"/pixelscrappy/traits/11_overlay/zzz.png","count":267,"pct":5.34,"tier":"Epic","allotted":false,"optional":true,"layerDir":"11_overlay"}]};
+const SUPPLY = 5000;
+const TIERS = ["Legendary","Mythic","Epic","Rare","Uncommon"];
+const TCLS = {Legendary:"L",Mythic:"M",Epic:"E",Rare:"R",Uncommon:"U"};
+const $ = (id) => document.getElementById(id);
+function nft(id){ return "/pixelscrappy/nfts/" + id + ".png"; }
+function nftFb(id){ return "/pixelscrappy/scrappy-5000/01_bilder/" + id + ".png"; }
+function imgTag(id, extra){
+  return '<img src="'+nft(id)+'" alt="Pixel Scrappy #'+id+'" loading="lazy" decoding="async" '+ (extra||'') +
+    ' onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src=\''+nftFb(id)+'\';}">';
+}
+let id = 1, playing = true, tier = "Legendary", layer = "All", gridFrom = 1;
+
+const LEGENDARIES=[{"id":1,"name":"Genesis"},{"id":2,"name":"First Ledger"},{"id":3,"name":"The Revival"},{"id":4,"name":"Diamond Hand"},{"id":5,"name":"The Holder"},{"id":6,"name":"Bull Run"},{"id":7,"name":"Bear Market"},{"id":8,"name":"To The Moon"},{"id":9,"name":"The Whale"},{"id":10,"name":"Laser King"},{"id":11,"name":"The Founder"},{"id":12,"name":"Samurai"},{"id":13,"name":"The Pirate"},{"id":14,"name":"Knight of the Ledger"},{"id":15,"name":"The Alchemist"},{"id":16,"name":"Solid Gold"},{"id":17,"name":"Void"},{"id":18,"name":"Glitch"},{"id":19,"name":"Rainbow Prism"},{"id":20,"name":"Scrappy & Scrappy"}];
+const RARITIES=[{"id":"Legendary","count":20,"blurb":"Hand-composed one-offs. Not generative — each is its own script."},{"id":"Mythic","count":49,"blurb":"Mythic Pixel Scrappys with wild trait combos."},{"id":"Epic","count":200,"blurb":"Scarce combinations. Still a hunt, not a crowd."},{"id":"Rare","count":498,"blurb":"A tenth of the pack. Distinct, not everyday."},{"id":"Uncommon","count":1245,"blurb":"The middle of the ledger. Easy to spot, hard to ignore."},{"id":"Common","count":2988,"blurb":"The street pack. Most dogs live here."}];
+const MYTHIC=[{"match":8,"pieces":1,"sets":[{"name":"Gold Standard","id":175}]},{"match":4,"pieces":9,"sets":[{"name":"Hellhound","id":239},{"name":"Undead","id":2715},{"name":"Guardian","id":378},{"name":"Cosmonaut","id":389},{"name":"Ice Cold","id":3507},{"name":"Royal","id":1296},{"name":"Cypherpunk","id":4371},{"name":"Arcane","id":1751},{"name":"Degen","id":2240}]},{"match":3,"pieces":10,"sets":[{"name":"Hellhound II","id":2518},{"name":"Undead II","id":34},{"name":"Guardian II","id":207},{"name":"Cosmonaut II","id":1777},{"name":"Ice Cold II","id":4483},{"name":"Royal II","id":3703},{"name":"Cypherpunk II","id":1414},{"name":"Arcane II","id":2375},{"name":"Degen II","id":4998},{"name":"Firestarter","id":902}]}];
+const RCLS={Legendary:"L",Mythic:"M",Epic:"E",Rare:"R",Uncommon:"U",Common:"Cchip"};
+function openNft(n){ inspect(+n); }
+let INDEX = {names:{}, rarity:{}, traits:[]};
+fetch("/pixelscrappy/nft-index.json").then(r=>r.json()).then(d => { INDEX=d; });
+function inspect(n){
+  playing=false; syncPlay(); showId(n);
+  const name = INDEX.names[n] || ("Pixel Scrappy #"+n);
+  const rarity = INDEX.rarity[n] || "";
+  const idxs = INDEX.traits[n-1] || [];
+  $("sheet-num").textContent = "#"+String(n).padStart(4,"0")+" / "+SUPPLY;
+  $("sheet-name").textContent = name;
+  $("sheet-rarity").textContent = n<=20
+    ? "Hand-composed 1/1. Not generative — no trait list."
+    : ((rarity ? rarity+". " : "") + idxs.length + " traits on this dog.");
+  $("sheet-img").src = nft(n); $("sheet-img").alt = "Pixel Scrappy #" + n;
+  $("sheet-img").onerror = function(){ if(!this.dataset.fb){ this.dataset.fb=1; this.src=nftFb(n); } };
+  $("sheet-traits").innerHTML = n<=20 ? "" : idxs.map(i => {
+    const t = CATALOG.traits[i]; if(!t) return "";
+    return '<article class="tcard"><img src="'+t.file+'" alt="'+t.name+'" loading="lazy" decoding="async"><div class="p"><p class="meta">'+t.layer+'</p><h3>'+t.name+'</h3><span class="chip '+TCLS[t.tier]+'">'+t.tier+'</span></div></article>';
+  }).join("");
+  $("sheet").classList.add("open");
+}
+$("sheet-close").onclick = () => $("sheet").classList.remove("open");
+$("sheet").onclick = (e) => { if(e.target===$("sheet")) $("sheet").classList.remove("open"); };
+$("sheet-prev").onclick = (e) => { e.stopPropagation(); inspect(id<=1?SUPPLY:id-1); };
+$("sheet-next").onclick = (e) => { e.stopPropagation(); inspect(id>=SUPPLY?1:id+1); };
+$("hero").onclick = () => inspect(id);
+$("rarity-counts").innerHTML = RARITIES.map(r => '<a href="#rarity-'+r.id.toLowerCase()+'" class="stat"><span class="chip '+RCLS[r.id]+'">'+r.id+'</span><b>'+r.count.toLocaleString("en-US")+'</b></a>').join("");
+$("legendaries").innerHTML = LEGENDARIES.map(p => '<button type="button" class="tcard" data-id="'+p.id+'">'+imgTag(p.id)+'<div class="p"><p class="meta">#'+p.id+'</p><h3>'+p.name+'</h3></div></button>').join("");
+$("legendaries").onclick = (e) => { const b=e.target.closest("button"); if(b) openNft(+b.dataset.id); };
+$("mythics").innerHTML = MYTHIC.map(g => '<p style="margin:18px 0 8px;font-weight:700">'+g.match+' matching traits · '+g.pieces+(g.pieces===1?' piece':' pieces')+'</p><div class="grid five">'+g.sets.map(s => s.id
+  ? '<button type="button" class="tcard" data-id="'+s.id+'">'+imgTag(s.id)+'<div class="p"><p class="meta">#'+s.id+'</p><h3>'+s.name+'</h3></div></button>'
+  : '<article class="tcard"><div style="aspect-ratio:1;display:grid;place-items:center;background:var(--sky);font-family:var(--display);font-size:28px;font-weight:800;color:var(--accent)">'+g.match+'</div><div class="p"><h3>'+s.name+'</h3></div></article>'
+).join("")+'</div>').join("");
+$("mythics").onclick = (e) => { const b=e.target.closest("button[data-id]"); if(b) openNft(+b.dataset.id); };
+$("rest").innerHTML = RARITIES.filter(r=>["Epic","Rare","Uncommon","Common"].includes(r.id)).map(r => '<div class="card" id="rarity-'+r.id.toLowerCase()+'"><span class="chip '+RCLS[r.id]+'">'+r.id+'</span><b style="display:block;font-family:var(--display);font-size:32px;margin-top:8px">'+r.count.toLocaleString("en-US")+'</b><p class="lead" style="margin-top:8px">'+r.blurb+'</p></div>').join("");
+
+
+function card(t){
+  return '<article class="tcard"><img src="'+t.file+'" alt="'+t.name+'" loading="lazy" decoding="async"><div class="p">'+
+    '<p class="meta">'+t.layer+'</p><h3>'+t.name+'</h3>'+
+    '<span class="chip '+TCLS[t.tier]+'">'+t.tier+'</span>'+
+    (t.allotted?' <span class="chip A">Hunt</span>':'')+
+    '<p class="meta" style="margin-top:6px">'+t.count+' · '+t.pct.toFixed(2)+'%</p></div></article>';
+}
+
+function showId(n){
+  id = Math.min(SUPPLY, Math.max(1, n|0));
+  $("hero").src = nft(id); $("hero").onerror=function(){if(!this.dataset.fb){this.dataset.fb=1;this.src=nftFb(id);}};
+  $("hero").alt = "Pixel Scrappy #"+id;
+  $("num").textContent = "#"+String(id).padStart(4,"0")+" / "+SUPPLY;
+  $("slider").value = id;
+  const strip = $("strip");
+  strip.innerHTML = "";
+  for(let i=-4;i<=4;i++){
+    let n2 = id+i;
+    if(n2<1) n2 += SUPPLY;
+    if(n2>SUPPLY) n2 -= SUPPLY;
+    const b = document.createElement("button");
+    if(n2===id) b.className="on";
+    b.innerHTML = imgTag(n2);
+    b.onclick = () => inspect(n2);
+    strip.appendChild(b);
+  }
+}
+
+function syncPlay(){ $("play").textContent = playing ? "Pause" : "Play"; }
+
+function drawTraits(){
+  const list = CATALOG.traits.filter(t =>
+    (tier==="All" || t.tier===tier) && (layer==="All" || t.layer===layer)
+  );
+  $("traits").innerHTML = list.map(card).join("");
+}
+
+function drawHunt(){
+  const hunt = CATALOG.traits.filter(t=>t.allotted).sort((a,b)=>a.count-b.count);
+  $("hunt").innerHTML = hunt.map(card).join("");
+}
+
+function drawPack(){
+  const size=40;
+  const ids=[];
+  for(let n=gridFrom;n<gridFrom+size && n<=SUPPLY;n++) ids.push(n);
+  $("pack").innerHTML = ids.map(n =>
+    '<button type="button" data-id="'+n+'">'+imgTag(n)+'<span>#'+n+'</span></button>'
+  ).join("");
+  $("packlab").textContent = "Showing "+ids[0]+"–"+ids[ids.length-1];
+  $("pack").onclick = (e) => {
+    const b = e.target.closest("button");
+    if(!b) return;
+    inspect(+b.dataset.id);
+  };
+}
+
+function chips(){
+  $("tiers").innerHTML = '<button class="chip A'+(tier==="All"?" on":"")+'" data-t="All">All</button>' +
+    TIERS.map(t=>'<button class="chip '+TCLS[t]+(tier===t?" on":"")+'" data-t="'+t+'">'+t+'</button>').join("");
+  $("layers").innerHTML = '<button class="chip '+(layer==="All"?"A on":"R")+'" data-l="All">All layers</button>' +
+    CATALOG.layers.map(L=>'<button class="chip '+(layer===L.id?"A on":"R")+'" data-l="'+L.id+'">'+L.id+(L.optional?" · optional":"")+'</button>').join("");
+}
+
+$("tiers").onclick = (e) => {
+  const t = e.target.dataset.t; if(!t) return; tier=t; chips(); drawTraits();
+};
+$("layers").onclick = (e) => {
+  const t = e.target.dataset.l; if(!t) return; layer=t; chips(); drawTraits();
+};
+$("prev").onclick = () => { playing=false; syncPlay(); showId(id===1?SUPPLY:id-1); };
+$("next").onclick = () => { playing=false; syncPlay(); showId(id===SUPPLY?1:id+1); };
+$("slider").oninput = (e) => { playing=false; syncPlay(); showId(+e.target.value); };
+$("play").onclick = () => { playing=!playing; syncPlay(); };
+$("shuffle").onclick = () => { playing=false; syncPlay(); showId(1+Math.floor(Math.random()*SUPPLY)); };
+$("go").onclick = () => { playing=false; syncPlay(); showId(+$("jump").value); };
+$("jump").onkeydown = (e) => { if(e.key==="Enter"){ e.preventDefault(); $("go").click(); } };
+$("packprev").onclick = () => { gridFrom=Math.max(1,gridFrom-40); drawPack(); };
+$("packnext").onclick = () => { if(gridFrom+40<=SUPPLY){ gridFrom+=40; drawPack(); } };
+window.addEventListener("keydown", (e) => {
+  if(e.target.matches("input")) return;
+  if(e.key==="ArrowRight"){ e.preventDefault(); playing=false; syncPlay(); showId(id===SUPPLY?1:id+1); }
+  if(e.key==="ArrowLeft"){ e.preventDefault(); playing=false; syncPlay(); showId(id===1?SUPPLY:id-1); }
+  if(e.key===" "){ e.preventDefault(); playing=!playing; syncPlay(); }
+});
+setInterval(() => { if(playing) showId(id===SUPPLY?1:id+1); }, 1800);
+
+chips(); drawHunt(); drawTraits(); drawPack(); showId(1); syncPlay();
+</script>
+<style>
+/* ---- How a Scrappy is made ----------------------------------------- */
+.buildgrid{display:grid;gap:18px;margin-top:18px}
+@media(min-width:800px){.buildgrid{grid-template-columns:300px 1fr;align-items:start}}
+.buildstage{position:relative;width:min(100%,300px);aspect-ratio:1;border-radius:14px;
+  background:var(--sky);box-shadow:0 0 0 1px var(--line);overflow:hidden}
+.buildstage img{width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(.88)}
+.buildstage img.in{opacity:1;transform:none;transition:opacity .28s ease,transform .38s cubic-bezier(.2,1.4,.5,1)}
+#build-badge{position:absolute;left:10px;bottom:10px;margin:0;padding:5px 10px;border-radius:999px;
+  background:var(--fg);color:var(--accent-fg);font-size:11px;letter-spacing:.06em}
+#build-badge:empty{display:none}
+.buildlist{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.buildstep{display:flex;align-items:center;gap:12px;padding:8px;border-radius:12px;
+  background:var(--surface);box-shadow:0 0 0 1px var(--line);opacity:0;transform:translateY(8px)}
+.buildstep.in{opacity:1;transform:none;transition:opacity .3s ease,transform .3s ease}
+.buildstep img{width:52px;height:52px;border-radius:8px;background:var(--sky);flex:none}
+.buildstep h3{margin:0;font-family:var(--display);font-size:15px;line-height:1.2}
+.buildstep .meta{margin:0 0 2px}
+.buildstep .chip{margin-left:auto;cursor:default}
+
+/* ---- Rarity --------------------------------------------------------- */
+/* The tier is the point of the page, so the rarest cards should read from
+   across the room: gold for Mythic, a cooler sheen for Legendary. */
+.tcard{position:relative}
+.tcard:has(.chip.M){box-shadow:0 0 0 2px #e0b53a,0 10px 26px -16px rgba(224,181,58,.9)}
+.tcard:has(.chip.L){box-shadow:0 0 0 2px #9ad0f5,0 10px 26px -18px rgba(15,118,198,.7)}
+.tcard:has(.chip.M)::after,.tcard:has(.chip.L)::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(115deg,transparent 38%,rgba(255,255,255,.72) 50%,transparent 62%);
+  background-size:260% 100%;background-position:180% 0}
+.tcard img{transition:transform .25s ease}
+.tcard:hover img{transform:scale(1.05)}
+@media(prefers-reduced-motion:no-preference){
+  .tcard:has(.chip.M)::after{animation:sheen 3.6s ease-in-out infinite}
+  .tcard:has(.chip.L)::after{animation:sheen 4.8s ease-in-out infinite 1.2s}
+  @keyframes sheen{0%,72%{background-position:180% 0}100%{background-position:-60% 0}}
+  /* A newly loaded dog lands instead of blinking into place. */
+  #hero.pop,#sheet-img.pop{animation:pop .34s cubic-bezier(.2,1.3,.5,1)}
+  @keyframes pop{from{opacity:.25;transform:scale(.94)}to{opacity:1;transform:none}}
+}
+
+/* ---- Sheet ---------------------------------------------------------- */
+#sheet-copy{white-space:nowrap}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(12px);z-index:60;
+  padding:12px 18px;border-radius:999px;background:var(--fg);color:var(--accent-fg);
+  font:700 13px var(--sans);box-shadow:0 12px 30px -16px rgba(14,23,38,.8);
+  opacity:0;transition:opacity .25s ease,transform .25s ease}
+.toast.in{opacity:1;transform:translateX(-50%)}
+</style>
+<script>
+(function(){
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var $ = function(id){ return document.getElementById(id); };
+  var INDEX2 = null;
+
+  /* ---- How a Scrappy is made ---------------------------------------- */
+  var order = CATALOG.layers.map(function(l){ return l.id; });
+  var buildId = 0;
+
+  function roll(n){
+    if(!INDEX2) return;
+    var list = $("build-list"), final = $("build-final"), badge = $("build-badge");
+    // The first twenty are hand-composed one-of-ones and carry no trait list.
+    n = n || (21 + Math.floor(Math.random() * (SUPPLY - 20)));
+    var idxs = INDEX2.traits[n-1] || [];
+    var traits = idxs.map(function(i){ return CATALOG.traits[i]; }).filter(Boolean)
+      .sort(function(a,b){ return order.indexOf(a.layer) - order.indexOf(b.layer); });
+    if(!traits.length) return roll(0);
+
+    buildId = n;
+    list.innerHTML = traits.map(function(t){
+      return '<li class="buildstep"><img src="' + t.file + '" alt="" loading="lazy" decoding="async">' +
+        '<div><p class="meta">' + t.layer + '</p><h3>' + t.name + '</h3></div>' +
+        '<span class="chip ' + TCLS[t.tier] + '">' + t.tier + '</span></li>';
+    }).join("");
+    final.classList.remove("in");
+    final.src = nft(n);
+    badge.textContent = "";
+
+    var steps = Array.prototype.slice.call(list.children);
+    var land = function(){
+      final.classList.add("in");
+      badge.textContent = "#" + String(n).padStart(4,"0") + " \u00b7 " + traits.length + " traits";
+    };
+    if(reduce){ steps.forEach(function(s){ s.classList.add("in"); }); land(); return; }
+    steps.forEach(function(s,i){ setTimeout(function(){ s.classList.add("in"); }, 120 + i*280); });
+    setTimeout(land, 120 + steps.length*280 + 160);
+  }
+
+  $("build-roll").onclick = function(){ roll(0); };
+  $("build-open").onclick = function(){ if(buildId) inspect(buildId); };
+
+  // Starts the first time the section is actually on screen, not on page load.
+  var started = false;
+  new IntersectionObserver(function(entries, obs){
+    entries.forEach(function(e){
+      if(!e.isIntersecting || started) return;
+      started = true; obs.disconnect(); roll(0);
+    });
+  }, {threshold:0.3}).observe($("build"));
+
+  /* ---- Share a single dog -------------------------------------------- */
+  var current = 0;
+  var original = inspect;
+  window.inspect = function(n){
+    original(n);
+    current = n;
+    try { history.replaceState(null, "", "#" + n); } catch(e){}
+  };
+
+  var copy = document.createElement("button");
+  copy.className = "btn ghost"; copy.id = "sheet-copy"; copy.type = "button";
+  copy.textContent = "Copy link";
+  $("sheet-close").parentNode.insertBefore(copy, $("sheet-close"));
+  copy.onclick = function(e){
+    e.stopPropagation();
+    var url = location.origin + location.pathname + "#" + current;
+    var done = function(){
+      copy.textContent = "Copied";
+      setTimeout(function(){ copy.textContent = "Copy link"; }, 1600);
+    };
+    if(navigator.clipboard) navigator.clipboard.writeText(url).then(done, function(){});
+  };
+
+  function clearHash(){
+    if(/^#\d+$/.test(location.hash)){
+      try { history.replaceState(null, "", location.pathname); } catch(e){}
+    }
+  }
+  $("sheet-close").addEventListener("click", clearHash);
+  $("sheet").addEventListener("click", function(e){ if(e.target === $("sheet")) clearHash(); });
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape" && $("sheet").classList.contains("open")){
+      $("sheet").classList.remove("open"); clearHash();
+    }
+  });
+
+  /* ---- Landing animation on every image swap -------------------------- */
+  ["hero","sheet-img"].forEach(function(domId){
+    var img = $(domId);
+    img.addEventListener("load", function(){
+      if(reduce) return;
+      img.classList.remove("pop"); void img.offsetWidth; img.classList.add("pop");
+    });
+  });
+
+  /* ---- Counters ------------------------------------------------------- */
+  function countUp(el){
+    var text = el.textContent, match = text.match(/^([\d,]+)/);
+    if(!match) return;
+    var target = parseInt(match[1].replace(/,/g,""), 10), rest = text.slice(match[1].length);
+    if(!target || target < 2) return;
+    var start = performance.now(), dur = 900;
+    var finish = function(){ el.textContent = target.toLocaleString("en-US") + rest; };
+    // requestAnimationFrame stops in a backgrounded tab. Without this guard the
+    // count can freeze part-way and leave a wrong number standing as if it were
+    // the real one — worse than never animating at all.
+    var guard = setTimeout(finish, dur + 500);
+    (function step(now){
+      var p = Math.min(1, (now - start) / dur);
+      if(p >= 1){ clearTimeout(guard); finish(); return; }
+      el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3))).toLocaleString("en-US") + rest;
+      requestAnimationFrame(step);
+    })(start);
+  }
+
+  if(!reduce){
+    var seen = [];
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(!e.isIntersecting || seen.indexOf(e.target) > -1) return;
+        seen.push(e.target); countUp(e.target);
+      });
+    }, {threshold:0.6});
+    var targets = Array.prototype.slice.call(document.querySelectorAll("#rarity-counts b"));
+    Array.prototype.forEach.call(document.querySelectorAll("#hunt .p .meta"), function(p){
+      if(/^\d/.test(p.textContent)) targets.push(p);
+    });
+    targets.forEach(function(t){ io.observe(t); });
+  }
+
+  /* ---- Konami: the crown ---------------------------------------------- */
+  var SEQ = ["ArrowUp","ArrowUp","ArrowDown","ArrowDown","ArrowLeft","ArrowRight","ArrowLeft","ArrowRight","b","a"];
+  var pos = 0;
+  document.addEventListener("keydown", function(e){
+    var key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    pos = (key === SEQ[pos]) ? pos + 1 : (key === SEQ[0] ? 1 : 0);
+    if(pos !== SEQ.length) return;
+    pos = 0;
+    if(!INDEX2) return;
+    var crown = -1;
+    CATALOG.traits.forEach(function(t,i){ if(t.name === "Royal Crown") crown = i; });
+    if(crown < 0) return;
+    var wearing = [];
+    INDEX2.traits.forEach(function(list, i){ if(list && list.indexOf(crown) > -1) wearing.push(i + 1); });
+    if(!wearing.length) return;
+    var toast = document.createElement("div");
+    toast.className = "toast";
+    toast.textContent = "Royal Crown \u2014 " + wearing.length + " in the whole collection";
+    document.body.appendChild(toast);
+    requestAnimationFrame(function(){ toast.classList.add("in"); });
+    setTimeout(function(){ toast.classList.remove("in"); }, 3200);
+    setTimeout(function(){ toast.remove(); }, 3600);
+    inspect(wearing[Math.floor(Math.random() * wearing.length)]);
+  });
+
+  /* ---- Open the dog named in the URL ---------------------------------- */
+  fetch("/pixelscrappy/nft-index.json").then(function(r){ return r.json(); }).then(function(d){
+    INDEX2 = d;
+    var m = location.hash.match(/^#(\d{1,4})$/);
+    if(m){
+      var n = parseInt(m[1], 10);
+      if(n >= 1 && n <= SUPPLY) inspect(n);
+    }
+  }).catch(function(){});
+})();
+</script>
+</body>
+</html>
