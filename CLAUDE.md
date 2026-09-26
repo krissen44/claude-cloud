@@ -119,22 +119,24 @@ Always syntax-check the inline game script after editing `public/index.html`.
 ## Website (scrappyxrp.fun)
 
 - **Main page** is a built React/Vite + Tailwind app. We don't have its source — only the build.
-  `website/index.html` now loads **`/assets/index-scrappy-v2.js`**, a patched copy of `index-lzWr3Fc6.js`
+  `website/index.html` now loads **`/assets/index-scrappy-v3.js`**, a patched copy of `index-lzWr3Fc6.js`
   (originals kept in `website/assets/`). Patches (search for these in the bundle): collections array `te` got a
   first entry `pixel-scrappy` (items 5000, `floorXrp:null` → shows "see xrp.cafe"); image map `jd` supports
   `img` + `pixel` (#259, pixelated); grid `sm:grid-cols-2 lg:grid-cols-3`; eyebrow "Three collections on xrp.cafe";
-  **Whitelist removed** from the menu array `de` and the footer. If the site is ever rebuilt from source, redo these there.
+  **Whitelist removed** from the menu array `de` and the footer; **Bark Arena** (`/barkarena/`) added to the menu array
+  `de` and the footer (v3). If the site is ever rebuilt from source, redo these there.
 - **`website/pixelscrappy/`** — collection page (static HTML). Added: animated pixel-lettering hero "PIXEL SCRAPPY"
   with #259, nav, whitelist link removed. `pixel-title.js` renders `.pxtitle[data-px]` as SVG from a 5×7 bitmap font
   (A–Z, `$`, `!`), text kept for screen readers, animation off with reduced motion. `scrappy-theme.css` copies the
   main page's look (white header with ink rule, sticker cards with 2px ink border + hard shadow, pill buttons, dotted
   paper background) — load it after a page's own styles.
-- **`website/barkarena/`** — game page at `https://scrappyxrp.fun/barkarena/`, **noindex and not linked yet** (private
-  beta). Live leaderboard from `https://game.scrappyxrp.fun/api/public/board` (this/last week, refresh 60 s),
+- **`website/barkarena/`** — game page at `https://scrappyxrp.fun/barkarena/`, **public**: indexable, canonical + OG tags,
+  linked from the main page (menu + footer) and the pixel page (nav, footer, "Your Pixel Scrappy can fight" banner). Live leaderboard from `https://game.scrappyxrp.fun/api/public/board` (this/last week, refresh 60 s),
   detailed how-to-play and FAQ. Numbers in the guide mirror the game rules above — update both together.
 - The `/whitelist/` folder on Hostinger should be deleted (no longer used).
 
 ### Open questions for the owner
 - Current floor price of Pixel Scrappy (card shows "see xrp.cafe").
 - Is the public mint over? Then replace the "Mint" section on `/pixelscrappy/` with "Trade on xrp.cafe".
-- When to go public: remove `ACCESS_KEY`, drop `noindex` on `/barkarena/`, add a nav link on the main page and pixel page.
+- The game went public (Bark Arena linked everywhere). `ACCESS_KEY` must be removed on Hostinger; the gate code stays
+  for a future closed test.

@@ -181,6 +181,13 @@ section{margin-top:56px}
 .sheet-traits{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:16px}
 @media(min-width:640px){.sheet-traits{grid-template-columns:repeat(4,1fr)}}
 
+/* ---- Bark Arena banner ------------------------------------------------ */
+.playban{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center;margin-top:18px;color:var(--fg);text-decoration:none}
+.playban:hover{text-decoration:none}
+.playban-ico{font-size:30px}
+.playban .btn{grid-column:1 / -1;justify-self:start}
+@media(min-width:720px){.playban{grid-template-columns:auto 1fr auto}.playban .btn{grid-column:auto}}
+
 /* ---- Hero opener ----------------------------------------------------- */
 :root{--scrappy:#1b8ce3;--scrappy-deep:#0a4f8f;--scrappy-hi:#8fd0fb}
 .pxhero{
@@ -247,6 +254,7 @@ a.btn{display:inline-block;text-decoration:none}
     <nav class="nav" aria-label="Site">
       <a href="https://scrappyxrp.fun/">$SCRAP</a>
       <a class="on" href="/pixelscrappy/" aria-current="page">Pixel Scrappy</a>
+      <a href="/barkarena/">Bark Arena</a>
       <a class="pill" href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener">xrp.cafe ↗</a>
     </nav>
   </header>
@@ -268,6 +276,12 @@ a.btn{display:inline-block;text-decoration:none}
       <span class="meta">#259</span>
     </button>
   </section>
+
+  <a class="card playban" href="/barkarena/">
+    <span class="playban-ico" aria-hidden="true">🥊</span>
+    <span><b>Your Pixel Scrappy can fight.</b><br><span class="meta">Bark Arena — daily tournaments, packs and a weekly leaderboard. Connect Xaman or Joey, no transaction, no fee.</span></span>
+    <span class="btn">Play Bark Arena →</span>
+  </a>
 
   <section class="mint-mid" id="mint">
     <p class="kicker">Public mint</p>
@@ -389,6 +403,7 @@ a.btn{display:inline-block;text-decoration:none}
     <div class="row" style="justify-content:space-between;align-items:flex-start;gap:16px">
       <div class="row" style="margin:0;gap:14px;flex-wrap:wrap">
         <a class="btn ghost" href="https://scrappyxrp.fun/">← $SCRAP</a>
+        <a class="btn ghost" href="/barkarena/">Bark Arena</a>
         <a class="btn ghost" href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener noreferrer">xrp.cafe</a>
       </div>
       <p class="meta" style="margin:0;text-align:right">
