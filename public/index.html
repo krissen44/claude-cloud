@@ -1321,14 +1321,14 @@ async function imageFor(def, imageUrl){
   return cutout(bmp, PATTERNED.has(def.bg));
 }
 
-async function loadKennel(){
+async function loadKennel(fresh){
   WALLET.loading = true; WALLET.error = ''; WALLET.progress = 'Reading your wallet…'; tab = 'kennel'; menu();
   try {
-    const r = await api('/me/kennel');
+    const r = await api('/me/kennel' + (fresh ? '?fresh=1' : ''));
     if (r.status === 401){ walletSignOut(); WALLET.error = 'Your session ended — sign in again.'; menu(); return; }
     const j = await r.json(); if (!r.ok) throw new Error(j.error || 'kennel');
     const cacheKey = 'ba_dogs:' + WALLET.account, cache = lsGet(cacheKey) || {};
-    const out = [];
+    const out = [], failed = [];
     for (let k = 0; k < j.nfts.length; k++){
       const n = j.nfts[k];
       WALLET.progress = `Fetching your Scrappys… ${k+1} of ${j.nfts.length}`;
@@ -1343,8 +1343,11 @@ async function loadKennel(){
           c = cache[n.nft_id] = def; lsSet(cacheKey, cache);
         }
         out.push(c);
-      } catch(e){ console.warn('skipped', n.nft_id, e); }
+      } catch(e){ console.warn('skipped', n.nft_id, e); failed.push(e.message); }
     }
+    // Never a silent 0: say what the wallet holds and why nothing could be shown.
+    if (!j.nfts.length && j.hint) WALLET.error = j.hint;
+    else if (failed.length) WALLET.error = `${failed.length} of ${j.nfts.length} Scrappy${j.nfts.length===1?'':'s'} could not be loaded (${failed[0]}). Hit ↻ Refresh to retry.`;
     out.sort((a,b) => (b.legendary?1:0) - (a.legendary?1:0) || (a.token||1e9) - (b.token||1e9));
     OWNED = out; WALLET.owned = out.length;
   } catch(e){ WALLET.error = 'Could not load your kennel (' + e.message + ').'; }
@@ -1401,7 +1404,7 @@ function walletWire(){
   if (q('xamCancel')) q('xamCancel').onclick = () => { WALLET.login = null; lsSet('ba_pending', null); menu(); };
   if (q('demo'))      q('demo').onclick = () => { S.unlock(); S.click(); WALLET.demo = true; menu(); };
   if (q('signout'))   q('signout').onclick = () => { S.click(); walletSignOut(); };
-  if (q('reload'))    q('reload').onclick = () => { S.click(); lsSet('ba_dogs:' + WALLET.account, null); loadKennel(); };
+  if (q('reload'))    q('reload').onclick = () => { S.click(); lsSet('ba_dogs:' + WALLET.account, null); loadKennel(true); };
 }
 function walletBoot(){
   if (!LIVE()) return;

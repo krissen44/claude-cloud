@@ -67,7 +67,7 @@ function sessionSecret() {
 }
 
 const env = {
-  ISSUER: process.env.ISSUER, TAXON: process.env.TAXON || "0",
+  ISSUER: process.env.ISSUER, TAXON: process.env.TAXON || "",
   XUMM_API_KEY: process.env.XUMM_API_KEY, XUMM_API_SECRET: process.env.XUMM_API_SECRET,
   SESSION_SECRET: sessionSecret(),
   ORIGIN: process.env.ORIGIN || "", RETURN_URL: process.env.RETURN_URL || "",

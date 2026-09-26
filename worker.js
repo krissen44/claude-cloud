@@ -13,7 +13,9 @@
  */
 
 const XUMM = "https://xumm.app/api/v1/platform";
-const XRPL = "https://xrplcluster.com";
+const XRPL_NODES = ["https://xrplcluster.com", "https://s1.ripple.com:51234", "https://s2.ripple.com:51234"];
+const IPFS_FALLBACKS = ["https://ipfs.io/ipfs/", "https://gateway.pinata.cloud/ipfs/", "https://dweb.link/ipfs/", "https://w3s.link/ipfs/"];
+const FETCH_TIMEOUT = 10000;                // ms; a hanging gateway must not stall the kennel
 const SESSION_TTL = 60 * 60 * 24 * 7;       // 7 Tage angemeldet bleiben
 const OWNERSHIP_TTL = 60 * 5;               // Besitz alle 5 Minuten neu vom Ledger
 const META_TTL = 60 * 60 * 24;              // Metadaten 1 Tag cachen
@@ -23,6 +25,26 @@ const enc = new TextEncoder();
 const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
 const hex2str = (h) => new TextDecoder().decode(new Uint8Array((h || "").match(/../g)?.map(b => parseInt(b, 16)) || []));
 const shortAcct = (a) => a ? a.slice(0, 5) + "…" + a.slice(-4) : "?";
+const fetchT = (url, opt = {}) => fetch(url, {...opt, signal: AbortSignal.timeout(FETCH_TIMEOUT)});
+
+/* An IPFS URL on the configured gateway → the same path on every fallback gateway. */
+function ipfsAlternatives(url, env) {
+  const gw = (env.IPFS_GATEWAY || "https://ipfs.io/ipfs/").replace(/\/?$/, "/");
+  if (!url.startsWith(gw)) return [url];
+  const rest = url.slice(gw.length);
+  return [...new Set([gw, ...IPFS_FALLBACKS])].map(g => g + rest);
+}
+/* Fetch from the first gateway that answers; the last error wins if none do. */
+async function fetchAny(urls, opt) {
+  let err;
+  for (const u of urls) {
+    try { const r = await fetchT(u, opt); if (r.ok) return r; err = new Error("http_" + r.status); }
+    catch (e) { err = new Error(e.name === "TimeoutError" ? "timeout" : String(e.message || e)); }
+  }
+  throw err;
+}
+/* TAXON empty or "*" → every taxon from ISSUER counts. */
+const isScrappy = (env, n) => n.Issuer === env.ISSUER && (env.TAXON === "" || env.TAXON === "*" || String(n.NFTokenTaxon) === env.TAXON);
 
 async function hmac(secret, msg) {
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), {name:"HMAC", hash:"SHA-256"}, false, ["sign"]);
@@ -67,7 +89,7 @@ function hostAllowed(url, env) {
   try {
     const h = new URL(url).host;
     const gw = new URL(env.IPFS_GATEWAY || "https://ipfs.io/ipfs/").host;
-    if (h === gw) return true;
+    if (h === gw || IPFS_FALLBACKS.some(g => new URL(g).host === h)) return true;
     const list = (env.META_HOSTS || "*").split(",").map(s => s.trim()).filter(Boolean);
     return list.includes("*") || list.includes(h);
   } catch { return false; }
@@ -91,28 +113,52 @@ function storeOf(env) {
 }
 
 /* ------------------------------------------------------------------ ledger */
+async function xrplRequest(body) {
+  let err = new Error("xrpl_unavailable");
+  for (const node of XRPL_NODES) {
+    try {
+      const r = await fetchT(node, {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify(body)});
+      if (!r.ok) continue;
+      const d = (await r.json()).result;
+      if (d && d.error && d.error !== "actNotFound" && d.error !== "actMalformed") { err = new Error(d.error); continue; }
+      return d;
+    } catch (e) { /* next node */ }
+  }
+  throw err;
+}
 async function accountNfts(env, account, all) {
   const out = []; let marker;
   do {
-    const r = await fetch(XRPL, {method:"POST", headers:{"content-type":"application/json"},
-      body: JSON.stringify({method:"account_nfts", params:[{account, limit:400, ...(marker ? {marker} : {})}]})});
-    if (!r.ok) throw new Error("xrpl_unavailable");
-    const d = (await r.json()).result;
+    const d = await xrplRequest({method:"account_nfts", params:[{account, ledger_index:"validated", limit:400, ...(marker ? {marker} : {})}]});
     if (d.error) { if (d.error === "actNotFound") return []; throw new Error(d.error); }
     for (const n of d.account_nfts || [])
-      if (all || (n.Issuer === env.ISSUER && String(n.NFTokenTaxon) === String(env.TAXON)))
+      if (all || isScrappy(env, n))
         out.push({nft_id: n.NFTokenID, uri: hex2str(n.URI), serial: n.nft_serial, issuer: n.Issuer, taxon: n.NFTokenTaxon});
     marker = d.marker;
   } while (marker);
   return out;
 }
-async function ownedNfts(env, account) {
+async function ownedNfts(env, account, fresh) {
   const k = `own:${account}`;
-  const c = env.KV ? await env.KV.get(k, "json") : null;
+  const c = env.KV && !fresh ? await env.KV.get(k, "json") : null;
   if (c) return c;
   const out = await accountNfts(env, account);
-  if (env.KV) await env.KV.put(k, JSON.stringify(out), {expirationTtl: OWNERSHIP_TTL});
+  // an empty wallet is not cached: a Scrappy bought a minute ago must show on ↻ Refresh
+  if (env.KV && out.length) await env.KV.put(k, JSON.stringify(out), {expirationTtl: OWNERSHIP_TTL});
   return out;
+}
+async function kennel(env, account, fresh) {
+  if (!/^r/.test(env.ISSUER)) return json({error:"server_not_configured (ISSUER missing)"}, 500);
+  const nfts = await ownedNfts(env, account, fresh);
+  const res = {account, nfts};
+  if (!nfts.length) {
+    // Tell the player (and the admin) why nothing matched, instead of a silent 0.
+    const every = await accountNfts(env, account, true);
+    res.other_nfts = every.length;
+    if (every.length) res.hint = `This wallet holds ${every.length} NFT(s), but none from issuer ${shortAcct(env.ISSUER)}` +
+      (env.TAXON && env.TAXON !== "*" ? ` with taxon ${env.TAXON}` : "") + `. Admin: open /api/check?account=${account}`;
+  }
+  return json(res);
 }
 async function metaFor(env, uri) {
   const url = resolveUrl(uri, env);
@@ -120,8 +166,7 @@ async function metaFor(env, uri) {
   const k = `meta:${url}`;
   const c = env.KV ? await env.KV.get(k, "json") : null;
   if (c) return c;
-  const r = await fetch(url, {cf: {cacheTtl: META_TTL}});
-  if (!r.ok) throw new Error("meta_http_" + r.status);
+  const r = await fetchAny(ipfsAlternatives(url, env), {cf: {cacheTtl: META_TTL}}).catch(e => { throw new Error("meta_" + e.message); });
   const m = await r.json();
   const out = {
     name: m.name || "",
@@ -173,7 +218,7 @@ async function ladder(env, me) {
 async function check(env, account) {
   const rep = {ok:true, config:{
     issuer: env.ISSUER && env.ISSUER.startsWith("r") ? env.ISSUER : "FEHLT",
-    taxon: env.TAXON || "FEHLT", origin: env.ORIGIN || "FEHLT",
+    taxon: env.TAXON || "* (alle)", origin: env.ORIGIN || "FEHLT",
     xaman_keys: !!(env.XUMM_API_KEY && env.XUMM_API_SECRET), session_secret: !!env.SESSION_SECRET,
     kv: !!env.KV, db: !!(env.DB || env.STORE)}};
   try { await storeOf(env).ping(); rep.config.db_reachable = true; } catch (e) { rep.config.db_reachable = String(e.message); rep.ok = false; }
@@ -186,7 +231,7 @@ async function check(env, account) {
       try {
         const m = await metaFor(env, n.uri);
         s.name = m.name; s.token = m.token; s.attributes = m.attributes.length; s.image = m.image;
-        if (m.image) { const ir = await fetch(m.image, {method:"GET"}); s.image_status = ir.status; s.image_type = ir.headers.get("content-type"); }
+        if (m.image) { try { const ir = await fetchAny(ipfsAlternatives(m.image, env)); s.image_status = ir.status; s.image_type = ir.headers.get("content-type"); } catch (e) { s.image_status = e.message; rep.ok = false; } }
       } catch (e) { s.error = String(e.message); rep.ok = false; }
       rep.wallet.samples.push(s);
     }
@@ -231,7 +276,7 @@ function withCors(res, cors) {
 
 export default {
   async fetch(req, env) {
-    env = {...env, ISSUER: String(env.ISSUER || "").trim(), TAXON: String(env.TAXON ?? "0").trim()};
+    env = {...env, ISSUER: String(env.ISSUER || "").trim(), TAXON: String(env.TAXON ?? "").trim()};
     const url = new URL(req.url), cors = corsFor(req, env);
     if (req.method === "OPTIONS") return new Response(null, {headers: cors});
     try {
@@ -245,13 +290,14 @@ export default {
       if (p === "/ladder") return withCors(await ladder(env, account), cors);
       if (!account) return withCors(json({error:"unauthorized"}, 401), cors);
 
-      if (p === "/me/kennel") return withCors(json({account, nfts: await ownedNfts(env, account)}), cors);
+      if (p === "/me/kennel") return withCors(await kennel(env, account, url.searchParams.has("fresh")), cors);
       if (p === "/meta") return withCors(json(await metaFor(env, url.searchParams.get("uri") || "")), cors);
       if (p === "/img") {
         const u = url.searchParams.get("u") || "";
         if (!/^https:\/\//i.test(u) || !hostAllowed(u, env)) return withCors(json({error:"img_not_allowed"}, 400), cors);
-        const r = await fetch(u, {cf: {cacheTtl: META_TTL, cacheEverything: true}});
-        if (!r.ok) return withCors(json({error:"img_http_" + r.status}, 502), cors);
+        let r;
+        try { r = await fetchAny(ipfsAlternatives(u, env), {cf: {cacheTtl: META_TTL, cacheEverything: true}}); }
+        catch (e) { return withCors(json({error:"img_" + e.message}, 502), cors); }
         const h = new Headers({"content-type": r.headers.get("content-type") || "image/png", "cache-control":"public, max-age=86400"});
         return withCors(new Response(r.body, {status:200, headers:h}), cors);
       }
