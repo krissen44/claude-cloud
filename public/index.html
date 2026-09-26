@@ -823,7 +823,16 @@ const S = (() => {
    would make them most of what you meet, so they're weighted down. */
 function pickOpponent(exceptId){
   const pool = DATA.fighters.filter(f => f.id !== exceptId);
-  const legs = pool.filter(f => f.legendary), rest = pool.filter(f => !f.legendary);
+  const legs = pool.filter(f => f.legendary);
+  // Real collection rivals when we have them; the five demo dogs otherwise.
+  // Each one met leaves the pool and a fresh one is fetched, so faces keep changing.
+  const real = (typeof OPP !== 'undefined' && !WALLET.demo) ? OPP.pool.filter(f => f.id !== exceptId && !f.legendary) : [];
+  if (real.length >= 3 && Math.random() >= .12){
+    const f = real[rint(0, real.length - 1)];
+    OPP.pool = OPP.pool.filter(x => x !== f); lsSet('ba_opps', OPP.pool); oppTopUp();
+    return f;
+  }
+  const rest = pool.filter(f => !f.legendary);
   const src = (legs.length && (Math.random() < .12 || !rest.length)) ? legs : rest;
   return src[rint(0, src.length - 1)];
 }
@@ -1350,6 +1359,46 @@ async function imageFor(def, imageUrl){
   return cutout(bmp, PATTERNED.has(def.bg));
 }
 
+/* One NFT (nft_id + uri) → a playable fighter: metadata, then the cut-out image.
+   The server is tried first; the browser fetches directly if the server can't. */
+async function loadDef(n){
+  let m;
+  try {
+    const mr = await api('/meta?uri=' + encodeURIComponent(n.uri));
+    m = await mr.json(); if (!mr.ok) throw new Error(m.error || 'meta');
+  } catch(se){ m = await directMeta(n.uri).catch(e => { throw new Error(se.message + ', direct: ' + e.message); }); }
+  const def = defFromMeta(n, m);
+  def.img = await imageFor(def, m.image);
+  return def;
+}
+
+/* ---- opponents from the real collection ----
+   Every Pixel Scrappy's metadata sits in one IPFS folder (…/<number>.json).
+   Once the kennel knows that folder, rivals are drawn at random from all of
+   them, fetched in the background and kept in a small rotating pool. */
+const COLLECTION_SIZE = 5000;
+const OPP = {base: lsGet('ba_opp_base'), pool: lsGet('ba_opps') || [], busy: false};
+function oppLearnBase(nfts){
+  const count = {};
+  for (const n of nfts){ const m = String(n.uri || '').match(/^(.*\/)\d+\.json$/); if (m) count[m[1]] = (count[m[1]] || 0) + 1; }
+  const best = Object.keys(count).sort((a, b) => count[b] - count[a])[0];
+  if (best && best !== OPP.base){ OPP.base = best; OPP.pool = []; lsSet('ba_opp_base', best); lsSet('ba_opps', []); }
+}
+async function oppTopUp(){
+  if (OPP.busy || !OPP.base || !WALLET.token || WALLET.demo) return;
+  OPP.busy = true;
+  try {
+    for (let tries = 0; OPP.pool.length < 24 && tries < 8; tries++){
+      const num = rint(21, COLLECTION_SIZE);        // 1–20 are the Legendaries, drawn separately
+      if (OPP.pool.some(f => f.token === num)) continue;
+      try {
+        const def = await loadDef({nft_id: 'opp' + num, uri: OPP.base + num + '.json'});
+        OPP.pool.push(def); lsSet('ba_opps', OPP.pool);
+      } catch(e){ console.warn('opponent', num, e); }
+    }
+  } finally { OPP.busy = false; }
+}
+
 async function loadKennel(fresh){
   WALLET.loading = true; WALLET.error = ''; WALLET.progress = 'Reading your wallet…'; tab = 'kennel'; menu();
   try {
@@ -1364,16 +1413,7 @@ async function loadKennel(fresh){
       const n = j.nfts[next++];
       try {
         let c = cache[n.nft_id];
-        if (!c){
-          let m;
-          try {
-            const mr = await api('/meta?uri=' + encodeURIComponent(n.uri));
-            m = await mr.json(); if (!mr.ok) throw new Error(m.error || 'meta');
-          } catch(se){ m = await directMeta(n.uri).catch(e => { throw new Error(se.message + ', direct: ' + e.message); }); }
-          const def = defFromMeta(n, m);
-          def.img = await imageFor(def, m.image);
-          c = cache[n.nft_id] = def; lsSet(cacheKey, cache);
-        }
+        if (!c){ c = cache[n.nft_id] = await loadDef(n); lsSet(cacheKey, cache); }
         out.push(c);
       } catch(e){ console.warn('skipped', n.nft_id, e); failed.push(e.message); }
       done++; WALLET.progress = `Fetching your Scrappys… ${done} of ${j.nfts.length}`; menu();
@@ -1384,8 +1424,10 @@ async function loadKennel(fresh){
     else if (failed.length) WALLET.error = `${failed.length} of ${j.nfts.length} Scrappy${j.nfts.length===1?'':'s'} could not be loaded (${failed[0]}). Hit ↻ Refresh to retry.`;
     out.sort((a,b) => (b.legendary?1:0) - (a.legendary?1:0) || (a.token||1e9) - (b.token||1e9));
     OWNED = out; WALLET.owned = out.length;
+    oppLearnBase(j.nfts);
   } catch(e){ WALLET.error = 'Could not load your kennel (' + e.message + ').'; }
   WALLET.loading = false; menu();
+  oppTopUp();
 }
 
 /* ---- the real weekly ladder ---- */
