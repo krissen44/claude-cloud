@@ -1,0 +1,84 @@
+/* The $SCRAP main-page look, for the pages outside the React app
+   (/pixelscrappy/, /game/). Same tokens as the main build: paper background
+   with a dotted tooth, ink outlines, hard "sticker" shadows, Gabarito display
+   type, Scrappy blue. Load it after a page's own styles. */
+:root{
+  --bg:#eef4fa; --surface:#fff; --raised:#f7fafd; --fg:#0e1726;
+  --muted:#40506a; --subtle:#586780; --accent:#0f76c6; --accent-fg:#fff;
+  --sky:#d6ebfb; --line:#d2e0ee; --ink:#0e1726; --sky-ink:#0b5f9e; --sky-bright:#4fb3f5;
+  --scrappy:#1b8ce3; --scrappy-deep:#0e1726; --scrappy-hi:#8fd0fb;
+  --radius:22px;
+}
+html{scroll-behavior:smooth;scroll-padding-top:88px}
+body{
+  background-color:var(--bg);background-attachment:scroll;
+  background-image:radial-gradient(#0e17260e 1px,#0000 1px);background-size:22px 22px;
+}
+::selection{background:var(--accent);color:#fff}
+:where(a,button,[tabindex]):focus-visible{outline:3px solid var(--ink);outline-offset:3px;border-radius:6px}
+.wrap{max-width:1160px}
+
+/* header: the main page's white bar with an ink rule */
+body{overflow-x:clip}
+header{
+  margin:0 calc(50% - 50vw);padding:12px max(20px,calc(50vw - 560px));background:rgb(255 255 255 / 92%);
+  border-bottom:2px solid var(--ink);backdrop-filter:blur(12px);
+}
+.brand img{height:30px}
+.nav{align-items:center;gap:4px}
+.nav a{font-family:var(--display);font-size:15px;font-weight:800;letter-spacing:-.01em;text-transform:none;color:var(--muted);padding:8px 12px;border-radius:999px}
+.nav a:hover{background:var(--sky);color:var(--ink)}
+.nav a.on{background:none;color:var(--sky-ink)}
+.nav a.pill{background:var(--accent);color:#fff;border:2px solid var(--ink);box-shadow:0 3px 0 0 var(--ink);padding:7px 16px;margin-left:6px}
+.nav a.pill:hover{transform:translateY(-2px);box-shadow:0 5px 0 0 var(--ink);background:var(--accent);color:#fff}
+@media(max-width:560px){.nav a{font-size:13px;padding:6px 9px}.nav a.pill{padding:5px 12px}}
+
+/* type */
+h1,h2,h3{font-family:var(--display);font-weight:800;letter-spacing:-.025em}
+h2{font-size:clamp(28px,4vw,44px);line-height:1.05}
+.kicker{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.14em;color:var(--sky-ink)}
+.lead{color:var(--muted);line-height:1.625}
+
+/* stickers: every card, tile and stage gets the ink outline and hard shadow */
+.card,.tcard,.stat,.pack button,.rest .card,.buildstage,.buildstep,.sheet-card{
+  border:2px solid var(--ink);border-radius:var(--radius);
+  box-shadow:0 3px 0 0 var(--ink),0 14px 28px -18px #0e17268c;
+}
+.tcard,.pack button{border-radius:16px}
+.buildstep,.stat{border-radius:14px}
+.tcard img,.pack img{border-radius:0;border-bottom:2px solid var(--ink)}
+.tcard:hover,.pack button:hover,.rarity-counts a:hover{
+  transform:translateY(-4px);box-shadow:0 7px 0 0 var(--ink),0 18px 30px -18px #0e17268c;
+}
+.stage img{border:2px solid var(--ink);border-radius:16px}
+.strip img{border-radius:8px}
+.bar{border:2px solid var(--ink);box-shadow:0 2px 0 0 var(--ink);height:18px}
+.chip{border:2px solid var(--ink)}
+.chip.on{box-shadow:0 2px 0 0 var(--ink)}
+
+/* buttons: the main page's pill with an ink shadow that presses in */
+.btn,button.btn,a.btn{
+  display:inline-flex;align-items:center;justify-content:center;
+  border:2px solid var(--ink);border-radius:999px;padding:11px 20px;
+  font-family:var(--display);font-size:16px;font-weight:800;letter-spacing:-.01em;
+  background:var(--accent);color:#fff;text-decoration:none;
+  box-shadow:0 4px 0 0 var(--ink);transition:transform .15s ease,box-shadow .15s ease;
+}
+.btn:hover{transform:translateY(-2px);box-shadow:0 6px 0 0 var(--ink);text-decoration:none;filter:none}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 0 var(--ink)}
+.btn.ghost,button.ghost{background:var(--surface);color:var(--ink)}
+.iconbtn{border:2px solid var(--ink);box-shadow:0 2px 0 0 var(--ink)}
+input[type=number],input[type=text]{border:2px solid var(--ink);border-radius:999px}
+
+/* hero panel as one big sticker */
+.pxhero{
+  border:2px solid var(--ink);border-radius:28px;
+  box-shadow:0 4px 0 0 var(--ink),0 30px 50px -34px #0f76c6;
+}
+.pxhero-dog img{border:2px solid var(--ink);border-bottom:0;box-shadow:0 0 0 4px #fff,0 18px 40px -18px rgb(14 23 38 / 50%)}
+.pxhero-dog .meta{border:2px solid var(--ink);background:#fff;color:var(--ink)}
+.duel img{border:2px solid var(--ink);border-bottom:0}
+.beta{border:2px solid var(--ink);box-shadow:0 2px 0 0 var(--ink)}
+
+footer{border-top:2px solid var(--ink)!important}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
