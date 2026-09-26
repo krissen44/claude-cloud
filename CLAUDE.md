@@ -27,9 +27,13 @@ Git branch used so far: `claude/dreamy-pasteur-du9fm3` (repo `krissen44/claude-c
 ## Bark Arena (the game)
 
 ### Architecture
-- **Wallets**: "Connect wallet" in the game opens a chooser: **Xaman** (QR / deeplink) or **Joey** (browser extension,
-  provider `window.joey`, see npm `@joeywallet/wallet-sdk`). Joey **mobile** would need WalletConnect
-  (`@joey-wallet/wc-client`) and a Reown project ID — not built yet.
+- **Wallets**: "Connect wallet" in the game opens a chooser: **Xaman** (QR / deeplink), **Joey app** (WalletConnect v2,
+  QR on desktop / `wc:` link on phones) or **Joey extension** (provider `window.joey`, npm `@joeywallet/wallet-sdk`,
+  `signIn` → CAIP-122). WalletConnect project ID (Reown, not secret, domain-allowlisted to game.scrappyxrp.fun):
+  `CONFIG.WC_PROJECT_ID` in `public/index.html`. `public/wc.js` = esbuild bundle of `@walletconnect/sign-client` +
+  `qrcode` (recipe in `tools/wc/`), loaded only on demand. Joey app has no WC sign-in method, so it signs
+  `xrpl_signTransaction` of a 1-drop self-payment (temREDUNDANT, never submittable) with the nonce in a memo; the
+  server verifies it like the Ledger challenge (`txBlob` or `signedTx`).
 - **`server.js`** — plain Node 20 `http` server. npm deps (only for Joey signature checks): `ripple-keypairs`,
   `ripple-binary-codec` — the Hostinger ZIP ships `node_modules/` so no install step is needed. Serves `public/index.html` at `/` and forwards
   `/api/*` to `worker.js`. Provides the storage the worker needs:

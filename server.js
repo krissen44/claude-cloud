@@ -111,6 +111,8 @@ const env = {
 };
 
 const GAME = fs.readFileSync(path.join(ROOT, "public", "index.html"));
+// WalletConnect bundle for "Joey (mobile)", fetched only when a player picks it
+const WC_JS = (() => { try { return fs.readFileSync(path.join(ROOT, "public", "wc.js")); } catch { return null; } })();
 
 /* Private beta: with ACCESS_KEY set, the game (page and API) only opens for
    people who came in once through https://game…/?key=ACCESS_KEY — that visit
@@ -164,6 +166,10 @@ http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === "/favicon.ico") { res.writeHead(204); res.end(); return; }
+    if (url.pathname === "/wc.js" && WC_JS) {
+      res.writeHead(200, {"content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=86400"});
+      res.end(WC_JS); return;
+    }
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
     res.end(GAME);
   } catch (e) {

@@ -13,7 +13,7 @@
  */
 
 import { verify as verifySig, deriveAddress } from "ripple-keypairs";
-import { encodeForSigning } from "ripple-binary-codec";
+import { encodeForSigning, decode as decodeTx } from "ripple-binary-codec";
 
 const XUMM = "https://xumm.app/api/v1/platform";
 const XRPL_NODES = ["https://xrplcluster.com", "https://s1.ripple.com:51234", "https://s2.ripple.com:51234"];
@@ -382,8 +382,13 @@ function verifyCaip122(env, req, b) {
 }
 function verifyChallengeTx(b) {
   let tx;
-  try { tx = typeof b.signedTx === "string" ? JSON.parse(b.signedTx) : b.signedTx; } catch { return {error: "bad_tx"}; }
-  if (!tx || tx.TransactionType !== "Payment" || tx.Account !== tx.Destination || Number(tx.Sequence) !== 0) return {error: "not_a_challenge"};
+  try {
+    tx = b.txBlob ? decodeTx(String(b.txBlob))                       // WalletConnect returns the signed blob
+       : typeof b.signedTx === "string" ? JSON.parse(b.signedTx) : b.signedTx;
+  } catch { return {error: "bad_tx"}; }
+  // A payment of XRP to yourself: rippled refuses it (temREDUNDANT), so this
+  // signature can never move funds, whatever Sequence the wallet filled in.
+  if (!tx || tx.TransactionType !== "Payment" || tx.Account !== tx.Destination || typeof tx.Amount !== "string") return {error: "not_a_challenge"};
   let valid = false;
   try { valid = verifySig(encodeForSigning(tx), tx.TxnSignature, tx.SigningPubKey) && deriveAddress(tx.SigningPubKey) === tx.Account; } catch {}
   if (!valid) return {error: "bad_signature"};
@@ -394,7 +399,7 @@ function verifyChallengeTx(b) {
   return {address: tx.Account, nonce};
 }
 async function joeyVerify(env, req, b) {
-  const r = b && b.signedTx ? verifyChallengeTx(b) : verifyCaip122(env, req, b || {});
+  const r = b && (b.signedTx || b.txBlob) ? verifyChallengeTx(b) : verifyCaip122(env, req, b || {});
   if (r.error) return json({error: r.error}, 401);
   if (b.address && b.address !== r.address) return json({error: "address_mismatch"}, 401);
   if (!/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(r.address)) return json({error: "bad_account"}, 400);
