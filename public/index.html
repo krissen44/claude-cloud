@@ -1322,11 +1322,15 @@ function ipfsUrls(u){
   return m ? IPFS_GW.map(g => g + m[1]) : (/^https:\/\//i.test(u) ? [u] : []);
 }
 async function directFetch(u){
-  let err = new Error('no url');
-  for (const url of ipfsUrls(u)){
-    try { const r = await fetch(url); if (r.ok) return r; err = new Error('http ' + r.status); } catch(e){ err = e; }
-  }
-  throw err;
+  const urls = ipfsUrls(u); if (!urls.length) throw new Error('no url');
+  const ctl = urls.map(() => new AbortController()), timer = setTimeout(() => ctl.forEach(c => c.abort()), 12000);
+  try {
+    const [r, win] = await Promise.any(urls.map((url, i) => fetch(url, {signal: ctl[i].signal})
+      .then(r => { if (!r.ok) throw new Error('http ' + r.status); return [r, i]; })));
+    ctl.forEach((c, i) => { if (i !== win) c.abort(); });
+    return r;
+  } catch(e){ throw new Error((e.errors && e.errors[0] && e.errors[0].message) || 'unreachable'); }
+  finally { clearTimeout(timer); }
 }
 async function directMeta(uri){
   const r = await directFetch(uri), m = await r.json(), base = r.url;
@@ -1354,10 +1358,10 @@ async function loadKennel(fresh){
     const j = await r.json(); if (!r.ok) throw new Error(j.error || 'kennel');
     const cacheKey = 'ba_dogs:' + WALLET.account, cache = lsGet(cacheKey) || {};
     const out = [], failed = [];
-    for (let k = 0; k < j.nfts.length; k++){
-      const n = j.nfts[k];
-      WALLET.progress = `Fetching your Scrappys… ${k+1} of ${j.nfts.length}`;
-      if (k % 2 === 0) menu();
+    let next = 0, done = 0;
+    // a few at a time: fast, without tripping the gateways' rate limits
+    const worker = async () => { while (next < j.nfts.length){
+      const n = j.nfts[next++];
       try {
         let c = cache[n.nft_id];
         if (!c){
@@ -1372,7 +1376,9 @@ async function loadKennel(fresh){
         }
         out.push(c);
       } catch(e){ console.warn('skipped', n.nft_id, e); failed.push(e.message); }
-    }
+      done++; WALLET.progress = `Fetching your Scrappys… ${done} of ${j.nfts.length}`; menu();
+    } };
+    await Promise.all([0,1,2,3].map(worker));
     // Never a silent 0: say what the wallet holds and why nothing could be shown.
     if (!j.nfts.length && j.hint) WALLET.error = j.hint;
     else if (failed.length) WALLET.error = `${failed.length} of ${j.nfts.length} Scrappy${j.nfts.length===1?'':'s'} could not be loaded (${failed[0]}). Hit ↻ Refresh to retry.`;

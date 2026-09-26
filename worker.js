@@ -15,7 +15,7 @@
 const XUMM = "https://xumm.app/api/v1/platform";
 const XRPL_NODES = ["https://xrplcluster.com", "https://s1.ripple.com:51234", "https://s2.ripple.com:51234"];
 const IPFS_FALLBACKS = ["https://ipfs.io/ipfs/", "https://gateway.pinata.cloud/ipfs/", "https://dweb.link/ipfs/", "https://w3s.link/ipfs/"];
-const FETCH_TIMEOUT = 10000;                // ms; a hanging gateway must not stall the kennel
+const FETCH_TIMEOUT = 12000;                // ms; a hanging gateway must not stall the kennel
 const SESSION_TTL = 60 * 60 * 24 * 7;       // 7 Tage angemeldet bleiben
 const OWNERSHIP_TTL = 60 * 5;               // Besitz alle 5 Minuten neu vom Ledger
 const META_TTL = 60 * 60 * 24;              // Metadaten 1 Tag cachen
@@ -34,23 +34,22 @@ function ipfsAlternatives(url, env) {
   const rest = url.slice(gw.length);
   return [...new Set([gw, ...IPFS_FALLBACKS])].map(g => g + rest);
 }
-/* Fetch from the first gateway that answers; the last error wins if none do.
-   If every gateway said 429 (rate limited), wait once and go round again. */
+/* Ask every gateway at once and take the first good answer; the others are
+   cancelled. A dead or rate-limited gateway then costs nothing, and the whole
+   lookup is over after FETCH_TIMEOUT at most. */
 async function fetchAny(urls, opt) {
-  let err, limited = 0;
-  for (let round = 0; round < 2; round++) {
-    for (const u of urls) {
-      try {
-        const r = await fetchT(u, opt);
-        if (r.ok) return r;
-        err = new Error("http_" + r.status);
-        if (r.status === 429) limited = Math.max(limited, (+r.headers.get("retry-after") || 1) * 1000);
-      } catch (e) { err = new Error(e.name === "TimeoutError" ? "timeout" : String(e.message || e)); }
-    }
-    if (!limited || limited > 3000 || round) break;
-    await new Promise(ok => setTimeout(ok, limited));
-  }
-  throw err;
+  const ctl = urls.map(() => new AbortController());
+  const timer = setTimeout(() => ctl.forEach(c => c.abort(new DOMException("timeout", "TimeoutError"))), FETCH_TIMEOUT);
+  const tries = urls.map((u, i) => fetch(u, {...opt, signal: ctl[i].signal})
+    .then(r => { if (!r.ok) throw new Error("http_" + r.status); return [r, i]; })
+    .catch(e => { throw new Error(e.name === "TimeoutError" ? "timeout" : e.name === "AbortError" ? "aborted" : String(e.message || e)); }));
+  try {
+    const [r, win] = await Promise.any(tries);
+    ctl.forEach((c, i) => { if (i !== win) c.abort(); });
+    return r;
+  } catch (e) {
+    throw (e.errors || []).find(x => x.message.startsWith("http_")) || (e.errors || [])[0] || e;
+  } finally { clearTimeout(timer); }
 }
 /* TAXON empty or "*" → every taxon from ISSUER counts. */
 const isScrappy = (env, n) => n.Issuer === env.ISSUER && (env.TAXON === "" || env.TAXON === "*" || String(n.NFTokenTaxon) === env.TAXON);
