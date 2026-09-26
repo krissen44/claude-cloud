@@ -377,7 +377,10 @@ const SAVE = (() => {
       if (d.today) (d.today.arenas = d.today.arenas || []).push({won:r.won, xp:r.xp, live:r.live});
       save(); },
     // the day is done: every ranked fight used and today's arena fought
-    dayComplete(){ return !!(d.today && (d.today.arenas || []).length >= ARENA_RUNS && (d.tickets||0) <= 0); },
+    // done for the day: no tickets left and all three tournaments used — counted when they start,
+    // so one left mid-bracket (or played before this rule) still counts
+    arenaDoneToday(){ return Math.max(this.arenaRunsToday(), (d.today && d.today.arenas || []).length); },
+    dayComplete(){ return !!d.today && (d.tickets||0) <= 0 && this.arenaDoneToday() >= ARENA_RUNS && !(typeof arenaRun !== 'undefined' && arenaRun && !arenaRun.done); },
     recapShown(){ if (d.today){ d.today.shown = true; save(); } },
     weekRecapSeen(wk){ d.recapWeek = wk; save(); },
     joinPack(id){ if (!d.pack && !d.pending) d.pack = id; else d.pending = id; save(); },
@@ -598,7 +601,7 @@ function build(def, lvl, bonus){
           actives: ts.filter(t => t.kind==='active'), passives,
           wind: hasPerk(lvl,'wind'), phoenix: passives.some(p => p.effect==='phoenix'),
           hexed:false, hexTurns:0, counter:false, shield:0, hold:false,
-          run:0, extra:0, boon:0, seen:{bite:0, guard:0, taunt:0}, idle:0};
+          run:0, extra:0, boon:0, seen:{bite:0, guard:0, taunt:0}, hist:[], idle:0};
 }
 const has = (f,e) => f.passives.find(p => p.effect === e);
 const amt = (f,e) => f.passives.reduce((n,p) => n + (p.effect===e ? (p.amount||0) : 0), 0);
@@ -658,7 +661,12 @@ function bite(f, g, ga, who, base){
   if (Math.random() < C.bite.miss_chance){ say(`${who} bites — and <b>misses</b>.`); push({t:'float',who:sideOf(g),cls:'missN',txt:'MISS'}); f.run = 0; return; }
   if (g.counter){ damage(f,6,`${who} bites into the counter and takes`,'counter'); g.counter=false; f.run=0; return; }
   if (has(g,'reflect') && Math.random() < chc(g,'reflect')){ damage(f, amt(g,'reflect'), `${who} bites — <b>caught</b>, and takes`, 'counter'); f.run=0; return; }
-  if (ga.type==='guard' && !g.hexFail){ say(`${who} bites — <b>blocked</b>.`); push({t:'float',who:sideOf(g),cls:'missN',txt:'BLOCK'}); f.run=0; return; }
+  if (ga.type==='guard' && !g.hexFail){
+    // guard beats bite: the bite is blocked AND the guard snaps back, as a taunt chips through a guard
+    say(`${who} bites — <b>blocked</b>.`); push({t:'float',who:sideOf(g),cls:'missN',txt:'BLOCK'}); f.run=0;
+    damage(f, C.guard.snap_vs_bite ?? 2, `&nbsp;&nbsp;↳ the guard snaps back for`, 'counter');
+    return;
+  }
 
   let dmg = base != null ? base : rint(C.bite.min, C.bite.max);
   if (ga.type==='taunt') dmg += C.bite.bonus_vs_taunt;
@@ -703,30 +711,47 @@ function blast(f, g, n, who, ab, opt){
   return damage(g, n + frenzy(), `${who} uses <b>${esc(ab.value)}</b> for`, 'big', opt);
 }
 
-/* The opponent. Reads your habits: the more you lean on one move, the more
-   often it answers with the move that beats it. */
+/* The opponent. Reads your habits: not just which move you lean on, but
+   which move tends to follow your last one or two — so a fixed rhythm
+   (bite, guard, bite, guard…) gets read and countered. It only ever looks
+   at moves already played, never at the one you're choosing now. */
+function predictFoe(f){
+  const h = f.hist || [], score = {bite:0, guard:0, taunt:0};
+  if (h.length < 2) return null;
+  const ctxMatch = k => {                      // what followed the same last-k moves before?
+    if (h.length <= k) return;
+    const ctx = h.slice(-k).join();
+    for (let i = k; i < h.length; i++)
+      if (h[i] in score && h.slice(i-k, i).join() === ctx) score[h[i]] += (k === 2 ? 3 : 2) * (1 + i / h.length);
+  };
+  ctxMatch(2); ctxMatch(1);
+  for (const m of h) if (m in score) score[m] += .5;   // plain habit, weakly
+  const tot = score.bite + score.guard + score.taunt; if (!tot) return null;
+  const move = Object.keys(score).sort((a,b) => score[b] - score[a])[0];
+  return {move, conf: score[move] / tot};
+}
 const COUNTER = {bite:'guard', guard:'taunt', taunt:'bite'};
 let hist = {bite:0, guard:0, taunt:0}, plannedE = null, insightShown = false;
 function ai(f, foe, seen){
   if (seen && has(f,'insight') && Math.random() < .30 && seen.type in COUNTER) return {type: COUNTER[seen.type]};
+  // a readable pattern gets countered — the clearer the pattern, the more often
+  const pr = predictFoe(f);
+  if (pr && pr.conf > .45 && Math.random() < Math.min(.8, pr.conf)) return {type: COUNTER[pr.move]};
   const aff = f.actives.filter(a => a.cost <= f.energy);
-  if (aff.length && Math.random() < .42) return {type:'ability', a:aff[rint(0,aff.length-1)]};
+  if (aff.length && Math.random() < .35) return {type:'ability', a:aff[rint(0,aff.length-1)]};
   // Two turns without landing anything and it stops being patient.
-  if (f.idle >= 2 && Math.random() < .7) return {type:'bite'};
-  const m = f.seen, tot = m.bite + m.guard + m.taunt;
-  if (tot >= 3 && Math.random() < .40){
-    const fav = Object.keys(m).sort((a,b) => m[b]-m[a])[0];
-    return {type: COUNTER[fav]};
-  }
-  const r = Math.random();
-  if (foe.hp < 8 || r < .5) return {type:'bite'};
-  return {type: r < .78 ? 'guard' : 'taunt'};
+  if (f.idle >= 2 && Math.random() < .6) return {type:'bite'};
+  // Otherwise a mix. Smelling blood it leans on bite, but never so hard that guarding is a sure thing.
+  const r = Math.random(), biteP = foe.hp < 8 ? .6 : .45;
+  if (r < biteP) return {type:'bite'};
+  return {type: r < biteP + (1 - biteP) * .6 ? 'guard' : 'taunt'};
 }
 
 function resolve(pa, ea){
   ev = [];
   if (pa.type in E.seen) E.seen[pa.type]++;
   if (ea.type in P.seen) P.seen[ea.type]++;
+  E.hist.push(pa.type); P.hist.push(ea.type);        // the order of moves, for reading patterns
   const hp0 = {P: P.hp, E: E.hp};
   const acts = [[P,E,pa,LBL.P],[E,P,ea,LBL.E]];
   say(`<span class="turn">— Turn ${turn}${frenzy() ? ' · FRENZY +'+frenzy() : ''} —</span>`);
@@ -1280,7 +1305,7 @@ function renderClubControls(c){
       <span>🥊 <b>${esc(CLUB.status)}</b></span><span>${locked ? '🔒' : '⏱️ <b id="fcClock">10s</b>'}</span></p>
     <div class="acts">
       <button class="act" data-fc="bite"  ${locked?'disabled':''}><b>🦷 Bite</b><small>${C.bite.min}-${C.bite.max} dmg. Beats a taunt, stopped by a guard.</small></button>
-      <button class="act" data-fc="guard" ${locked?'disabled':''}><b>🛡️ Guard</b><small>Blocks a bite, +1◆. Loses to a taunt.</small></button>
+      <button class="act" data-fc="guard" ${locked?'disabled':''}><b>🛡️ Guard</b><small>Blocks a bite and snaps back for 2, +1◆. Loses to a taunt.</small></button>
       <button class="act" data-fc="taunt" ${locked?'disabled':''}><b>🐶 Taunt</b><small>+2◆, 2 chip through a guard. Eats extra from a bite.</small></button>
     </div>
     ${ab ? `<div class="acts abil">${ab}</div>` : ''}
@@ -1836,7 +1861,7 @@ function renderControls(){
     ${hint}
     <div class="acts">
       <button class="act" data-a="bite"><b>🦷 Bite</b><small>${C.bite.min}-${C.bite.max} dmg. Beats a taunt, stopped by a guard.</small></button>
-      <button class="act" data-a="guard"><b>🛡️ Guard</b><small>Blocks a bite, +1◆. Loses to a taunt.</small></button>
+      <button class="act" data-a="guard"><b>🛡️ Guard</b><small>Blocks a bite and snaps back for 2, +1◆. Loses to a taunt.</small></button>
       <button class="act" data-a="taunt"><b>🐶 Taunt</b><small>+2◆, 2 chip through a guard. Eats extra from a bite.</small></button>
     </div>
     ${ab ? `<div class="acts abil">${ab}</div>` : `<p class="mini" style="margin:9px 0 0">No ability traits on this one — plain moves only.</p>`}
@@ -1930,7 +1955,8 @@ function kennelView(){
       <h3>TODAY</h3>
       ${quests || '<p class="mini">No quests today.</p>'}
       <div class="mini" style="margin-top:6px">Resets at midnight UTC. Miss a day and the streak goes.</div>
-      ${SAVE.dayComplete() ? '<button id="recapOpen" class="sm" style="margin-top:8px">📋 Daily recap</button>' : ''}
+      ${SAVE.dayComplete() ? '<button id="recapOpen" class="sm" style="margin-top:8px">📋 Daily recap</button>'
+        : `<div class="mini" style="margin-top:8px"><b>Day progress:</b> ${D.tickets > 0 ? D.tickets + ' ranked fight' + (D.tickets===1?'':'s') + ' left' : '✅ ranked fights done'} · ${Math.min(ARENA_RUNS, SAVE.arenaDoneToday()) >= ARENA_RUNS ? '✅ tournaments done' : Math.min(ARENA_RUNS, SAVE.arenaDoneToday()) + ' of ' + ARENA_RUNS + ' tournaments'} — the daily recap opens when both are done.</div>`}
     </div>
   </div>
   <div class="card">
@@ -2088,7 +2114,9 @@ function recapHtml(){
   const D = SAVE.data, T = D.today, runs = T.arenas || [];
   const best = Math.max(0, ...runs.map(r => r.won)), arenaXp = runs.reduce((n, r) => n + r.xp, 0);
   const res = w => w === 3 ? '🏆 Champion' : w ? `out after ${w} win${w===1?'':'s'}` : 'out in the quarter-final';
-  const arenaTxt = runs.map((r, i) => `#${i+1} ${res(r.won)}`).join(' · ');
+  const missing = Math.max(0, ARENA_RUNS - runs.length);
+  const arenaTxt = (runs.map((r, i) => `#${i+1} ${res(r.won)}`).join(' · ') || 'no finished tournament')
+    + (missing ? ` · ${missing} not finished (left early or played before today's update)` : '');
   const lv = T.levels.map(l => { const f = findDog(l.id); return `<p class="q">⬆️ <span><b>${esc(f ? f.name : 'A Scrappy')}</b> reached Bond ${l.lvl}</span></p>`; }).join('');
   const qDone = (D.quests||[]).filter(q => q.got).length, qAll = (D.quests||[]).length;
   let pack = '';
@@ -2103,7 +2131,7 @@ function recapHtml(){
     <div class="grid">
       <div class="stat"><b>${T.wins}–${T.losses}</b><span class="mini">ranked fights W–L</span></div>
       <div class="stat"><b>+${T.xp + T.questXp}</b><span class="mini">XP today${T.questXp ? ' (' + T.questXp + ' from quests)' : ''}</span></div>
-      <div class="stat"><b>${runs.filter(r => r.won === 3).length}× 🏆</b><span class="mini">champion in ${runs.length} tournaments · best ${best}/3</span></div>
+      <div class="stat"><b>${runs.filter(r => r.won === 3).length}× 🏆</b><span class="mini">champion · ${runs.length} tournament${runs.length===1?'':'s'} finished · best ${best}/3</span></div>
       <div class="stat"><b>🔥 ${D.streak}</b><span class="mini">streak now · week's best ${D.wk.streak}</span></div>
     </div>
     <p class="q">🏟️ <span><b>Arena:</b> ${arenaTxt} · +${arenaXp} XP</span></p>
