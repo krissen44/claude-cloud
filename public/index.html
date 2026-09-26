@@ -916,11 +916,12 @@ function pickOpponent(exceptId){
 }
 
 /* ============================ arena ============================ */
-/* Once a day at a fixed hour the arena runs an eight-dog bracket: three rounds.
+/* Once a day the arena runs three fights, and all three are played: a loss
+   costs that fight's XP but never knocks you out. Win all three for Champion.
    Sign up and you fight it yourself. Don't, and your squad still enters —
    as ghosts that play your dogs for you. Live pays full XP, ghosts half. */
 const ARENA_HOUR = 19;                       // UTC
-const ARENA_XP = [0, 35, 60, 100];           // by rounds won: out in round 1 … champion
+const ARENA_XP = [0, 35, 60, 100];           // by fights won out of three: none … champion
 const HANDLES = ['DiamondPaw','xrpChad','scrappymom','LedgerLad','Nakamoto.dog','pixelwhale','bonehodler','goodboy404','Taxon0','fetchking','rugproof','memeboi'];
 
 function nextArena(){
@@ -958,8 +959,7 @@ function runGhostArena(){
     const me = sq[r % sq.length], o = ghostOpp(r);
     const w = simFight(me, SAVE.dog(me.id).lvl, o.def, o.lvl);
     lines.push({r, me: me.name, opp: o.def.name, who: o.who, w});
-    if (!w) break;
-    won++;
+    if (w) won++;
   }
   const xp = Math.round(ARENA_XP[won] / 2);
   sq.forEach(d => SAVE.award(d.id, won > 0, Math.round(xp / sq.length), true, true));
@@ -988,7 +988,7 @@ function arenaAfterFight(win){
   const r = arenaRun;
   r.lines.push({r:r.round, me:P.def.name, opp:E.def.name, who:r.opp.who, w:win});
   if (win) r.won++;
-  const finished = !win || r.round >= 2;
+  const finished = r.round >= 2;                 // all three are fought, win or lose
   if (finished){
     const xp = ARENA_XP[r.won];
     r.sq.forEach(d => SAVE.award(d.id, r.won > 0, Math.round(xp / r.sq.length), true, true));
@@ -997,7 +997,7 @@ function arenaAfterFight(win){
   } else r.round++;
 }
 function arenaLines(lines){
-  const names = ['Quarter-final','Semi-final','Final'];
+  const names = ['Fight 1','Fight 2','Fight 3'];
   return lines.map(l => `<p class="q">${l.w?'✅':'❌'} <span><b>${names[l.r]}</b> — ${esc(l.me)} vs ${esc(l.who)}'s ${esc(l.opp)}</span></p>`).join('');
 }
 
@@ -1775,7 +1775,7 @@ function renderControls(){
     const r = arenaRun;
     c.innerHTML = `<div class="card res">
       <div class="big">${verdict()}</div>
-      <div class="mini">🏟️ Arena · ${r.done ? (r.won===3 ? '<b>CHAMPION</b>' : 'out after '+r.won+' win'+(r.won===1?'':'s')) : 'round '+(r.round+1)+' of 3 next'}</div>
+      <div class="mini">🏟️ Arena · ${r.done ? (r.won===3 ? '<b>CHAMPION</b>' : 'won '+r.won+' of 3') : (r.won+' of '+r.round+' won so far · fight '+(r.round+1)+' of 3 next')}</div>
       <div style="text-align:left;margin:10px auto;max-width:420px">${arenaLines(r.lines)}</div>
       ${r.done ? `<div class="mini">+${r.xp} XP shared across your squad — full XP, because you fought it live.</div>` : ''}
       <div class="row" style="margin-top:12px">
@@ -2001,13 +2001,13 @@ function arenaView(){
       ${pos>=0 ? `<br><b style="color:var(--accent)">SQUAD #${pos+1}</b>` : ''}</span></button>`;
   }).join('');
   const last = A.last ? `<div class="card"><h3 class="h3">LAST ARENA</h3>
-      <p class="mini" style="margin:0 0 8px">${A.last.live ? 'Fought live' : 'Your ghosts fought'} · ${A.last.won===3?'<b>Champion</b>':A.last.won+' win'+(A.last.won===1?'':'s')} · +${A.last.xp} XP</p>
+      <p class="mini" style="margin:0 0 8px">${A.last.live ? 'Fought live' : 'Your ghosts fought'} · ${A.last.won===3?'<b>Champion</b> — 3 of 3':A.last.won+' of 3 won'} · +${A.last.xp} XP</p>
       ${arenaLines(A.last.lines)}</div>` : '';
   return `<div class="card">
     <div class="wal">
       <div><b style="font-size:12px">🏟️ Daily Arena</b>
         <div class="mini">Every day at <b>${ARENA_HOUR}:00 UTC</b> (${local} your time) · next in <b>${until(t)}</b><br>
-        Eight dogs, three rounds, one champion.</div></div>
+        Three fights, and every one is played — a loss never knocks you out. Win all three for Champion.</div></div>
       <button id="sign" class="${signed?'on':''}">${signed ? '✅ Signed up for today' : 'Sign up for today'}</button>
     </div>
     <p class="mini" style="margin:10px 0 0">${signed
@@ -2069,7 +2069,7 @@ function clubView(){
    done. It can be reopened from the TODAY panel until midnight UTC. */
 function recapHtml(){
   const D = SAVE.data, T = D.today, a = T.arena;
-  const arenaTxt = a.won === 3 ? '🏆 Champion' : a.won ? `Out after ${a.won} win${a.won===1?'':'s'}` : 'Out in the quarter-final';
+  const arenaTxt = a.won === 3 ? '🏆 Champion — 3 of 3 won' : `${a.won} of 3 won`;
   const lv = T.levels.map(l => { const f = findDog(l.id); return `<p class="q">⬆️ <span><b>${esc(f ? f.name : 'A Scrappy')}</b> reached Bond ${l.lvl}</span></p>`; }).join('');
   const qDone = (D.quests||[]).filter(q => q.got).length, qAll = (D.quests||[]).length;
   let pack = '';
