@@ -221,6 +221,10 @@ button.sm:hover{border-color:var(--accent);color:var(--ink)}
 .recap .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
 .recap .stat{border:2px solid var(--panelB);border-radius:8px;padding:8px;text-align:center}
 .recap .stat b{display:block;font-size:18px}
+.recap h3{font-family:'Press Start 2P',monospace;font-size:9px;margin:14px 0 8px;color:var(--ink2)}
+.recap .pr{display:grid;grid-template-columns:22px 1fr auto;gap:6px;align-items:start;padding:7px 8px;border:2px solid var(--panelB);border-radius:8px;margin-bottom:6px}
+.recap .pr.mine{border-color:var(--accent)}
+.recap .pr .n{font-weight:700}
 </style>
 </head>
 <body>
@@ -362,6 +366,7 @@ const SAVE = (() => {
     // the day is done: every ranked fight used and today's arena fought
     dayComplete(){ return !!(d.today && d.today.arena && (d.tickets||0) <= 0); },
     recapShown(){ if (d.today){ d.today.shown = true; save(); } },
+    weekRecapSeen(wk){ d.recapWeek = wk; save(); },
     joinPack(id){ if (!d.pack && !d.pending) d.pack = id; else d.pending = id; save(); },
     cancelMove(){ d.pending = null; save(); },
     leavePack(){ d.pack = null; d.pending = null; save(); },
@@ -1922,7 +1927,8 @@ function kennelView(){
 
 function ladderView(){
   if (LIVE()) return `<div class="card"><div id="ladderBox"><p class="mini" style="margin:0">Loading the ladder…</p></div>
-    <p class="mini" style="margin:10px 0 0">Real players only. Ranked fights and the arena count; casual and demo fights don't.</p></div>`;
+    <p class="mini" style="margin:10px 0 0">Real players only. Ranked fights and the arena count; casual and demo fights don't.</p>
+    <div class="row" style="margin-top:10px"><button class="sm" data-weekrecap="1">📊 Last week's results</button></div></div>`;
   return ladderDemo();
 }
 function ladderDemo(){
@@ -1942,7 +1948,8 @@ function ladderDemo(){
       ${board('xp','MOST XP', x=>x.xp)}
       ${board('w','MOST WINS', x=>x.w)}
       ${board('s','LONGEST STREAK', x=>x.s+'🔥')}
-    </div></div>`;
+    </div>
+    <div class="row" style="margin-top:10px"><button class="sm" data-weekrecap="1">📊 Last week's results</button></div></div>`;
 }
 
 function packsView(){
@@ -1969,6 +1976,7 @@ function packsView(){
     </div>`;
   }).join('');
   return `<div class="card">
+    <div class="row" style="justify-content:flex-end;margin:0 0 8px"><button class="sm" data-weekrecap="1">📊 Last week's results</button></div>
     <p class="mini" style="margin:0 0 11px"><b>Packs.</b> Up to ${PACK_MAX} members. Ranked by the <b>average per member</b>, so a small sharp pack beats a big lazy one.
     ${mine||pend ? '<br><b>Transfers land Monday.</b> Your first pack is instant; after that a move is queued to the week roll, so nobody hops into whichever pack is about to collect a bonus. Leaving is immediate — and costs you the bonus on the spot.' : ''}</p>
     <div class="pkg">${list}</div>
@@ -2100,6 +2108,100 @@ function showRecap(){
   if (SAVE.data.today.arena.won === 3 || SAVE.data.today.wins > SAVE.data.today.losses) S.win();
 }
 
+/* ============================ weekly results ============================ */
+/* On the first visit of a new week: how last week ended for the packs
+   (final order and the bonuses they earned) and for the players' ladder. */
+const lastWeekKey = () => SAVE.weekOf(Date.now() - 7*864e5);
+let weekRecapBusy = false;
+async function weekLadder(wk){
+  if (LIVE() && !WALLET.demo){
+    const r = await api('/ladder?week=' + wk); const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'ladder');
+    return j;
+  }
+  // demo: the same simulated rivals the ladder tab shows, plus your real last week
+  const r = seeded('ladder' + wk), L = SAVE.data.lastWk || {xp:0, wins:0, streak:0};
+  const names = ['DiamondPaw','xrpChad','scrappymom','LedgerLad','Nakamoto.dog','pixelwhale','bonehodler','goodboy404','Taxon0','fetchking'];
+  const rows = names.map(n => ({who:n, xp:Math.round(300+r()*2200), wins:Math.round(8+r()*70), streak:2+Math.floor(r()*11)}));
+  rows.push({who:'YOU', xp:L.xp, wins:L.wins, streak:L.streak, you:true});
+  const board = k => rows.slice().sort((a,b) => b[k]-a[k]);
+  const out = {week:wk, players:rows.length, mine:{}};
+  for (const k of ['xp','wins','streak']){
+    const b = board(k); out[k] = b.slice(0,10).map(x => ({who:x.who, v:x[k], you:!!x.you}));
+    const i = b.findIndex(x => x.you); out.mine[k] = L[k] > 0 ? {rank:i+1, v:L[k]} : null;
+  }
+  return out;
+}
+function weekRecapHtml(wk, lad){
+  const mine = SAVE.data.pack;
+  const rows = standings(wk).slice().sort((a,b) => b.avgW - a.avgW || b.avgX - a.avgX);
+  const won = awards(wk), byPack = Object.fromEntries(Object.entries(won).map(([k,v]) => [v,k]));
+  const medal = i => ['🥇','🥈','🥉'][i] || (i+1)+'.';
+  const packs = rows.map((p,i) => {
+    const bk = byPack[p.id];
+    return `<div class="pr ${p.id===mine?'mine':''}"><span>${medal(i)}</span>
+      <span><span class="n">${p.emoji} ${esc(p.name)}</span>${p.id===mine?' <span class="mini">(your pack)</span>':''}
+      <br><span class="mini">${p.members} member${p.members===1?'':'s'} · ${p.wins} wins · ${p.xp} XP · streak ${p.streak}</span>
+      ${bk ? `<br><span class="mini">${BONUS[bk].emoji} <b>Earned ${BONUS[bk].name}</b> for this week — ${esc(BONUS[bk].txt)}</span>` : ''}</span>
+      <b>${p.avgW.toFixed(1)}</b></div>`;
+  }).join('');
+  const myBk = mine && byPack[mine];
+  const board = (key, label, sfx) => {
+    const top = (lad[key] || []).slice(0,5), me = lad.mine && lad.mine[key];
+    const inTop = top.some(x => x.you);
+    return `<div><h3>${label}</h3>${top.length ? top.map((x,i) =>
+      `<p class="lb ${x.you?'you':''}"><span>${i+1}.</span><span>${esc(x.you ? 'YOU' : x.who)}</span><b>${x.v}${sfx||''}</b></p>`).join('')
+      : '<p class="mini">Nobody.</p>'}
+      ${me && !inTop ? `<p class="lb you"><span>${me.rank}.</span><span>YOU</span><b>${me.v}${sfx||''}</b></p>` : ''}</div>`;
+  };
+  const m = lad.mine || {};
+  const you = ['xp','wins','streak'].map(k => m[k] ? `#${m[k].rank}` : '—');
+  return `<div class="card" role="dialog" aria-label="Weekly results">
+    <h2>WEEK RESULTS</h2>
+    <p class="mini" style="text-align:center;margin:0">Week of <b>${esc(wk)}</b> · ${lad.players} player${lad.players===1?'':'s'} on the board</p>
+    <div class="grid">
+      <div class="stat"><b>${you[0]}</b><span class="mini">your rank · XP${m.xp ? ' (' + m.xp.v + ')' : ''}</span></div>
+      <div class="stat"><b>${you[1]}</b><span class="mini">your rank · wins${m.wins ? ' (' + m.wins.v + ')' : ''}</span></div>
+      <div class="stat"><b>${you[2]}</b><span class="mini">your rank · streak${m.streak ? ' (' + m.streak.v + ')' : ''}</span></div>
+      <div class="stat"><b>${myBk ? BONUS[myBk].emoji + ' ' + BONUS[myBk].name : '—'}</b><span class="mini">${mine ? 'your pack\'s bonus now' : 'join a pack for bonuses'}</span></div>
+    </div>
+    <h3>PACK STANDINGS</h3>
+    <p class="mini" style="margin:0 0 8px">Ranked by average wins per member.</p>
+    ${packs}
+    <h3>PLAYER RANKING</h3>
+    <div class="pnl3">${board('xp','MOST XP')}${board('wins','MOST WINS')}${board('streak','LONGEST STREAK','🔥')}</div>
+    <p class="mini" style="margin:10px 0 0">A fresh week is running: every board started at zero on Monday 00:00 UTC.</p>
+    <div class="row" style="margin-top:12px"><button id="recapClose">Close</button></div>
+  </div>`;
+}
+async function showWeekRecap(){
+  if (weekRecapBusy || document.querySelector('.recap')) return;
+  weekRecapBusy = true;
+  const wk = lastWeekKey();
+  const el = document.createElement('div'); el.className = 'recap';
+  el.innerHTML = `<div class="card"><p class="mini" style="margin:0;text-align:center">Tallying last week…</p></div>`;
+  document.body.appendChild(el);
+  const close = () => { el.remove(); document.removeEventListener('keydown', key); };
+  const key = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', key);
+  el.onclick = e => { if (e.target === el) close(); };
+  try {
+    if (packsLive() && !PACKDATA) await loadPacks();
+    const lad = await weekLadder(wk);
+    el.innerHTML = weekRecapHtml(wk, lad);
+    SAVE.weekRecapSeen(wk);
+  } catch(e){
+    el.innerHTML = `<div class="card"><p class="mini" style="margin:0">Last week's results aren't reachable right now (${esc(e.message)}).</p>
+      <div class="row" style="margin-top:12px"><button id="recapClose">Close</button></div></div>`;
+  }
+  weekRecapBusy = false;
+  const c = el.querySelector('#recapClose'); if (c) c.onclick = () => { S.click(); close(); };
+}
+function weekRecapDue(){
+  const D = SAVE.data;
+  return D.recapWeek !== lastWeekKey() && (D.fights > 0 || D.pack) && !WALLET.loading && !needLogin();
+}
+
 function menu(){
   SAVE.checkDay();
   app.innerHTML = nav() +
@@ -2111,7 +2213,9 @@ function menu(){
   app.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { S.unlock(); S.click(); tab = b.dataset.t; menu();
     if (tab === 'packs') loadPacks(); });
   const rc = document.getElementById('recapOpen'); if (rc) rc.onclick = () => { S.click(); showRecap(); };
-  if (SAVE.dayComplete() && !SAVE.data.today.shown && !WALLET.loading && !needLogin()) showRecap();
+  app.querySelectorAll('[data-weekrecap]').forEach(b => b.onclick = () => { S.click(); showWeekRecap(); });
+  if (weekRecapDue()) showWeekRecap();            // a new week: last week's results come first
+  else if (SAVE.dayComplete() && !SAVE.data.today.shown && !WALLET.loading && !needLogin()) showRecap();
   app.querySelectorAll('[data-f]').forEach(b => b.onclick = () => {
     S.unlock(); S.click();
     const me = findDog(b.dataset.f); if (!me) return;

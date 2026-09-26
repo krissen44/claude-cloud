@@ -123,6 +123,12 @@ function storeOf(env) {
        ON CONFLICT(account, week) DO UPDATE SET wins = MAX(weekly.wins, ?3), xp = MAX(weekly.xp, ?4),
          streak = MAX(weekly.streak, ?5), updated = ?6`).bind(a, wk, wins, xp, streak, t).run(),
     top: async (wk, col) => (await DB.prepare(`SELECT account, ${col} AS v FROM weekly WHERE week = ?1 AND ${col} > 0 ORDER BY ${col} DESC LIMIT 10`).bind(wk).all()).results || [],
+    rank: async (wk, col, a) => {
+      const me = await DB.prepare(`SELECT ${col} AS v FROM weekly WHERE week = ?1 AND account = ?2`).bind(wk, a).first();
+      if (!me || !(me.v > 0)) return null;
+      const n = await DB.prepare(`SELECT COUNT(*) AS n FROM weekly WHERE week = ?1 AND ${col} > ?2`).bind(wk, me.v).first();
+      return {rank: n.n + 1, v: me.v};
+    },
     count: async (wk) => (await DB.prepare(`SELECT COUNT(*) AS n FROM weekly WHERE week = ?1`).bind(wk).first()).n,
     holdings: async (a, tokens, t) => {
       await DB.prepare(`CREATE TABLE IF NOT EXISTS holdings (account TEXT PRIMARY KEY, tokens TEXT, updated INTEGER)`).run();
@@ -321,12 +327,15 @@ async function postStats(env, account, b) {
   await storeOf(env).weeklyPack(account, wk, rec.pack);
   return json({ok:true, week:wk});
 }
-async function ladder(env, me) {
-  const wk = weekOf();
+async function ladder(env, me, week) {
+  // ?week=YYYY-MM-DD (a Monday) reads a finished week for the weekly results; default is this week
+  const now = weekOf();
+  const wk = /^\d{4}-\d{2}-\d{2}$/.test(week || "") && week <= now ? weekOf(new Date(week + "T12:00:00Z")) : now;
   const st = storeOf(env);
   const [x, w, s] = await Promise.all([st.top(wk, "xp"), st.top(wk, "wins"), st.top(wk, "streak")]);
   const fmt = (rows) => rows.map(r => ({who: shortAcct(r.account), v: r.v, you: r.account === me}));
-  return json({week:wk, players: await st.count(wk), xp: fmt(x), wins: fmt(w), streak: fmt(s)});
+  const mine = me ? {xp: await st.rank(wk, "xp", me), wins: await st.rank(wk, "wins", me), streak: await st.rank(wk, "streak", me)} : null;
+  return json({week:wk, players: await st.count(wk), xp: fmt(x), wins: fmt(w), streak: fmt(s), mine});
 }
 async function check(env, account) {
   const rep = {ok:true, config:{
@@ -400,7 +409,7 @@ export default {
       if (p === "/auth/status") return withCors(await authStatus(env, url.searchParams.get("uuid") || ""), cors);
 
       const account = await readSession(env, (req.headers.get("authorization") || "").replace(/^Bearer /, ""));
-      if (p === "/ladder") return withCors(await ladder(env, account), cors);
+      if (p === "/ladder") return withCors(await ladder(env, account, url.searchParams.get("week")), cors);
       if (!account) return withCors(json({error:"unauthorized"}, 401), cors);
 
       if (p === "/me/kennel") return withCors(await kennel(env, account, url.searchParams.has("fresh")), cors);

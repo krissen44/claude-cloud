@@ -45,6 +45,10 @@ const STORE = {
     return Object.values(db.weekly).filter(r => r.week === wk && r[col] > 0)
       .sort((a, b) => b[col] - a[col]).slice(0, 10).map(r => ({ account: r.account, v: r[col] }));
   },
+  async rank(wk, col, a) {
+    const k = db.weekly[wk + "|" + a]; if (!k || !(k[col] > 0)) return null;
+    return { rank: 1 + Object.values(db.weekly).filter(r => r.week === wk && r[col] > k[col]).length, v: k[col] };
+  },
   async count(wk) { return Object.values(db.weekly).filter(r => r.week === wk).length; },
   async holdings(a, tokens, t) { db.holdings[a] = { tokens, updated: t }; dirty = true; },
   async packGet(a) { return db.packs[a] || null; },
