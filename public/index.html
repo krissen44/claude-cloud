@@ -331,7 +331,8 @@ const SAVE = (() => {
   function checkDay(){
     const t = today(), w = weekOf();
     if (d.week !== w){
-      d.lastWk = d.wk || {wins:0,xp:0,streak:0};
+      // only the week that just ended counts as "last week"; a skipped week means nothing to carry
+      d.lastWk = (d.week === weekOf(Date.now() - 7*864e5) && d.wk) || {wins:0,xp:0,streak:0};
       d.wk = {wins:0, xp:0, streak:0};
       if (d.pending){ d.pack = d.pending; d.pending = null; }   // transfers land Monday
       d.week = w;
@@ -913,16 +914,18 @@ function pickOpponent(exceptId){
   const all = DATA.fighters.filter(f => f.id !== exceptId);
   const pool = all.filter(f => !taken(f)).length ? all.filter(f => !taken(f)) : all;   // never run dry
   const legs = pool.filter(f => f.legendary);
-  // Real collection rivals when we have them; the five demo dogs otherwise.
+  // Real collection rivals when we have them; the five demo dogs only until the pool has loaded.
   // Each one met leaves the pool and a fresh one is fetched, so faces keep changing.
   const real = (typeof OPP !== 'undefined' && !WALLET.demo) ? OPP.pool.filter(f => f.id !== exceptId && !f.legendary && !taken(f)) : [];
-  if (real.length >= 3 && Math.random() >= .12){
+  const legendary = legs.length && Math.random() < .12;       // Legendaries: about one fight in eight
+  if (real.length && !legendary){
     const f = real[rint(0, real.length - 1)];
     OPP.pool = OPP.pool.filter(x => x !== f); lsSet('ba_opps', OPP.pool); oppTopUp();
     return f;
   }
+  if (legendary) return legs[rint(0, legs.length - 1)];
   const rest = pool.filter(f => !f.legendary);
-  const src = (legs.length && (Math.random() < .12 || !rest.length)) ? legs : rest;
+  const src = rest.length ? rest : legs;
   return src[rint(0, src.length - 1)];
 }
 
@@ -1813,7 +1816,7 @@ function renderControls(){
         <button id="again">${SAVE.data.tickets>0 ? 'Fight again ('+SAVE.data.tickets+' left)' : 'Casual fight'}</button><button id="menu">Back to the kennel</button></div></div>`;
     document.getElementById('again').onclick = () => {
       const r = SAVE.data.tickets > 0 && SAVE.spend();
-      startFight(P.def, E.def, r);
+      startFight(P.def, pickOpponent(P.def.id), r);      // a fresh rival every fight, not a rematch
     };
     document.getElementById('menu').onclick = menu;
     return;
@@ -2182,6 +2185,7 @@ function weekRecapHtml(wk, lad){
       <div class="stat"><b>${you[2]}</b><span class="mini">your rank · streak${m.streak ? ' (' + m.streak.v + ')' : ''}</span></div>
       <div class="stat"><b>${myBk ? BONUS[myBk].emoji + ' ' + BONUS[myBk].name : '—'}</b><span class="mini">${mine ? 'your pack\'s bonus now' : 'join a pack for bonuses'}</span></div>
     </div>
+    ${!lad.players && !rows.some(p => p.members) ? '<p class="mini" style="text-align:center;margin:12px 0 0"><b>No results for that week yet.</b> Nobody had played — this fills in once a week with real fights has ended.</p>' : ''}
     <h3>PACK STANDINGS</h3>
     <p class="mini" style="margin:0 0 8px">Ranked by average wins per member.</p>
     ${packs}
@@ -2216,7 +2220,9 @@ async function showWeekRecap(){
 }
 function weekRecapDue(){
   const D = SAVE.data;
-  return D.recapWeek !== lastWeekKey() && (D.fights > 0 || D.pack) && !WALLET.loading && !needLogin();
+  // only for players who actually played last week — a newcomer has no week to look back on
+  const L = D.lastWk || {};
+  return D.recapWeek !== lastWeekKey() && D.week === SAVE.weekOf() && (L.xp > 0 || L.wins > 0) && !WALLET.loading && !needLogin();
 }
 
 function menu(){
