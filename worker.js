@@ -12,6 +12,9 @@
  * Variablen (wrangler.toml):          ISSUER, TAXON, ORIGIN, IPFS_GATEWAY, META_HOSTS
  */
 
+import { verify as verifySig, deriveAddress } from "ripple-keypairs";
+import { encodeForSigning } from "ripple-binary-codec";
+
 const XUMM = "https://xumm.app/api/v1/platform";
 const XRPL_NODES = ["https://xrplcluster.com", "https://s1.ripple.com:51234", "https://s2.ripple.com:51234"];
 const IPFS_FALLBACKS = ["https://ipfs.io/ipfs/", "https://gateway.pinata.cloud/ipfs/", "https://dweb.link/ipfs/", "https://w3s.link/ipfs/"];
@@ -328,6 +331,78 @@ async function packMove(env, account, b) {
   return packs(env, account);
 }
 
+/* ------------------------------------------------------------------ Joey */
+/* Joey Wallet sign-in (browser extension, XLS-72d provider `signIn`).
+   1. /auth/joey/start hands out a one-time nonce (5 minutes).
+   2. The wallet signs a CAIP-122 "Sign in with XRPL" message carrying that nonce
+      — or, for a Ledger account, a canonical unsubmittable 1-drop Payment to
+      itself (Sequence 0) with the nonce in a memo.
+   3. /auth/joey/verify checks the signature, that the key belongs to the
+      address, that the domain is ours and the nonce is fresh, then issues the
+      same session as a Xaman sign-in. */
+const JOEY_NONCE_TTL = 300;
+const hexOf = (str) => Array.from(enc.encode(str), b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+function ourHosts(env, req) {
+  const hosts = [];
+  for (const u of [env.RETURN_URL, ...(env.ORIGIN || "").split(",")]) {
+    try { if (u && u.trim()) hosts.push(new URL(u.trim()).host); } catch {}
+  }
+  // unconfigured (local dev): fall back to the page the request came from
+  if (!hosts.length) { try { hosts.push(new URL(req.headers.get("origin")).host); } catch {} }
+  return hosts;
+}
+async function joeyStart(env) {
+  if (!env.KV) return json({error: "no_kv"}, 500);
+  const nonce = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, "0")).join("");
+  await env.KV.put(`joey:${nonce}`, "1", {expirationTtl: JOEY_NONCE_TTL});
+  return json({nonce, statement: "Sign in to Bark Arena. No transaction, no fee."});
+}
+async function takeNonce(env, nonce) {
+  if (!nonce || !/^[0-9a-f]{16,64}$/i.test(nonce) || !env.KV) return false;
+  const ok = await env.KV.get(`joey:${nonce}`);
+  if (ok) await env.KV.put(`joey:${nonce}`, "", {expirationTtl: 1});   // one use only
+  return !!ok;
+}
+function verifyCaip122(env, req, b) {
+  const msg = String(b.message || ""), pub = String(b.publicKey || ""), sig = String(b.signature || "");
+  const lines = msg.split("\n");
+  const head = /^(.+) wants you to sign in with your XRPL account:$/.exec(lines[0] || "");
+  if (!head) return {error: "bad_message"};
+  const address = (lines[1] || "").trim();
+  const field = (name) => { const l = lines.find(x => x.startsWith(name + ": ")); return l ? l.slice(name.length + 2).trim() : ""; };
+  if (!ourHosts(env, req).includes(head[1])) return {error: "wrong_domain"};
+  const issued = Date.parse(field("Issued At"));
+  if (issued && Math.abs(Date.now() - issued) > 10 * 60 * 1000) return {error: "stale_message"};
+  const exp = Date.parse(field("Expiration Time"));
+  if (exp && exp < Date.now()) return {error: "expired_message"};
+  let valid = false;
+  try { valid = verifySig(hexOf(msg), sig, pub) && deriveAddress(pub) === address; } catch {}
+  if (!valid) return {error: "bad_signature"};
+  return {address, nonce: field("Nonce")};
+}
+function verifyChallengeTx(b) {
+  let tx;
+  try { tx = typeof b.signedTx === "string" ? JSON.parse(b.signedTx) : b.signedTx; } catch { return {error: "bad_tx"}; }
+  if (!tx || tx.TransactionType !== "Payment" || tx.Account !== tx.Destination || Number(tx.Sequence) !== 0) return {error: "not_a_challenge"};
+  let valid = false;
+  try { valid = verifySig(encodeForSigning(tx), tx.TxnSignature, tx.SigningPubKey) && deriveAddress(tx.SigningPubKey) === tx.Account; } catch {}
+  if (!valid) return {error: "bad_signature"};
+  let nonce = "";
+  for (const m of tx.Memos || []) {
+    try { const d = JSON.parse(hex2str(m.Memo && m.Memo.MemoData)); if (d && d.challenge) nonce = String(d.challenge); } catch {}
+  }
+  return {address: tx.Account, nonce};
+}
+async function joeyVerify(env, req, b) {
+  const r = b && b.signedTx ? verifyChallengeTx(b) : verifyCaip122(env, req, b || {});
+  if (r.error) return json({error: r.error}, 401);
+  if (b.address && b.address !== r.address) return json({error: "address_mismatch"}, 401);
+  if (!/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(r.address)) return json({error: "bad_account"}, 400);
+  if (!(await takeNonce(env, r.nonce))) return json({error: "stale_nonce"}, 401);
+  await storeOf(env).seen(r.address, Date.now());
+  return json({state: "signed", account: r.address, token: await mintSession(env, r.address), via: "joey"});
+}
+
 async function postStats(env, account, b) {
   const wk = weekOf();
   const wins = Math.max(0, Math.min(500, b.wins|0)), xp = Math.max(0, Math.min(20000, b.xp|0)), streak = Math.max(0, Math.min(200, b.streak|0));
@@ -442,6 +517,8 @@ export default {
       }
       if (p === "/check") return withCors(await check(env, url.searchParams.get("account")), cors);
       if (p === "/auth/start" && req.method === "POST") return withCors(await authStart(env), cors);
+      if (p === "/auth/joey/start" && req.method === "POST") return withCors(await joeyStart(env), cors);
+      if (p === "/auth/joey/verify" && req.method === "POST") return withCors(await joeyVerify(env, req, await req.json().catch(() => ({}))), cors);
       if (p === "/auth/status") return withCors(await authStatus(env, url.searchParams.get("uuid") || ""), cors);
 
       const account = await readSession(env, (req.headers.get("authorization") || "").replace(/^Bearer /, ""));

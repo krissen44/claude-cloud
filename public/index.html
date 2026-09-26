@@ -1375,6 +1375,47 @@ async function walletPoll(){
   } catch(e){}
   setTimeout(walletPoll, 2000);
 }
+/* ---- Joey Wallet (browser extension) ----
+   Joey injects an XLS-72d provider as window.joey (or window.xrpl.joey). We ask
+   the server for a one-time nonce, let Joey sign a "Sign in with XRPL" message
+   (or, for a Ledger account, an unsubmittable challenge payment) and hand that
+   to the server, which checks it and returns the same session as Xaman. */
+function joeyProvider(){ return window.joey || (window.xrpl && window.xrpl.joey) || null; }
+async function waitForJoeyProvider(ms){
+  const t0 = Date.now();
+  while (!joeyProvider() && Date.now() - t0 < ms) await wait(150);
+  return joeyProvider();
+}
+function joeyCall(p, method, params){
+  return typeof p[method] === 'function' ? p[method](params) : p.request({method, params});
+}
+async function joeyConnect(){
+  WALLET.error = ''; WALLET.login = {state:'joey', step:'Looking for the Joey extension…'}; menu();
+  const step = t => { if (WALLET.login && WALLET.login.state === 'joey'){ WALLET.login.step = t; menu(); return true; } return false; };
+  try {
+    const p = await waitForJoeyProvider(2500);
+    if (!p) throw Object.assign(new Error('Joey Wallet extension not found in this browser. Install it from joeywallet.xyz — or pick Xaman.'), {shown:true});
+    if (!step('Approve the connection in Joey…')) return;
+    await joeyCall(p, 'connect', {name:'Bark Arena', icon:'https://scrappyxrp.fun/favicon-192.png'});
+    const r = await api('/auth/joey/start', {method:'POST'}); const st = await r.json();
+    if (!r.ok || !st.nonce) throw Object.assign(new Error('The game server is not reachable right now.'), {shown:true});
+    if (!step('Approve the sign-in in Joey…')) return;
+    const res = await joeyCall(p, 'signIn', {statement: st.statement, nonce: st.nonce});
+    if (!WALLET.login || WALLET.login.state !== 'joey') return;             // cancelled meanwhile
+    const body = res && res.signedTx ? {address:res.address, signedTx:res.signedTx}   // Ledger account
+      : {address:res.address, publicKey:res.publicKey, message:res.message, signature:res.signature};
+    const v = await api('/auth/joey/verify', {method:'POST', body}); const j = await v.json();
+    if (!v.ok || j.state !== 'signed') throw Object.assign(new Error('Joey sign-in could not be verified (' + (j.error || v.status) + ').'), {shown:true});
+    lsSet('ba_session', {token:j.token, account:j.account});
+    WALLET.login = null; walletSignedIn(j.token, j.account);
+  } catch(e){
+    if (!WALLET.login) return;
+    const declined = e && (e.code === 4001 || /reject|denied|declin/i.test(e.message || ''));
+    WALLET.login = {state:'choose'};
+    WALLET.error = declined ? 'Sign-in was declined in Joey.' : (e && e.shown ? e.message : 'Joey sign-in failed (' + ((e && e.message) || 'unknown error') + ').');
+    menu();
+  }
+}
 function walletSignedIn(token, account){
   WALLET.token = token; WALLET.account = account; WALLET.demo = false;
   SAVE.useAccount(account);
@@ -1616,6 +1657,18 @@ function walletCard(){
         <button id="xamCancel">Cancel</button></div>
         <p class="mini" style="margin-top:8px">Waiting for your signature…</p></div></div></div>`;
   if (L && L.state === 'starting') return `<div class="card"><p class="mini" style="margin:0">Opening Xaman…</p></div>`;
+  if (L && L.state === 'joey') return `<div class="card"><div class="wal">
+      <div><b style="font-size:12px">🦘 Joey Wallet</b>
+        <div class="mini">${esc(L.step || 'Opening Joey…')} It's a sign-in only — no transaction, no fee.</div></div>
+      <button id="joeyCancel">Cancel</button></div></div>`;
+  if (L && L.state === 'choose') return `<div class="card">
+      <p class="mini" style="margin:0 0 10px"><b>Connect your wallet.</b> Signing in only proves which wallet is yours — no transaction, no fee.</p>
+      <div class="acts" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+        <button class="act" id="pickXaman"><b>📱 Xaman</b><small>Scan a QR code, or open the Xaman app on this phone.</small></button>
+        <button class="act" id="pickJoey"><b>🦘 Joey</b><small>Joey Wallet browser extension on this computer.</small></button>
+      </div>
+      <div class="row" style="justify-content:flex-start;margin-top:10px"><button id="pickCancel" class="sm">Cancel</button></div>
+      ${WALLET.error ? `<p class="mini" style="margin:8px 0 0;color:var(--hpLow)">${esc(WALLET.error)}</p>` : ''}</div>`;
   if (WALLET.token && !WALLET.demo) return `<div class="card"><div class="wal">
       <div><b style="font-size:12px">🔗 ${esc(WALLET.account.slice(0,6) + '…' + WALLET.account.slice(-4))}</b>
         <div class="mini">${WALLET.loading ? esc(WALLET.progress) : (OWNED ? OWNED.length + ' Pixel Scrappy' + (OWNED.length===1?'':'s') + ' in this wallet' : '')}</div></div>
@@ -1623,13 +1676,17 @@ function walletCard(){
       ${WALLET.error ? `<p class="mini" style="margin:8px 0 0;color:var(--hpLow)">${esc(WALLET.error)}</p>` : ''}</div>`;
   return `<div class="card"><div class="wal">
       <div><b style="font-size:12px">${WALLET.demo ? 'Demo mode' : 'Welcome to Bark Arena'}</b>
-        <div class="mini">${WALLET.demo ? 'Playing with demo dogs. Nothing counts for the ladder.' : 'Sign in with Xaman to fight with the Pixel Scrappys you hold.'}</div></div>
-      <div class="row"><button id="xamanLive">Connect Xaman</button>${WALLET.demo ? '' : '<button id="demo">Try the demo</button>'}</div></div>
+        <div class="mini">${WALLET.demo ? 'Playing with demo dogs. Nothing counts for the ladder.' : 'Connect Xaman or Joey to fight with the Pixel Scrappys you hold.'}</div></div>
+      <div class="row"><button id="connectLive">Connect wallet</button>${WALLET.demo ? '' : '<button id="demo">Try the demo</button>'}</div></div>
       ${WALLET.error ? `<p class="mini" style="margin:8px 0 0;color:var(--hpLow)">${esc(WALLET.error)}</p>` : ''}</div>`;
 }
 function walletWire(){
   const q = id => document.getElementById(id);
-  if (q('xamanLive')) q('xamanLive').onclick = () => { S.unlock(); S.click(); walletConnect(); };
+  if (q('connectLive')) q('connectLive').onclick = () => { S.unlock(); S.click(); WALLET.error = ''; WALLET.login = {state:'choose'}; menu(); };
+  if (q('pickXaman'))  q('pickXaman').onclick = () => { S.click(); walletConnect(); };
+  if (q('pickJoey'))   q('pickJoey').onclick = () => { S.click(); joeyConnect(); };
+  if (q('pickCancel')) q('pickCancel').onclick = () => { S.click(); WALLET.login = null; WALLET.error = ''; menu(); };
+  if (q('joeyCancel')) q('joeyCancel').onclick = () => { S.click(); WALLET.login = null; menu(); };
   if (q('xamCancel')) q('xamCancel').onclick = () => { WALLET.login = null; lsSet('ba_pending', null); menu(); };
   if (q('demo'))      q('demo').onclick = () => { S.unlock(); S.click(); WALLET.demo = true; menu(); };
   if (q('signout'))   q('signout').onclick = () => { S.click(); walletSignOut(); };
@@ -1925,7 +1982,7 @@ function introCard(){
   return `<div class="card"><h3 class="h3">WHAT THIS IS</h3>
     <p class="q">🐶 <span>Your Pixel Scrappys fight with the traits they actually carry — the three rarest decide the moveset.</span></p>
     <p class="q">📈 <span>Every dog levels its own bond, and the bond stays with the NFT.</span></p>
-    <p class="q">🏟️ <span>A daily arena at 19:00 UTC, weekly ladders, and packs that fight for bonuses.</span></p>
+    <p class="q">🏟️ <span>Three arena tournaments a day, weekly ladders, and packs that fight for bonuses.</span></p>
     <p class="q">🔒 <span>Signing in only proves which wallet is yours. No transaction, no fee, nothing leaves your wallet.</span></p></div>`;
 }
 function signInFirst(){ return walletCard() + `<div class="card"><p class="mini" style="margin:0">Sign in first — this tab works with the Scrappys in your wallet.</p></div>`; }
@@ -2074,8 +2131,8 @@ function arenaView(){
   return `<div class="card">
     <div class="wal">
       <div><b style="font-size:12px">🏟️ Daily Arena</b>
-        <div class="mini">Every day at <b>${ARENA_HOUR}:00 UTC</b> (${local} your time) · next in <b>${until(t)}</b><br>
-        Three tournaments a day. Each is a knockout of three rounds — win all three for Champion.</div></div>
+        <div class="mini"><b>${ARENA_RUNS} tournaments a day</b>, whenever you like · new ones in <b>${untilUtcMidnight()}</b> (00:00 UTC)<br>
+        Each one is a knockout of three rounds — win all three for Champion.</div></div>
       <button id="sign" class="${signed?'on':''}">${signed ? '✅ Signed up for today' : 'Sign up for today'}</button>
     </div>
     <p class="mini" style="margin:10px 0 0">${signed

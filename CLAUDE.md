@@ -27,7 +27,11 @@ Git branch used so far: `claude/dreamy-pasteur-du9fm3` (repo `krissen44/claude-c
 ## Bark Arena (the game)
 
 ### Architecture
-- **`server.js`** — plain Node 20 `http` server, no npm deps. Serves `public/index.html` at `/` and forwards
+- **Wallets**: "Connect wallet" in the game opens a chooser: **Xaman** (QR / deeplink) or **Joey** (browser extension,
+  provider `window.joey`, see npm `@joeywallet/wallet-sdk`). Joey **mobile** would need WalletConnect
+  (`@joey-wallet/wc-client`) and a Reown project ID — not built yet.
+- **`server.js`** — plain Node 20 `http` server. npm deps (only for Joey signature checks): `ripple-keypairs`,
+  `ripple-binary-codec` — the Hostinger ZIP ships `node_modules/` so no install step is needed. Serves `public/index.html` at `/` and forwards
   `/api/*` to `worker.js`. Provides the storage the worker needs:
   - `STORE` → JSON file `DATA_DIR/store.json` (players, weekly rows, holdings, packs), flushed every 2 s, atomic write.
   - `KV` → in-memory cache with TTL.
@@ -51,6 +55,7 @@ Git branch used so far: `claude/dreamy-pasteur-du9fm3` (repo `krissen44/claude-c
 |---|---|---|
 | `/check?account=r…` | – | Setup self-test: config, NFTs found, metadata/image fetch, NFTs grouped by issuer/taxon |
 | `/auth/start` (POST), `/auth/status?uuid=` | – | Xaman SignIn payload → session token (HMAC, 7 days) |
+| `/auth/joey/start` (POST), `/auth/joey/verify` (POST) | – | Joey Wallet sign-in: one-time nonce (5 min) → CAIP-122 "Sign in with XRPL" signature, or for Ledger accounts a Sequence-0 self-payment with the nonce in a memo; checks domain (RETURN_URL/ORIGIN hosts), key↔address, nonce, freshness → same session |
 | `/ladder[?week=YYYY-MM-DD]` | optional | Weekly top 10 (xp/wins/streak) + caller's rank (`mine`) |
 | `/public/board` | – | Public standings for the website: this week + last week, players and packs; CORS `*`, cached 60 s |
 | `/me/kennel[?fresh=1]` | ✔ | Player's Pixel Scrappys from the ledger; records holdings; `hint` when nothing matches |
