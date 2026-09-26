@@ -104,6 +104,13 @@ function hostAllowed(url, env) {
 }
 
 /* ------------------------------------------------------------------ storage */
+let packTableReady = false;
+async function packTable(DB) {
+  if (packTableReady) return;
+  await DB.prepare(`CREATE TABLE IF NOT EXISTS packs (account TEXT PRIMARY KEY, pack TEXT, pending TEXT, week TEXT)`).run();
+  try { await DB.prepare(`ALTER TABLE weekly ADD COLUMN pack TEXT`).run(); } catch {}   // already there
+  packTableReady = true;
+}
 /* Cloudflare passes a D1 database as env.DB; the Node server passes env.STORE. */
 function storeOf(env) {
   if (env.STORE) return env.STORE;
@@ -122,6 +129,23 @@ function storeOf(env) {
       await DB.prepare(`INSERT INTO holdings (account, tokens, updated) VALUES (?1, ?2, ?3)
         ON CONFLICT(account) DO UPDATE SET tokens = ?2, updated = ?3`).bind(a, JSON.stringify(tokens), t).run();
     },
+    packGet: async (a) => {
+      await packTable(DB);
+      const r = await DB.prepare(`SELECT pack, pending, week FROM packs WHERE account = ?1`).bind(a).first();
+      return r || null;
+    },
+    packSet: async (a, rec) => {
+      await packTable(DB);
+      await DB.prepare(`INSERT INTO packs (account, pack, pending, week) VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(account) DO UPDATE SET pack = ?2, pending = ?3, week = ?4`).bind(a, rec.pack, rec.pending, rec.week).run();
+    },
+    packAll: async () => { await packTable(DB); return (await DB.prepare(`SELECT account, pack, pending, week FROM packs`).all()).results || []; },
+    weeklyPack: async (a, wk, pack) => {
+      await packTable(DB);
+      await DB.prepare(`INSERT INTO weekly (account, week, wins, xp, streak, updated, pack) VALUES (?1, ?2, 0, 0, 0, ?3, ?4)
+        ON CONFLICT(account, week) DO UPDATE SET pack = ?4`).bind(a, wk, Date.now(), pack || null).run();
+    },
+    weekRows: async (wk) => { await packTable(DB); return (await DB.prepare(`SELECT account, wins, xp, streak, pack FROM weekly WHERE week = ?1`).bind(wk).all()).results || []; },
     taken: async () => {
       await DB.prepare(`CREATE TABLE IF NOT EXISTS holdings (account TEXT PRIMARY KEY, tokens TEXT, updated INTEGER)`).run();
       const rows = (await DB.prepare(`SELECT tokens FROM holdings`).all()).results || [];
@@ -224,10 +248,77 @@ async function authStatus(env, uuid) {
   await storeOf(env).seen(account, Date.now());
   return json({state:"signed", account, token: await mintSession(env, account)});
 }
+/* ------------------------------------------------------------------ packs */
+/* Real packs: membership lives here, and a pack's week is the sum of its
+   members' weekly rows. Each weekly row remembers the pack it was earned for,
+   so past weeks (and their bonuses) stay as they were. */
+const PACK_IDS = ["ledger", "moon", "bone", "static"];
+const PACK_MAX = 10;
+const PACK_WEEKS = 9;                       // this week + the 8 the bonus history looks back on
+
+/* Transfers land on the week roll: a queued move becomes the pack on Monday. */
+async function myPack(env, account) {
+  const st = storeOf(env), wk = weekOf();
+  const rec = (await st.packGet(account)) || {pack: null, pending: null, week: wk};
+  if (rec.week !== wk) {
+    if (rec.pending) { rec.pack = rec.pending; rec.pending = null; }
+    rec.week = wk;
+    await st.packSet(account, rec);
+    await st.weeklyPack(account, wk, rec.pack);
+  }
+  return rec;
+}
+async function packRows(env, wk) {
+  const rows = await storeOf(env).weekRows(wk), by = {};
+  for (const id of PACK_IDS) by[id] = {id, members: 0, wins: 0, xp: 0, streak: 0};
+  for (const r of rows) {
+    const p = by[r.pack]; if (!p) continue;
+    p.members++; p.wins += r.wins | 0; p.xp += r.xp | 0; p.streak = Math.max(p.streak, r.streak | 0);
+  }
+  return Object.values(by);
+}
+async function packs(env, account) {
+  const st = storeOf(env), wk = weekOf();
+  // Carry every member into this week, so a pack's size counts everyone, not only who has fought yet.
+  const cur = new Map((await st.weekRows(wk)).map(r => [r.account, r.pack || null]));
+  for (const r of await st.packAll()) {
+    const rec = r.account === account ? await myPack(env, r.account) : r;
+    let pack = rec.pack;
+    if (rec.week !== wk && rec.pending) pack = rec.pending;       // their Monday move, even before they log in
+    if (pack && cur.get(r.account) !== pack) await st.weeklyPack(r.account, wk, pack);
+  }
+  const weeks = {};
+  for (let i = 0; i < PACK_WEEKS; i++) {
+    const w = weekOf(new Date(Date.now() - i * 7 * 864e5));
+    weeks[w] = await packRows(env, w);
+  }
+  const me = account ? await myPack(env, account) : null;
+  return json({week: wk, weeks, max: PACK_MAX, me: me && {pack: me.pack, pending: me.pending}});
+}
+async function packMove(env, account, b) {
+  const st = storeOf(env), wk = weekOf(), rec = await myPack(env, account);
+  const id = String(b.id || "");
+  if (b.action === "join") {
+    if (!PACK_IDS.includes(id)) return json({error: "bad_pack"}, 400);
+    const size = (await packRows(env, wk)).find(p => p.id === id).members;
+    if (size >= PACK_MAX) return json({error: "pack_full"}, 409);
+    if (!rec.pack && !rec.pending) { rec.pack = id; await st.weeklyPack(account, wk, id); }   // first pack: instant
+    else if (rec.pack !== id) rec.pending = id;                                                // later moves: Monday
+  } else if (b.action === "leave") {
+    rec.pack = null; rec.pending = null; await st.weeklyPack(account, wk, null);               // leaving is immediate
+  } else if (b.action === "cancel") {
+    rec.pending = null;
+  } else return json({error: "bad_action"}, 400);
+  await st.packSet(account, rec);
+  return packs(env, account);
+}
+
 async function postStats(env, account, b) {
   const wk = weekOf();
   const wins = Math.max(0, Math.min(500, b.wins|0)), xp = Math.max(0, Math.min(20000, b.xp|0)), streak = Math.max(0, Math.min(200, b.streak|0));
   await storeOf(env).weekly(account, wk, wins, xp, streak, Date.now());
+  const rec = await myPack(env, account);
+  await storeOf(env).weeklyPack(account, wk, rec.pack);
   return json({ok:true, week:wk});
 }
 async function ladder(env, me) {
@@ -313,6 +404,8 @@ export default {
       if (!account) return withCors(json({error:"unauthorized"}, 401), cors);
 
       if (p === "/me/kennel") return withCors(await kennel(env, account, url.searchParams.has("fresh")), cors);
+      if (p === "/packs") return withCors(await packs(env, account), cors);
+      if (p === "/pack" && req.method === "POST") return withCors(await packMove(env, account, await req.json()), cors);
       if (p === "/taken") return withCors(json({tokens: await storeOf(env).taken()}), cors);
       if (p === "/meta") return withCors(json(await metaFor(env, url.searchParams.get("uri") || "")), cors);
       if (p === "/img") {

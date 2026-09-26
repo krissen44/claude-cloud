@@ -351,6 +351,7 @@ const SAVE = (() => {
     joinPack(id){ if (!d.pack && !d.pending) d.pack = id; else d.pending = id; save(); },
     cancelMove(){ d.pending = null; save(); },
     leavePack(){ d.pack = null; d.pending = null; save(); },
+    setPack(pack, pending){ d.pack = pack || null; d.pending = pending || null; save(); },
     trainerLvl(){ return 1 + Math.floor(d.trainerXp / 250); },
     trainerInto(){ return d.trainerXp % 250; },
     bump(qid, n){
@@ -403,7 +404,21 @@ const BONUS = {
 function seeded(str){ let h=2166136261; for(const c of str) h=Math.imul(h^c.charCodeAt(0),16777619); 
   return () => (h = Math.imul(h ^ (h>>>15), 2246822507) ^ Math.imul(h ^ (h>>>13), 3266489909), ((h>>>0)%1000)/1000); }
 
+/* Signed in, the standings are real: the server sums every member's week.
+   PACKDATA holds this week and the eight before it (the bonus history). */
+let PACKDATA = null;
+const packsLive = () => LIVE() && !!WALLET.token && !WALLET.demo;
 function standings(weekKey){
+  if (packsLive()){
+    const src = (PACKDATA && PACKDATA.weeks[weekKey]) || [];
+    const you = SAVE.data.pack;
+    return PACKS.map(p => {
+      const r = src.find(x => x.id === p.id) || {members:0, wins:0, xp:0, streak:0};
+      const n = r.members || 0;
+      return {...p, members:n, wins:r.wins, xp:r.xp, streak:r.streak, you: p.id === you,
+              avgW: n ? r.wins/n : 0, avgX: n ? r.xp/n : 0};
+    });
+  }
   const r = seeded('bark'+weekKey);
   const rows = PACKS.map(p => {
     const members = 4 + Math.floor(r()*6);
@@ -431,7 +446,7 @@ function standings(weekKey){
    or three weeks if it is genuinely ahead — never forever. */
 const DEFEND = [0, 0.10, 0.20];      // margin needed at hold 1, 2; index 3+ = barred
 const MAX_HOLD = 3;
-const _awCache = {};
+let _awCache = {};
 
 function awardsAt(weekKey, back){
   if (_awCache[weekKey]) return _awCache[weekKey];
@@ -456,6 +471,7 @@ function awardsAt(weekKey, back){
       const second = pool[1];
       if (second && val(w) < val(second) * (1 + need)) w = second;        // not clear enough
     }
+    if (w && !(val(w) > 0)) w = null;                   // an empty board crowns nobody
     if (w){ taken[w.id] = true; win[key] = w.id; hold[key] = (inc === w.id) ? held + 1 : 1; }
   }
   const out = {win, hold};
@@ -464,6 +480,37 @@ function awardsAt(weekKey, back){
 }
 const awards = wk => awardsAt(wk).win;
 const holdOf = (wk, key) => awardsAt(wk).hold[key] || 0;
+
+async function loadPacks(){
+  if (!packsLive()) return;
+  try {
+    const r = await api('/packs'); const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'packs');
+    applyPacks(j);
+  } catch(e){ console.warn('packs', e); }
+}
+let packMigrated = false;
+function applyPacks(j){
+  PACKDATA = j; _awCache = {};
+  // A pack joined before packs went live exists only in this browser: hand it to the server once.
+  if (j.me && !j.me.pack && !j.me.pending && SAVE.data.pack && !packMigrated){
+    packMigrated = true; packAction('join', SAVE.data.pack); return;
+  }
+  if (j.me) SAVE.setPack(j.me.pack, j.me.pending);     // the server's word on membership
+  if (tab === 'packs') menu();
+}
+async function packAction(action, id){
+  if (!packsLive()){
+    action === 'join' ? SAVE.joinPack(id) : action === 'leave' ? SAVE.leavePack() : SAVE.cancelMove();
+    menu(); return;
+  }
+  try {
+    const r = await api('/pack', {method:'POST', body:{action, id}}); const j = await r.json();
+    if (!r.ok) throw new Error(j.error === 'pack_full' ? 'That pack is full.' : (j.error || 'pack'));
+    applyPacks(j);
+  } catch(e){ alert(e.message); }
+  menu();
+}
 
 function myBonus(){
   const me = SAVE.data.pack; if (!me) return null;
@@ -1454,7 +1501,7 @@ async function loadKennel(fresh){
     oppLearnBase(j.nfts);
   } catch(e){ WALLET.error = 'Could not load your kennel (' + e.message + ').'; }
   WALLET.loading = false; menu();
-  oppTopUp();
+  oppTopUp(); loadPacks();
 }
 
 /* ---- the real weekly ladder ---- */
@@ -1995,7 +2042,8 @@ function menu(){
     `<div class="card"><p class="mini" style="margin:0"><b>How it works.</b> Bite beats taunt, taunt beats guard, guard beats bite. Damage is rolled, so a Common can still drop a Legendary. Ability traits come from the NFT metadata and cost energy (◆). Ten rounds; healthiest at the bell wins. Opponents match your bond level.</p>
     <p class="mini" style="margin:9px 0 0"><button id="wipe" class="sm">Reset progress</button></p></div>`;
 
-  app.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { S.unlock(); S.click(); tab = b.dataset.t; menu(); });
+  app.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { S.unlock(); S.click(); tab = b.dataset.t; menu();
+    if (tab === 'packs') loadPacks(); });
   app.querySelectorAll('[data-f]').forEach(b => b.onclick = () => {
     S.unlock(); S.click();
     const me = findDog(b.dataset.f); if (!me) return;
@@ -2033,9 +2081,9 @@ function menu(){
     r.won === 3 ? S.win() : (r.won ? S.heal() : S.lose());
     menu();
   };
-  app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { S.click(); SAVE.joinPack(b.dataset.join); menu(); });
-  app.querySelectorAll('[data-leave]').forEach(b => b.onclick = () => { S.click(); SAVE.leavePack(); menu(); });
-  app.querySelectorAll('[data-cancel]').forEach(b => b.onclick = () => { S.click(); SAVE.cancelMove(); menu(); });
+  app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { S.click(); packAction('join', b.dataset.join); });
+  app.querySelectorAll('[data-leave]').forEach(b => b.onclick = () => { S.click(); packAction('leave'); });
+  app.querySelectorAll('[data-cancel]').forEach(b => b.onclick = () => { S.click(); packAction('cancel'); });
   const xa = document.getElementById('xaman');
   if (xa) xa.onclick = () => { S.unlock(); S.click();
     alert("Xaman sign-in needs the backend, which isn't part of this prototype.\n\n1. You scan a Xaman QR and sign a one-off payload — no transaction, no fee.\n2. The server checks the signature and reads which Pixel Scrappys that wallet holds on the ledger.\n3. Only those appear in your kennel. Sell one and it leaves, with its bond level attached."); };

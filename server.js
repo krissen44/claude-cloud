@@ -22,6 +22,7 @@ const FILE = path.join(DATA_DIR, "store.json");
 let db = { players: {}, weekly: {}, holdings: {} };
 try { db = JSON.parse(fs.readFileSync(FILE, "utf8")); } catch {}
 db.holdings = db.holdings || {};
+db.packs = db.packs || {};
 let dirty = false;
 function flush() {
   if (!dirty) return;
@@ -46,6 +47,14 @@ const STORE = {
   },
   async count(wk) { return Object.values(db.weekly).filter(r => r.week === wk).length; },
   async holdings(a, tokens, t) { db.holdings[a] = { tokens, updated: t }; dirty = true; },
+  async packGet(a) { return db.packs[a] || null; },
+  async packSet(a, rec) { db.packs[a] = rec; dirty = true; },
+  async packAll() { return Object.entries(db.packs).map(([account, r]) => ({ account, ...r })); },
+  async weeklyPack(a, wk, pack) {
+    const k = wk + "|" + a, r = db.weekly[k] || { account: a, week: wk, wins: 0, xp: 0, streak: 0, updated: Date.now() };
+    r.pack = pack || null; db.weekly[k] = r; dirty = true;
+  },
+  async weekRows(wk) { return Object.values(db.weekly).filter(r => r.week === wk); },
   async taken() { return [...new Set(Object.values(db.holdings).flatMap(h => h.tokens))]; },
 };
 
