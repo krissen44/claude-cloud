@@ -34,12 +34,21 @@ function ipfsAlternatives(url, env) {
   const rest = url.slice(gw.length);
   return [...new Set([gw, ...IPFS_FALLBACKS])].map(g => g + rest);
 }
-/* Fetch from the first gateway that answers; the last error wins if none do. */
+/* Fetch from the first gateway that answers; the last error wins if none do.
+   If every gateway said 429 (rate limited), wait once and go round again. */
 async function fetchAny(urls, opt) {
-  let err;
-  for (const u of urls) {
-    try { const r = await fetchT(u, opt); if (r.ok) return r; err = new Error("http_" + r.status); }
-    catch (e) { err = new Error(e.name === "TimeoutError" ? "timeout" : String(e.message || e)); }
+  let err, limited = 0;
+  for (let round = 0; round < 2; round++) {
+    for (const u of urls) {
+      try {
+        const r = await fetchT(u, opt);
+        if (r.ok) return r;
+        err = new Error("http_" + r.status);
+        if (r.status === 429) limited = Math.max(limited, (+r.headers.get("retry-after") || 1) * 1000);
+      } catch (e) { err = new Error(e.name === "TimeoutError" ? "timeout" : String(e.message || e)); }
+    }
+    if (!limited || limited > 3000 || round) break;
+    await new Promise(ok => setTimeout(ok, limited));
   }
   throw err;
 }
@@ -164,7 +173,7 @@ async function metaFor(env, uri) {
   const url = resolveUrl(uri, env);
   if (!url || !hostAllowed(url, env)) throw new Error("uri_not_allowed");
   const k = `meta:${url}`;
-  const c = env.KV ? await env.KV.get(k, "json") : null;
+  const c = (env.KV ? await env.KV.get(k, "json") : null) || (env.FILES ? await env.FILES.getJson(k) : null);
   if (c) return c;
   const r = await fetchAny(ipfsAlternatives(url, env), {cf: {cacheTtl: META_TTL}}).catch(e => { throw new Error("meta_" + e.message); });
   const m = await r.json();
@@ -175,6 +184,7 @@ async function metaFor(env, uri) {
     attributes: Array.isArray(m.attributes) ? m.attributes.map(a => ({t: String(a.trait_type || ""), v: String(a.value ?? "")})) : [],
   };
   if (env.KV) await env.KV.put(k, JSON.stringify(out), {expirationTtl: META_TTL});
+  if (env.FILES) await env.FILES.putJson(k, out);          // NFT metadata never changes: keep it for good
   return out;
 }
 
@@ -295,11 +305,17 @@ export default {
       if (p === "/img") {
         const u = url.searchParams.get("u") || "";
         if (!/^https:\/\//i.test(u) || !hostAllowed(u, env)) return withCors(json({error:"img_not_allowed"}, 400), cors);
+        const hit = env.FILES ? await env.FILES.getBin("img:" + u) : null;
+        if (hit) return withCors(new Response(hit.body, {status:200, headers:{"content-type": hit.type, "cache-control":"public, max-age=86400"}}), cors);
         let r;
         try { r = await fetchAny(ipfsAlternatives(u, env), {cf: {cacheTtl: META_TTL, cacheEverything: true}}); }
         catch (e) { return withCors(json({error:"img_" + e.message}, 502), cors); }
-        const h = new Headers({"content-type": r.headers.get("content-type") || "image/png", "cache-control":"public, max-age=86400"});
-        return withCors(new Response(r.body, {status:200, headers:h}), cors);
+        const type = r.headers.get("content-type") || "image/png";
+        const h = new Headers({"content-type": type, "cache-control":"public, max-age=86400"});
+        if (!env.FILES) return withCors(new Response(r.body, {status:200, headers:h}), cors);
+        const buf = await r.arrayBuffer();
+        await env.FILES.putBin("img:" + u, buf, type);
+        return withCors(new Response(buf, {status:200, headers:h}), cors);
       }
       if (p === "/stats" && req.method === "POST") return withCors(await postStats(env, account, await req.json()), cors);
       return withCors(json({error:"not_found"}, 404), cors);

@@ -56,6 +56,24 @@ const KV = {
   },
 };
 
+/* Disk cache for NFT metadata and images. They never change, and a shared
+   Hostinger IP is quickly rate limited (429) by public IPFS gateways, so each
+   file is fetched once and then served from here, surviving restarts. */
+const CACHE_DIR = path.join(DATA_DIR, "cache");
+fs.mkdirSync(CACHE_DIR, { recursive: true });
+const cachePath = (k) => path.join(CACHE_DIR, crypto.createHash("sha256").update(k).digest("hex"));
+const FILES = {
+  async getJson(k) { try { return JSON.parse(fs.readFileSync(cachePath(k) + ".json", "utf8")); } catch { return null; } },
+  async putJson(k, v) { try { fs.writeFileSync(cachePath(k) + ".json", JSON.stringify(v)); } catch {} },
+  async getBin(k) {
+    try { return { body: fs.readFileSync(cachePath(k) + ".bin"), type: fs.readFileSync(cachePath(k) + ".type", "utf8") }; }
+    catch { return null; }
+  },
+  async putBin(k, buf, type) {
+    try { fs.writeFileSync(cachePath(k) + ".bin", Buffer.from(buf)); fs.writeFileSync(cachePath(k) + ".type", type); } catch {}
+  },
+};
+
 /* The session secret is made once and kept, unless you set one yourself. */
 function sessionSecret() {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
@@ -72,7 +90,7 @@ const env = {
   SESSION_SECRET: sessionSecret(),
   ORIGIN: process.env.ORIGIN || "", RETURN_URL: process.env.RETURN_URL || "",
   IPFS_GATEWAY: process.env.IPFS_GATEWAY || "https://ipfs.io/ipfs/", META_HOSTS: process.env.META_HOSTS || "*",
-  STORE, KV,
+  STORE, KV, FILES,
 };
 
 const GAME = fs.readFileSync(path.join(ROOT, "public", "index.html"));

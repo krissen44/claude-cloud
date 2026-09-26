@@ -1313,10 +1313,35 @@ function cutout(bitmap, patterned){
   x.putImageData(im, 0, 0);
   return c.toDataURL('image/png');
 }
+/* When the server is rate limited by IPFS, the browser fetches directly: the
+   player's own IP is almost never throttled, and gateways allow CORS. */
+const IPFS_GW = ['https://ipfs.io/ipfs/', 'https://gateway.pinata.cloud/ipfs/', 'https://dweb.link/ipfs/', 'https://w3s.link/ipfs/'];
+function ipfsUrls(u){
+  u = String(u || '').trim();
+  let m = u.match(/^ipfs:\/\/(?:ipfs\/)?(.+)$/) || u.match(/^https:\/\/[^/]+\/ipfs\/(.+)$/) || u.match(/^((?:Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{50,})(?:\/.*)?)$/);
+  return m ? IPFS_GW.map(g => g + m[1]) : (/^https:\/\//i.test(u) ? [u] : []);
+}
+async function directFetch(u){
+  let err = new Error('no url');
+  for (const url of ipfsUrls(u)){
+    try { const r = await fetch(url); if (r.ok) return r; err = new Error('http ' + r.status); } catch(e){ err = e; }
+  }
+  throw err;
+}
+async function directMeta(uri){
+  const r = await directFetch(uri), m = await r.json(), base = r.url;
+  let image = m.image || m.image_url || '';
+  if (image && !/^(ipfs:|https:)/i.test(image) && !ipfsUrls(image).length){
+    image = new URL(image, base).toString();
+    if (/\/metadata\//.test(base)) image = image.replace('/metadata/', '/images/');
+  }
+  return {name: m.name || '', token: +((m.name || '').match(/#\s*(\d+)/) || [])[1] || null, image,
+          attributes: Array.isArray(m.attributes) ? m.attributes.map(a => ({t: String(a.trait_type || ''), v: String(a.value ?? '')})) : []};
+}
 async function imageFor(def, imageUrl){
   if (def.legendary){ const L = DATA.fighters.find(f => f.id === 'L' + def.legendary); if (L) return L.img; }
-  const r = await api('/img?u=' + encodeURIComponent(imageUrl));
-  if (!r.ok) throw new Error('image ' + r.status);
+  let r = await api('/img?u=' + encodeURIComponent(imageUrl)).catch(() => null);
+  if (!r || !r.ok) r = await directFetch(imageUrl).catch(e => { throw new Error('image ' + (r ? r.status : e.message)); });
   const bmp = await createImageBitmap(await r.blob());
   return cutout(bmp, PATTERNED.has(def.bg));
 }
@@ -1336,8 +1361,11 @@ async function loadKennel(fresh){
       try {
         let c = cache[n.nft_id];
         if (!c){
-          const mr = await api('/meta?uri=' + encodeURIComponent(n.uri));
-          const m = await mr.json(); if (!mr.ok) throw new Error(m.error || 'meta');
+          let m;
+          try {
+            const mr = await api('/meta?uri=' + encodeURIComponent(n.uri));
+            m = await mr.json(); if (!mr.ok) throw new Error(m.error || 'meta');
+          } catch(se){ m = await directMeta(n.uri).catch(e => { throw new Error(se.message + ', direct: ' + e.message); }); }
           const def = defFromMeta(n, m);
           def.img = await imageFor(def, m.image);
           c = cache[n.nft_id] = def; lsSet(cacheKey, cache);
