@@ -117,6 +117,16 @@ function storeOf(env) {
          streak = MAX(weekly.streak, ?5), updated = ?6`).bind(a, wk, wins, xp, streak, t).run(),
     top: async (wk, col) => (await DB.prepare(`SELECT account, ${col} AS v FROM weekly WHERE week = ?1 AND ${col} > 0 ORDER BY ${col} DESC LIMIT 10`).bind(wk).all()).results || [],
     count: async (wk) => (await DB.prepare(`SELECT COUNT(*) AS n FROM weekly WHERE week = ?1`).bind(wk).first()).n,
+    holdings: async (a, tokens, t) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS holdings (account TEXT PRIMARY KEY, tokens TEXT, updated INTEGER)`).run();
+      await DB.prepare(`INSERT INTO holdings (account, tokens, updated) VALUES (?1, ?2, ?3)
+        ON CONFLICT(account) DO UPDATE SET tokens = ?2, updated = ?3`).bind(a, JSON.stringify(tokens), t).run();
+    },
+    taken: async () => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS holdings (account TEXT PRIMARY KEY, tokens TEXT, updated INTEGER)`).run();
+      const rows = (await DB.prepare(`SELECT tokens FROM holdings`).all()).results || [];
+      return [...new Set(rows.flatMap(r => JSON.parse(r.tokens || "[]")))];
+    },
   };
 }
 
@@ -158,6 +168,9 @@ async function ownedNfts(env, account, fresh) {
 async function kennel(env, account, fresh) {
   if (!/^r/.test(env.ISSUER)) return json({error:"server_not_configured (ISSUER missing)"}, 500);
   const nfts = await ownedNfts(env, account, fresh);
+  // Remember which Scrappys this player fights with, so nobody meets them as a rival.
+  const tokens = nfts.map(n => +(String(n.uri).match(/(\d+)\.json$/) || [])[1]).filter(Boolean);
+  await storeOf(env).holdings(account, tokens, Date.now());
   const res = {account, nfts};
   if (!nfts.length) {
     // Tell the player (and the admin) why nothing matched, instead of a silent 0.
@@ -300,6 +313,7 @@ export default {
       if (!account) return withCors(json({error:"unauthorized"}, 401), cors);
 
       if (p === "/me/kennel") return withCors(await kennel(env, account, url.searchParams.has("fresh")), cors);
+      if (p === "/taken") return withCors(json({tokens: await storeOf(env).taken()}), cors);
       if (p === "/meta") return withCors(json(await metaFor(env, url.searchParams.get("uri") || "")), cors);
       if (p === "/img") {
         const u = url.searchParams.get("u") || "";

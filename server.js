@@ -19,8 +19,9 @@ const DATA_DIR = process.env.DATA_DIR || path.join(os.homedir(), "bark-arena-dat
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const FILE = path.join(DATA_DIR, "store.json");
 
-let db = { players: {}, weekly: {} };
+let db = { players: {}, weekly: {}, holdings: {} };
 try { db = JSON.parse(fs.readFileSync(FILE, "utf8")); } catch {}
+db.holdings = db.holdings || {};
 let dirty = false;
 function flush() {
   if (!dirty) return;
@@ -44,6 +45,8 @@ const STORE = {
       .sort((a, b) => b[col] - a[col]).slice(0, 10).map(r => ({ account: r.account, v: r[col] }));
   },
   async count(wk) { return Object.values(db.weekly).filter(r => r.week === wk).length; },
+  async holdings(a, tokens, t) { db.holdings[a] = { tokens, updated: t }; dirty = true; },
+  async taken() { return [...new Set(Object.values(db.holdings).flatMap(h => h.tokens))]; },
 };
 
 /* In-memory cache with expiry, standing in for Cloudflare KV. */

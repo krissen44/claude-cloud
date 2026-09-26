@@ -822,11 +822,13 @@ const S = (() => {
 /* Legendaries are 20 of 5,000. Drawing opponents evenly from the demo roster
    would make them most of what you meet, so they're weighted down. */
 function pickOpponent(exceptId){
-  const pool = DATA.fighters.filter(f => f.id !== exceptId);
+  const taken = typeof OPP !== 'undefined' && !WALLET.demo ? isTaken : () => false;
+  const all = DATA.fighters.filter(f => f.id !== exceptId);
+  const pool = all.filter(f => !taken(f)).length ? all.filter(f => !taken(f)) : all;   // never run dry
   const legs = pool.filter(f => f.legendary);
   // Real collection rivals when we have them; the five demo dogs otherwise.
   // Each one met leaves the pool and a fresh one is fetched, so faces keep changing.
-  const real = (typeof OPP !== 'undefined' && !WALLET.demo) ? OPP.pool.filter(f => f.id !== exceptId && !f.legendary) : [];
+  const real = (typeof OPP !== 'undefined' && !WALLET.demo) ? OPP.pool.filter(f => f.id !== exceptId && !f.legendary && !taken(f)) : [];
   if (real.length >= 3 && Math.random() >= .12){
     const f = real[rint(0, real.length - 1)];
     OPP.pool = OPP.pool.filter(x => x !== f); lsSet('ba_opps', OPP.pool); oppTopUp();
@@ -1377,7 +1379,21 @@ async function loadDef(n){
    Once the kennel knows that folder, rivals are drawn at random from all of
    them, fetched in the background and kept in a small rotating pool. */
 const COLLECTION_SIZE = 5000;
-const OPP = {base: lsGet('ba_opp_base'), pool: lsGet('ba_opps') || [], busy: false};
+const OPP = {base: lsGet('ba_opp_base'), pool: lsGet('ba_opps') || [], busy: false, taken: new Set(), takenAt: 0};
+/* Token number of a fighter: real NFTs carry it, demo Legendaries are L1–L20, demo dogs use it as id. */
+const tokenOf = f => f.token || (f.legendary ? +f.legendary : +f.id) || null;
+/* Scrappys held by anyone who signed in to the game — never drawn as rivals. */
+const isTaken = f => { const t = tokenOf(f); return !!t && OPP.taken.has(t); };
+async function oppLoadTaken(){
+  if (Date.now() - OPP.takenAt < 5 * 60 * 1000) return;
+  try {
+    const r = await api('/taken'); const j = await r.json();
+    if (r.ok && Array.isArray(j.tokens)){
+      OPP.taken = new Set(j.tokens); OPP.takenAt = Date.now();
+      OPP.pool = OPP.pool.filter(f => !isTaken(f)); lsSet('ba_opps', OPP.pool);
+    }
+  } catch(e){}
+}
 function oppLearnBase(nfts){
   const count = {};
   for (const n of nfts){ const m = String(n.uri || '').match(/^(.*\/)\d+\.json$/); if (m) count[m[1]] = (count[m[1]] || 0) + 1; }
@@ -1388,9 +1404,10 @@ async function oppTopUp(){
   if (OPP.busy || !OPP.base || !WALLET.token || WALLET.demo) return;
   OPP.busy = true;
   try {
+    await oppLoadTaken();
     for (let tries = 0; OPP.pool.length < 24 && tries < 8; tries++){
       const num = rint(21, COLLECTION_SIZE);        // 1–20 are the Legendaries, drawn separately
-      if (OPP.pool.some(f => f.token === num)) continue;
+      if (OPP.taken.has(num) || OPP.pool.some(f => f.token === num)) continue;
       try {
         const def = await loadDef({nft_id: 'opp' + num, uri: OPP.base + num + '.json'});
         OPP.pool.push(def); lsSet('ba_opps', OPP.pool);
