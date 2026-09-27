@@ -157,6 +157,29 @@ function storeOf(env) {
         ON CONFLICT(account, week) DO UPDATE SET pack = ?4`).bind(a, wk, Date.now(), pack || null).run();
     },
     weekRows: async (wk) => { await packTable(DB); return (await DB.prepare(`SELECT account, wins, losses, xp, streak, pack FROM weekly WHERE week = ?1`).bind(wk).all()).results || []; },
+    saveGet: async (a) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS saves (account TEXT PRIMARY KEY, data TEXT, updated INTEGER)`).run();
+      const r = await DB.prepare(`SELECT data, updated FROM saves WHERE account = ?1`).bind(a).first();
+      return r ? {data: JSON.parse(r.data), updated: r.updated} : null;
+    },
+    saveSet: async (a, data, t) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS saves (account TEXT PRIMARY KEY, data TEXT, updated INTEGER)`).run();
+      await DB.prepare(`INSERT INTO saves (account, data, updated) VALUES (?1, ?2, ?3)
+        ON CONFLICT(account) DO UPDATE SET data = ?2, updated = ?3`).bind(a, JSON.stringify(data), t).run();
+    },
+    saveAll: async () => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS saves (account TEXT PRIMARY KEY, data TEXT, updated INTEGER)`).run();
+      const rows = (await DB.prepare(`SELECT account, data, updated FROM saves`).all()).results || [];
+      return Object.fromEntries(rows.map(r => [r.account, {data: JSON.parse(r.data), updated: r.updated}]));
+    },
+    dump: async () => {
+      await packTable(DB);
+      const all = async (q) => (await DB.prepare(q).all()).results || [];
+      const players = Object.fromEntries((await all(`SELECT account, seen FROM players`)).map(r => [r.account, r.seen]));
+      const holdings = Object.fromEntries((await all(`SELECT account, tokens, updated FROM holdings`).catch(() => [])).map(r => [r.account, {tokens: JSON.parse(r.tokens || "[]"), updated: r.updated}]));
+      const packs = Object.fromEntries((await all(`SELECT account, pack, pending, week, lock_week AS lockWeek FROM packs`)).map(r => [r.account, r]));
+      return {players, weekly: await all(`SELECT * FROM weekly`), holdings, packs};
+    },
     taken: async () => {
       await DB.prepare(`CREATE TABLE IF NOT EXISTS holdings (account TEXT PRIMARY KEY, tokens TEXT, updated INTEGER)`).run();
       const rows = (await DB.prepare(`SELECT tokens FROM holdings`).all()).results || [];
@@ -203,6 +226,7 @@ async function ownedNfts(env, account, fresh) {
 async function kennel(env, account, fresh) {
   if (!/^r/.test(env.ISSUER)) return json({error:"server_not_configured (ISSUER missing)"}, 500);
   const nfts = await ownedNfts(env, account, fresh);
+  await storeOf(env).seen(account, Date.now());                  // counts as activity for the admin numbers
   // Remember which Scrappys this player fights with, so nobody meets them as a rival.
   const tokens = nfts.map(n => +(String(n.uri).match(/(\d+)\.json$/) || [])[1]).filter(Boolean);
   await storeOf(env).holdings(account, tokens, Date.now());
@@ -329,6 +353,67 @@ async function packMove(env, account, b) {
   } else return json({error: "bad_action"}, 400);
   await st.packSet(account, rec);
   return packs(env, account);
+}
+
+/* ------------------------------------------------------------------ saves */
+/* The whole browser save (bonds, trainer XP, quests, tickets, arena, …) is
+   mirrored here per wallet: a backup, and the same progress on every device. */
+async function saveGet(env, account) {
+  const r = await storeOf(env).saveGet(account);
+  return json(r ? {data: r.data, updated: r.updated} : {data: null});
+}
+async function savePut(env, account, b) {
+  const data = b && b.data;
+  if (!data || typeof data !== "object" || Array.isArray(data) || data.v !== 1) return json({error: "bad_save"}, 400);
+  if (JSON.stringify(data).length > 60000) return json({error: "save_too_large"}, 413);
+  const t = Date.now();
+  await storeOf(env).saveSet(account, data, t);
+  return json({ok: true, updated: t});
+}
+
+/* ------------------------------------------------------------------ admin */
+/* /api/admin/export and /api/admin/csv, only with ?key=ADMIN_KEY (unset = off). */
+function adminOk(env, url) {
+  const k = url.searchParams.get("key") || "";
+  if (!env.ADMIN_KEY || k.length !== env.ADMIN_KEY.length) return false;
+  let diff = 0;
+  for (let i = 0; i < k.length; i++) diff |= k.charCodeAt(i) ^ env.ADMIN_KEY.charCodeAt(i);
+  return diff === 0;
+}
+async function adminData(env) {
+  const st = storeOf(env), d = await st.dump(), saves = await st.saveAll();
+  const wk = weekOf(), now = Date.now();
+  const accounts = [...new Set([...Object.keys(d.players || {}), ...Object.keys(saves)])];
+  const rows = accounts.map(a => {
+    const s = (saves[a] || {}).data || {}, weeks = d.weekly.filter(r => r.account === a), cur = weeks.find(r => r.week === wk) || {};
+    const bonds = Object.values(s.dogs || {}).map(g => g.lvl || 1);
+    const sum = k => weeks.reduce((n, r) => n + (r[k] | 0), 0);
+    return {
+      account: a, lastSeen: d.players[a] ? new Date(d.players[a]).toISOString() : "",
+      saveUpdated: saves[a] ? new Date(saves[a].updated).toISOString() : "",
+      trainerXp: s.trainerXp | 0, trainerLevel: 1 + Math.floor((s.trainerXp | 0) / 250), rankedFights: s.fights | 0,
+      streak: s.streak | 0, bestStreak: s.best | 0, tickets: s.tickets | 0,
+      dogs: bonds.length, maxBond: bonds.length ? Math.max(...bonds) : 0,
+      arenaRuns: (s.arena || {}).runs | 0, arenaBest: (s.arena || {}).best | 0,
+      pack: ((d.packs || {})[a] || {}).pack || s.pack || "",
+      scrappysHeld: (((d.holdings || {})[a] || {}).tokens || []).length,
+      weekWins: cur.wins | 0, weekLosses: cur.losses | 0, weekXp: cur.xp | 0, weekStreak: cur.streak | 0,
+      totalWins: sum("wins"), totalLosses: sum("losses"), totalXp: sum("xp"), weeksPlayed: weeks.filter(r => (r.wins | 0) + (r.losses | 0) > 0).length,
+    };
+  }).sort((x, y) => y.totalXp - x.totalXp || y.trainerXp - x.trainerXp);
+  const since = ms => rows.filter(r => r.lastSeen && now - Date.parse(r.lastSeen) < ms).length;
+  return {
+    exported: new Date().toISOString(), week: wk,
+    summary: {players: rows.length, activeToday: since(864e5), active7d: since(7 * 864e5), savesStored: Object.keys(saves).length,
+              playedThisWeek: rows.filter(r => r.weekWins + r.weekLosses > 0).length},
+    rows, raw: {...d, saves},
+  };
+}
+function toCsv(rows) {
+  if (!rows.length) return "account\n";
+  const cols = Object.keys(rows[0]);
+  const cell = v => { const t = String(v ?? ""); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  return [cols.join(","), ...rows.map(r => cols.map(c => cell(r[c])).join(","))].join("\n") + "\n";
 }
 
 /* ------------------------------------------------------------------ Joey */
@@ -520,6 +605,16 @@ export default {
         r.headers.set("cache-control", "public, max-age=60");
         return r;
       }
+      if (p === "/admin/export" || p === "/admin/csv") {
+        if (!adminOk(env, url)) return json({error: "forbidden"}, 403);
+        const data = await adminData(env), day = new Date().toISOString().slice(0, 10);
+        if (p === "/admin/csv") return new Response(toCsv(data.rows), {headers: {"content-type": "text/csv; charset=utf-8",
+          "content-disposition": `attachment; filename="bark-arena-players-${day}.csv"`, "cache-control": "no-store"}});
+        const r = json(data);
+        if (url.searchParams.has("download")) r.headers.set("content-disposition", `attachment; filename="bark-arena-backup-${day}.json"`);
+        r.headers.set("cache-control", "no-store");
+        return r;
+      }
       if (p === "/check") return withCors(await check(env, url.searchParams.get("account")), cors);
       if (p === "/auth/start" && req.method === "POST") return withCors(await authStart(env), cors);
       if (p === "/auth/joey/start" && req.method === "POST") return withCors(await joeyStart(env), cors);
@@ -533,6 +628,8 @@ export default {
       if (p === "/me/kennel") return withCors(await kennel(env, account, url.searchParams.has("fresh")), cors);
       if (p === "/packs") return withCors(await packs(env, account), cors);
       if (p === "/pack" && req.method === "POST") return withCors(await packMove(env, account, await req.json()), cors);
+      if (p === "/save" && req.method === "GET") return withCors(await saveGet(env, account), cors);
+      if (p === "/save" && req.method === "POST") return withCors(await savePut(env, account, await req.json().catch(() => null)), cors);
       if (p === "/taken") return withCors(json({tokens: await storeOf(env).taken()}), cors);
       if (p === "/meta") return withCors(json(await metaFor(env, url.searchParams.get("uri") || "")), cors);
       if (p === "/img") {

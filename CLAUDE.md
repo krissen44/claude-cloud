@@ -46,12 +46,15 @@ Git branch used so far: `claude/dreamy-pasteur-du9fm3` (repo `krissen44/claude-c
   - `DATA_DIR` defaults to `~/bark-arena-data` (outside the app folder, so Hostinger redeploys don't wipe it).
 - **`worker.js`** — the API. Written Cloudflare-Worker style (`export default { fetch }`), also supports D1
   (`env.DB`) — the Node server passes `env.STORE` instead. Keep both code paths when changing storage.
+- **Cloud save**: `SAVE.save()` stamps `updatedAt` (not for automatic day/week roll-overs, `save(true)`) and queues a
+  push to `/api/save` 3 s later (`cloudQueue`/`cloudPush`, keepalive on page hide). On sign-in `cloudPull()` adopts the
+  server save if it is newer, else uploads the local one. The kennel image cache (`ba_dogs:*`) is not synced.
 - **`public/index.html`** — the whole game client in one file (≈2,300 lines: CSS, a big `DATA` JSON on line ~243
   with fighters/traits/combat/legendaries/sets, engine, UI). Progress lives in `localStorage` (`ba_save_v1:<account>`).
 
 ### Environment variables (Hostinger)
 `ISSUER=rGAVUGyhdbxQs1G7nwCCFU4w8P4HfgFKD6`, `TAXON=369` (empty/`*` = any taxon), `XUMM_API_KEY`, `XUMM_API_SECRET`,
-`RETURN_URL=https://game.scrappyxrp.fun/`, optional `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
+`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
 `META_HOSTS`, `ORIGIN`, `PORT`.
 
 ### API (`/api/...`)
@@ -67,6 +70,8 @@ Git branch used so far: `claude/dreamy-pasteur-du9fm3` (repo `krissen44/claude-c
 | `/taken` | ✔ | Token numbers held by any signed-in player (never drawn as rivals) |
 | `/packs`, `/pack` (POST join/leave/cancel) | ✔ | Real pack membership + standings for 9 weeks |
 | `/stats` (POST) | ✔ | Weekly wins/losses/xp/streak (server keeps the max) |
+| `/save` (GET/POST) | ✔ | Full browser save per wallet (cloud backup + cross-device sync), file `DATA_DIR/saves/<account>.json` |
+| `/admin/export[?download=1]`, `/admin/csv` | `?key=ADMIN_KEY` | Everything as JSON backup (summary, per-player rows, raw store + saves) / players as CSV. Dashboard page: **`/admin`** |
 
 ### Game rules (as implemented — keep the website guide in sync)
 - **Fight**: 10 rounds, healthiest (% HP) at the bell wins. HP 16 + rarity bonus (Unc/Rare +1, Epic +2, Legendary +2, Mythic +3).

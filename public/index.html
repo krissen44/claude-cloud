@@ -295,15 +295,21 @@ const SAVE = (() => {
   /* What happened today, for the daily recap. */
   const freshToday = day => ({day, ranked:0, wins:0, losses:0, xp:0, questXp:0, levels:[], arenas:[], shown:false});
   let d;
-  function load(){
-    try { d = JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch(e){ d = fresh(); }
+  function load(from){
+    try { d = from || JSON.parse(localStorage.getItem(KEY)) || fresh(); } catch(e){ d = fresh(); }
     if (!d || d.v !== 1) d = fresh();
     if (!d.arena) d.arena = {squad:[], signed:'', best:0, runs:0, last:null};
     if (!d.club) d.club = {w:0,l:0,d:0,dog:null};
     if (d.wk && d.streak > d.best) d.streak = d.best;   // casual wins used to inflate the live streak
   }
   load();
-  function save(){ try { localStorage.setItem(KEY, JSON.stringify(d)); } catch(e){} }
+  // `auto` saves (day and week roll-overs) are not progress: they must not make a
+  // stale device look newer than the server when syncing
+  function save(auto){
+    if (!auto) d.updatedAt = Date.now();               // newest progress wins when syncing with the server
+    try { localStorage.setItem(KEY, JSON.stringify(d)); } catch(e){}
+    if (typeof cloudQueue === 'function') cloudQueue();
+  }
   function dog(id){ if (!d.dogs[id]) d.dogs[id] = {xp:0, lvl:1, w:0, l:0}; return d.dogs[id]; }
   function today(){ return new Date().toISOString().slice(0,10); }
   function weekOf(d){
@@ -347,14 +353,16 @@ const SAVE = (() => {
       const missed = d.day && d.day !== y;
       if (missed) d.streak = 0;                          // missed a day → streak goes
       d.tickets = Math.min(BANK_MAX, (d.tickets||0) + dailyGrant());
-      d.day = t; rollQuests(); save();
+      d.day = t; rollQuests(); save(true);
     }
-    if (!d.today || d.today.day !== t){ d.today = freshToday(t); save(); }
+    if (!d.today || d.today.day !== t){ d.today = freshToday(t); save(true); }
   }
   checkDay();
   return {
     get data(){ return d; },
     useAccount(a){ KEY = a ? 'ba_save_v1:' + a : 'ba_save_v1'; load(); checkDay(); },
+    // take a save from the server as it is (keeps its own updatedAt)
+    adopt(data){ load(data); try { localStorage.setItem(KEY, JSON.stringify(d)); } catch(e){} checkDay(); },
     dog, save, checkDay, weekOf, dailyGrant,
     grant(){ return dailyGrant(); },
     spend(){ if ((d.tickets||0) <= 0) return false; d.tickets--; save(); return true; },
@@ -1484,11 +1492,43 @@ async function joeyMobileConnect(){
     if (wc && session) wc.client.disconnect({topic: session.topic, reason: {code: 6000, message: 'Signed in'}}).catch(() => {});
   }
 }
-function walletSignedIn(token, account){
+async function walletSignedIn(token, account){
   WALLET.token = token; WALLET.account = account; WALLET.demo = false;
   SAVE.useAccount(account);
+  await cloudPull();
   loadKennel();
 }
+
+/* ---- cloud save ----
+   The whole save is mirrored to the server per wallet (a backup, and the same
+   progress on every device). Pushes are bundled a few seconds after a change;
+   on sign-in the newer of the local and the server save wins. */
+let cloudTimer = null;
+const cloudOn = () => LIVE() && !!WALLET.token && !WALLET.demo;
+function cloudQueue(){
+  try { if (!cloudOn()) return; } catch(e){ return; }   // saves during start-up run before WALLET exists
+  clearTimeout(cloudTimer);
+  cloudTimer = setTimeout(cloudPush, 3000);
+}
+function cloudPush(keepalive){
+  clearTimeout(cloudTimer); cloudTimer = null;
+  if (!cloudOn()) return Promise.resolve();
+  const h = {'content-type':'application/json', authorization:'Bearer ' + WALLET.token};
+  return fetch(CONFIG.WORKER_URL.replace(/\/$/, '') + '/save', {method:'POST', headers:h, keepalive: !!keepalive,
+    body: JSON.stringify({data: SAVE.data})}).catch(() => {});
+}
+async function cloudPull(){
+  if (!cloudOn()) return;
+  try {
+    const r = await api('/save'); if (!r.ok) return;
+    const j = await r.json(), local = SAVE.data;
+    if (j.data && j.data.v === 1 && (j.data.updatedAt || 0) > (local.updatedAt || 0)) SAVE.adopt(j.data);   // server is newer
+    else if (local.updatedAt) cloudPush();                                                                   // this device is newer
+  } catch(e){}
+}
+// leaving the page: send what's still waiting
+window.addEventListener('pagehide', () => { if (cloudTimer) cloudPush(true); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && cloudTimer) cloudPush(true); });
 function walletSignOut(){
   lsSet('ba_session', null);
   Object.assign(WALLET, {token:null, account:null, demo:false, owned:null, error:''});

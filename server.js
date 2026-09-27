@@ -18,6 +18,8 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.DATA_DIR || path.join(os.homedir(), "bark-arena-data");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const FILE = path.join(DATA_DIR, "store.json");
+const SAVE_DIR = path.join(DATA_DIR, "saves");
+fs.mkdirSync(SAVE_DIR, { recursive: true });
 
 let db = { players: {}, weekly: {}, holdings: {} };
 try { db = JSON.parse(fs.readFileSync(FILE, "utf8")); } catch {}
@@ -61,6 +63,21 @@ const STORE = {
   },
   async weekRows(wk) { return Object.values(db.weekly).filter(r => r.week === wk); },
   async taken() { return [...new Set(Object.values(db.holdings).flatMap(h => h.tokens))]; },
+  /* Full game saves, one file per wallet (accounts are validated r-addresses). */
+  async saveGet(a) { try { return JSON.parse(fs.readFileSync(path.join(SAVE_DIR, a + ".json"), "utf8")); } catch { return null; } },
+  async saveSet(a, data, t) {
+    const f = path.join(SAVE_DIR, a + ".json");
+    fs.writeFileSync(f + ".tmp", JSON.stringify({ data, updated: t }));
+    fs.renameSync(f + ".tmp", f);
+  },
+  async saveAll() {
+    const out = {};
+    for (const f of fs.readdirSync(SAVE_DIR)) if (f.endsWith(".json")) {
+      try { out[f.slice(0, -5)] = JSON.parse(fs.readFileSync(path.join(SAVE_DIR, f), "utf8")); } catch {}
+    }
+    return out;
+  },
+  async dump() { return { players: db.players, weekly: Object.values(db.weekly), holdings: db.holdings, packs: db.packs }; },
 };
 
 /* In-memory cache with expiry, standing in for Cloudflare KV. */
@@ -104,7 +121,7 @@ function sessionSecret() {
 const env = {
   ISSUER: process.env.ISSUER, TAXON: process.env.TAXON || "",
   XUMM_API_KEY: process.env.XUMM_API_KEY, XUMM_API_SECRET: process.env.XUMM_API_SECRET,
-  SESSION_SECRET: sessionSecret(),
+  SESSION_SECRET: sessionSecret(), ADMIN_KEY: process.env.ADMIN_KEY || "",
   ORIGIN: process.env.ORIGIN || "", RETURN_URL: process.env.RETURN_URL || "",
   IPFS_GATEWAY: process.env.IPFS_GATEWAY || "https://ipfs.io/ipfs/", META_HOSTS: process.env.META_HOSTS || "*",
   STORE, KV, FILES,
@@ -113,6 +130,70 @@ const env = {
 const GAME = fs.readFileSync(path.join(ROOT, "public", "index.html"));
 // WalletConnect bundle for "Joey (mobile)", fetched only when a player picks it
 const WC_JS = (() => { try { return fs.readFileSync(path.join(ROOT, "public", "wc.js")); } catch { return null; } })();
+
+/* Admin dashboard at /admin: player numbers, a table of every player and
+   full backups (JSON) / spreadsheets (CSV). Data comes from /api/admin/*,
+   which only answers with ?key=ADMIN_KEY — no ADMIN_KEY set, no access. */
+const ADMIN_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>Bark Arena — admin</title>
+<style>
+:root{--ink:#0e1726;--muted:#586780;--line:#d2e0ee;--accent:#0f76c6;--bg:#eef4fa}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif;padding:20px}
+h1{margin:0 0 4px;font-size:22px}.muted{color:var(--muted)}
+.card{background:#fff;border:2px solid var(--ink);border-radius:14px;box-shadow:0 3px 0 var(--ink);padding:14px;margin-top:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat b{display:block;font-size:26px}.stat span{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.btn{display:inline-block;border:2px solid var(--ink);border-radius:999px;padding:8px 14px;background:var(--accent);color:#fff;font-weight:700;text-decoration:none;box-shadow:0 3px 0 var(--ink);cursor:pointer;font-size:14px}
+.btn.ghost{background:#fff;color:var(--ink)}
+input{border:2px solid var(--ink);border-radius:999px;padding:8px 12px;font:inherit;min-width:220px}
+.wrap{overflow:auto;max-height:70vh}table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{position:sticky;top:0;background:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);cursor:pointer}
+td:first-child,th:first-child{text-align:left;font-family:ui-monospace,monospace}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+</style></head><body>
+<h1>🐾 Bark Arena — admin</h1><p class="muted" id="sub">Enter the admin key (ADMIN_KEY on Hostinger).</p>
+<div class="card row" id="login"><input id="key" type="password" placeholder="ADMIN_KEY" autocomplete="current-password"><button class="btn" id="go">Open</button></div>
+<div id="app" hidden>
+  <div class="grid" id="stats"></div>
+  <div class="card row"><a class="btn" id="dlJson">⬇ Full backup (JSON)</a><a class="btn ghost" id="dlCsv">⬇ Players (CSV)</a>
+    <button class="btn ghost" id="reload">↻ Refresh</button><input id="filter" placeholder="Filter wallet / pack…"></div>
+  <div class="card"><div class="wrap"><table id="tbl"></table></div></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let KEY = new URLSearchParams(location.search).get("key") || sessionStorage.getItem("ba_admin") || "", DATA = null, SORT = "totalXp", DIR = -1;
+const COLS = [["account","Wallet"],["lastSeen","Last seen"],["pack","Pack"],["scrappysHeld","Scrappys"],["dogs","Dogs played"],["maxBond","Max bond"],
+  ["trainerLevel","Trainer"],["rankedFights","Ranked"],["totalWins","Wins"],["totalLosses","Losses"],["totalXp","XP (all weeks)"],
+  ["weekWins","Wins wk"],["weekXp","XP wk"],["bestStreak","Best streak"],["arenaRuns","Arenas"],["weeksPlayed","Weeks"],["saveUpdated","Save"]];
+const fmt = (k, v) => /lastSeen|saveUpdated/.test(k) ? (v ? v.slice(0,16).replace("T"," ") : "—") : v;
+function draw(){
+  const f = $("filter").value.toLowerCase();
+  const rows = DATA.rows.filter(r => !f || r.account.toLowerCase().includes(f) || String(r.pack).includes(f))
+    .sort((a,b) => (a[SORT] > b[SORT] ? 1 : a[SORT] < b[SORT] ? -1 : 0) * DIR);
+  $("tbl").innerHTML = "<thead><tr>" + COLS.map(([k,l]) => "<th data-k='"+k+"'>"+l+(SORT===k?(DIR<0?" ▼":" ▲"):"")+"</th>").join("") + "</tr></thead><tbody>" +
+    rows.map(r => "<tr>" + COLS.map(([k]) => "<td>" + fmt(k, r[k]) + "</td>").join("") + "</tr>").join("") + "</tbody>";
+  $("tbl").querySelectorAll("th").forEach(th => th.onclick = () => { const k = th.dataset.k; DIR = SORT === k ? -DIR : -1; SORT = k; draw(); });
+}
+async function load(){
+  const r = await fetch("/api/admin/export?key=" + encodeURIComponent(KEY), {cache:"no-store"});
+  if (!r.ok){ sessionStorage.removeItem("ba_admin"); $("sub").textContent = r.status === 403 ? "Wrong key — or ADMIN_KEY is not set on the server." : "Server error " + r.status; return; }
+  DATA = await r.json(); sessionStorage.setItem("ba_admin", KEY);
+  history.replaceState(null, "", "/admin");                     // keep the key out of the address bar
+  $("login").hidden = true; $("app").hidden = false;
+  const S = DATA.summary;
+  $("sub").textContent = "Exported " + DATA.exported.slice(0,16).replace("T"," ") + " UTC · week of " + DATA.week;
+  $("stats").innerHTML = [["Players total",S.players],["Active today",S.activeToday],["Active 7 days",S.active7d],["Played this week",S.playedThisWeek],["Saves backed up",S.savesStored]]
+    .map(([l,v]) => "<div class='card stat'><span>"+l+"</span><b>"+v+"</b></div>").join("");
+  $("dlJson").href = "/api/admin/export?download=1&key=" + encodeURIComponent(KEY);
+  $("dlCsv").href = "/api/admin/csv?key=" + encodeURIComponent(KEY);
+  draw();
+}
+$("go").onclick = () => { KEY = $("key").value.trim(); load(); };
+$("key").onkeydown = e => { if (e.key === "Enter") $("go").click(); };
+$("reload").onclick = load; $("filter").oninput = () => DATA && draw();
+if (KEY) load();
+</script></body></html>`;
 
 /* Private beta: with ACCESS_KEY set, the game (page and API) only opens for
    people who came in once through https://game…/?key=ACCESS_KEY — that visit
@@ -149,7 +230,11 @@ http.createServer(async (req, res) => {
       res.end(); return;
     }
     // the public leaderboard stays readable for the website during the private beta
-    if (!hasAccess(req) && !url.pathname.startsWith("/api/public/")) {
+    if (url.pathname === "/admin") {                              // own ADMIN_KEY, not the beta gate
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" });
+      res.end(ADMIN_PAGE); return;
+    }
+    if (!hasAccess(req) && !url.pathname.startsWith("/api/public/") && !url.pathname.startsWith("/api/admin/")) {
       const api = url.pathname === "/api" || url.pathname.startsWith("/api/");
       res.writeHead(api ? 403 : 200, {"content-type": api ? "application/json" : "text/html; charset=utf-8", "cache-control": "no-store"});
       res.end(api ? JSON.stringify({error: "private_beta"}) : SOON); return;
