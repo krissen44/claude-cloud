@@ -10,6 +10,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import worker from "./worker.js";
+import { loadEngine } from "./fight-engine.js";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
@@ -28,6 +29,7 @@ db.profiles = db.profiles || {};
 db.arenaReg = db.arenaReg || {};      // account -> {day, ids}: today's arena squad
 db.defense = db.defense || {};        // account -> [{id, xp, won, vs, at}]: bond XP earned while away
 db.defenseDay = db.defenseDay || {};  // "nftId|day" -> XP credited that day (cap)
+db.clubRec = db.clubRec || {};        // account -> {w, l, d}: Fight Club record
 db.packs = db.packs || {};
 let dirty = false;
 function flush() {
@@ -59,6 +61,8 @@ const STORE = {
   async count(wk) { return Object.values(db.weekly).filter(r => r.week === wk).length; },
   async holdings(a, tokens, t, dogs) { db.holdings[a] = { tokens, dogs: dogs || [], updated: t }; dirty = true; },
   async allHoldings() { return db.holdings; },
+  async clubAdd(a, k) { const r = db.clubRec[a] = db.clubRec[a] || { w: 0, l: 0, d: 0 }; r[k] = (r[k] || 0) + 1; dirty = true; },
+  async clubGet(a) { return db.clubRec[a] || { w: 0, l: 0, d: 0 }; },
   async arenaRegSet(a, day, ids) { db.arenaReg[a] = { day, ids }; dirty = true; },
   async arenaRegAll() { return db.arenaReg; },
   async defenseAdd(owner, e, dayKey, cap) {
@@ -152,6 +156,7 @@ const env = {
   ORIGIN: process.env.ORIGIN || "", RETURN_URL: process.env.RETURN_URL || "",
   IPFS_GATEWAY: process.env.IPFS_GATEWAY || "https://ipfs.io/ipfs/", META_HOSTS: process.env.META_HOSTS || "*",
   STORE, KV, FILES,
+  ENGINE: loadEngine(path.join(ROOT, "public", "index.html")),   // Fight Club referee: the game's own engine
 };
 
 const GAME = fs.readFileSync(path.join(ROOT, "public", "index.html"));

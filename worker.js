@@ -183,6 +183,14 @@ function storeOf(env) {
       return ((await DB.prepare(`SELECT id, xp, won, vs, at FROM defense WHERE account = ?1 ORDER BY at`).bind(a).all()).results || []).map(r => ({...r, won: !!r.won}));
     },
     defenseClear: async (a, upTo) => { await DB.prepare(`DELETE FROM defense WHERE account = ?1 AND at <= ?2`).bind(a, upTo).run(); },
+    clubAdd: async (a, k) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS club (account TEXT PRIMARY KEY, w INTEGER DEFAULT 0, l INTEGER DEFAULT 0, d INTEGER DEFAULT 0)`).run();
+      await DB.prepare(`INSERT INTO club (account, ${k}) VALUES (?1, 1) ON CONFLICT(account) DO UPDATE SET ${k} = ${k} + 1`).bind(a).run();
+    },
+    clubGet: async (a) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS club (account TEXT PRIMARY KEY, w INTEGER DEFAULT 0, l INTEGER DEFAULT 0, d INTEGER DEFAULT 0)`).run();
+      return (await DB.prepare(`SELECT w, l, d FROM club WHERE account = ?1`).bind(a).first()) || {w: 0, l: 0, d: 0};
+    },
     allHoldings: async () => {
       const rows = (await DB.prepare(`SELECT account, tokens, dogs, updated FROM holdings`).all().catch(() => ({results: []}))).results || [];
       return Object.fromEntries(rows.map(r => [r.account, {tokens: JSON.parse(r.tokens || "[]"), dogs: JSON.parse(r.dogs || "[]"), updated: r.updated}]));
@@ -500,6 +508,119 @@ async function arenaResult(env, account, b) {
   return json({ok: true, credited: xp});
 }
 
+/* ------------------------------------------------------------------ Fight Club */
+/* Live duels between two players, refereed here. Both pick a move each round;
+   when both are in (or the 20 s are up — a missing move counts as guard, and
+   a second miss is a forfeit) the server draws the seed, resolves the round
+   with the game's own engine (env.ENGINE) and hands both pages the moves and
+   the seed, so they replay exactly the same round. The server's state decides
+   the winner. Duels live in memory; the records are stored. Beta: no ranked XP. */
+const CLUB_TURN_MS = 20000, CLUB_INVITE_MS = 15 * 60 * 1000, CLUB_KEEP_MS = 10 * 60 * 1000;
+const DUELS = new Map();
+const rid = () => [...crypto.getRandomValues(new Uint8Array(9))].map(b => b.toString(16).padStart(2, "0")).join("");
+async function clubFighter(env, account, dogId) {
+  const h = (await storeOf(env).allHoldings())[account] || {};
+  const dog = (h.dogs || []).find(d => d.id === String(dogId));
+  if (!dog) return null;
+  const meta = await metaFor(env, dog.uri);
+  const def = env.ENGINE.defFromMeta({nft_id: dog.id}, meta);
+  const save = (await storeOf(env).saveGet(account) || {}).data || {};
+  const lvl = Math.max(1, Math.min(10, ((save.dogs || {})[dog.id] || {}).lvl | 0 || 1));
+  return {acct: account, name: displayName(await storeOf(env).profiles(), account), def, lvl, img: meta.image, uri: dog.uri};
+}
+function clubTick(env, d) {
+  const now = Date.now();
+  if (d.status === "open" && now - d.created > CLUB_INVITE_MS) { d.status = "done"; d.result = {winner: null, why: "expired"}; d.ended = now; }
+  // catch up on every round whose time ran out, even if nobody asked in between
+  while (d.status === "active" && now >= d.deadline) {
+    const auto = {a: !d.moves.a, b: !d.moves.b};
+    for (const s of ["a", "b"]) if (auto[s]) { d.moves[s] = "guard"; d.misses[s]++; }
+    if (d.misses.a >= 2 || d.misses.b >= 2) {                      // a second missed round forfeits
+      const both = d.misses.a >= 2 && d.misses.b >= 2;
+      return clubFinish(env, d, both ? null : (d.misses.a >= 2 ? "b" : "a"), both ? "both players stopped answering" : "missed two rounds");
+    }
+    clubResolve(env, d, auto, d.deadline);
+  }
+}
+function clubResolve(env, d, auto, from) {
+  const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+  const r = env.ENGINE.round(d.st, d.moves.a, d.moves.b, seed);
+  d.rounds.push({t: d.st.turn, a: d.moves.a, b: d.moves.b, seed, auto: auto || {a: false, b: false}});
+  d.st = r.state; d.moves = {a: null, b: null}; d.deadline = (from || Date.now()) + CLUB_TURN_MS;
+  if (r.verdict) clubFinish(env, d, r.verdict === "DRAW" ? null : (r.verdict === "YOU WIN" ? "a" : "b"), "");
+}
+function clubFinish(env, d, winner, why) {
+  d.status = "done"; d.ended = Date.now(); d.result = {winner, why};
+  const st = storeOf(env);
+  if (winner) { st.clubAdd(d[winner].acct, "w"); st.clubAdd(d[winner === "a" ? "b" : "a"].acct, "l"); }
+  else { st.clubAdd(d.a.acct, "d"); st.clubAdd(d.b.acct, "d"); }
+}
+function clubView(d, me) {
+  const side = d.a.acct === me ? "a" : d.b && d.b.acct === me ? "b" : null;
+  const pub = f => f && {name: f.name, def: f.def, lvl: f.lvl, img: f.img, uri: f.uri};
+  return {id: d.id, status: d.status, side, a: pub(d.a), b: pub(d.b), invite: d.inviteName || null,
+    turn: d.st ? d.st.turn : 0, left: d.status === "active" ? Math.max(0, d.deadline - Date.now()) : 0,
+    moved: {you: !!(side && d.moves[side]), them: !!(side && d.moves[side === "a" ? "b" : "a"])},
+    rounds: d.rounds, result: d.result, hp: d.st ? {a: d.st.P.hp, b: d.st.E.hp} : null};
+}
+async function clubRoute(env, account, p, req, url) {
+  if (!env.ENGINE) return json({error: "club_unavailable"}, 501);
+  for (const [id, d] of DUELS) { clubTick(env, d); if (d.status === "done" && Date.now() - d.ended > CLUB_KEEP_MS) DUELS.delete(id); }
+  const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
+  if (p === "/club/me") {
+    const mine = [...DUELS.values()].filter(d => d.status !== "done" && (d.a.acct === account || (d.b && d.b.acct === account) || d.inviteAcct === account));
+    return json({record: await storeOf(env).clubGet(account), duels: mine.map(d => clubView(d, account)).map((v, i) => ({...v, forMe: mine[i].inviteAcct === account && !mine[i].b}))});
+  }
+  if (p === "/club/create") {
+    if ([...DUELS.values()].filter(d => d.a.acct === account && d.status !== "done").length >= 3) return json({error: "too_many_open"}, 429);
+    const me = await clubFighter(env, account, body.dogId);
+    if (!me) return json({error: "not_your_dog"}, 400);
+    let inviteAcct = null, inviteName = null;
+    if (body.opponent) {
+      const names = await storeOf(env).profiles(), want = String(body.opponent).trim().toLowerCase();
+      inviteAcct = Object.keys(names).find(a => names[a].name.toLowerCase() === want) || null;
+      if (!inviteAcct || inviteAcct === account) return json({error: "no_such_player"}, 404);
+      inviteName = names[inviteAcct].name;
+    }
+    const d = {id: rid(), created: Date.now(), status: "open", a: me, b: null, inviteAcct, inviteName,
+               st: null, moves: {a: null, b: null}, misses: {a: 0, b: 0}, rounds: [], result: null, deadline: 0};
+    DUELS.set(d.id, d);
+    return json({duel: clubView(d, account)});
+  }
+  const d = DUELS.get(String(body.id || url.searchParams.get("id") || ""));
+  if (!d) return json({error: "no_such_duel"}, 404);
+  if (p === "/club/state") return json({duel: clubView(d, account)});
+  if (p === "/club/join") {
+    if (d.status !== "open") return json({error: "duel_not_open"}, 409);
+    if (d.a.acct === account) return json({error: "own_duel"}, 400);
+    if (d.inviteAcct && d.inviteAcct !== account) return json({error: "not_invited"}, 403);
+    const me = await clubFighter(env, account, body.dogId);
+    if (!me) return json({error: "not_your_dog"}, 400);
+    d.b = me; d.status = "active"; d.st = env.ENGINE.start(d.a.def, d.a.lvl, d.b.def, d.b.lvl); d.deadline = Date.now() + CLUB_TURN_MS;
+    return json({duel: clubView(d, account)});
+  }
+  if (p === "/club/cancel") {
+    if (d.a.acct !== account || d.status !== "open") return json({error: "cannot_cancel"}, 409);
+    d.status = "done"; d.ended = Date.now(); d.result = {winner: null, why: "cancelled"};
+    return json({ok: true});
+  }
+  if (p === "/club/move") {
+    const side = d.a.acct === account ? "a" : d.b && d.b.acct === account ? "b" : null;
+    if (!side || d.status !== "active") return json({error: "not_in_this_duel"}, 409);
+    const m = String(body.move || "");
+    if (!/^(bite|guard|taunt|ab[0-2])$/.test(m)) return json({error: "bad_move"}, 400);
+    if (!d.moves[side]) d.moves[side] = m;
+    if (d.moves.a && d.moves.b) clubResolve(env, d);
+    return json({duel: clubView(d, account)});
+  }
+  if (p === "/club/leave") {
+    const side = d.a.acct === account ? "a" : d.b && d.b.acct === account ? "b" : null;
+    if (side && d.status === "active") clubFinish(env, d, side === "a" ? "b" : "a", "left the ring");
+    return json({duel: clubView(d, account)});
+  }
+  return json({error: "not_found"}, 404);
+}
+
 /* ------------------------------------------------------------------ saves */
 /* The whole browser save (bonds, trainer XP, quests, tickets, arena, …) is
    mirrored here per wallet: a backup, and the same progress on every device. */
@@ -777,6 +898,7 @@ export default {
       if (p === "/packs") return withCors(await packs(env, account), cors);
       if (p === "/pack" && req.method === "POST") return withCors(await packMove(env, account, await req.json()), cors);
       if (p === "/profile" && req.method === "POST") return withCors(await setProfile(env, account, await req.json().catch(() => null)), cors);
+      if (p.startsWith("/club/")) return withCors(await clubRoute(env, account, p, req, url), cors);
       if (p === "/arena/squad" && req.method === "POST") return withCors(await arenaSquad(env, account, await req.json().catch(() => null)), cors);
       if (p === "/arena/result" && req.method === "POST") return withCors(await arenaResult(env, account, await req.json().catch(() => null)), cors);
       if (p === "/arena/defense" && req.method === "GET") return withCors(json({items: await storeOf(env).defenseGet(account)}), cors);

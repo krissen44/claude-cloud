@@ -15,10 +15,14 @@ Last version confirmed live: **game v19** (cloud saves + `/admin`) + **website l
   (`/api/public/nft?t=`, from a daily collection index built with Clio `nfts_by_issuer`: token → NFTokenID + owner).
   ⚠️ Check once live that `https://xrp.cafe/nft/<NFTokenID>` opens the piece (URL pattern not verifiable from here).
 
+- **v23 — Fight Club beta (Season 1)**: the Club tab is open. Challenge a player by name or send an invite link
+  (`/?duel=…`); both choose at once, 20 s per round, out of time = guard, two misses or leaving = forfeit; own Club record,
+  no tickets, no XP. The server is the referee: it runs the game's own engine (`fight-engine.js` loads the
+  `//@engine` sections of `public/index.html`) and both screens replay its rounds. New file: **`fight-engine.js`**.
+  Tested with two/three browsers: same fight on both screens, records, invite link, give up, two-miss forfeit.
+
 ### Planned for Season 1 (owner's decisions, 2026-09-28)
-- **Server fight engine + Fight Club beta**: duels by invite link or player name, simultaneous moves via HTTP polling,
-  20 s per round, timeout = auto-guard, two misses = forfeit, own Fight Club record, no ranked XP yet.
-  Season 2: matchmaking queue, Elo, own ladder.
+- Fight Club Season 2: matchmaking queue, Elo, own ladder.
 - **Verifiable ladder**: weekly hash of the final results as a memo on the ledger — signed via **Xaman QR in /admin**
   (no key on the server).
 - **Treasury prizes**: the 50 floor-sweep NFTs sit in the **issuer wallet**; each week **top 3 of the XP ladder + the most
@@ -28,11 +32,12 @@ Last version confirmed live: **game v19** (cloud saves + `/admin`) + **website l
   holder gets **25 % of the borrower's trainer XP** with that dog and a **share of prizes** the borrower wins.
 
 ### Website (scrappyxrp.fun)
-- `barkarena/index.html`: guide/FAQ for real arena rivals, player names and defence XP.
+- `barkarena/index.html`: guide/FAQ for real arena rivals, player names, defence XP and the Fight Club beta.
 
 ## Upload checklist (Monday)
 1. Hostinger game app → environment variables: `ADMIN_KEY` is already set (live since v19); make sure **`ACCESS_KEY` is removed**.
-2. Upload the game ZIP (`package.json`, `package-lock.json`, `server.js`, `worker.js`, `public/`, `node_modules/`) and restart the app.
+2. Upload the game ZIP (`package.json`, `package-lock.json`, `server.js`, `worker.js`, **`fight-engine.js`**, `public/`, `node_modules/`) and restart the app.
 3. Upload `barkarena/index.html` to `public_html/barkarena/`.
 4. Check: open the game in a private window, sign in, set a name (✏️), open the arena tab (squad registered, rivals
-   "from <name>"), and look at `/admin` (new Name column).
+   "from <name>"), and look at `/admin` (new Name column). Fight Club: create an invite link, open it in a second
+   browser with another wallet, fight a few rounds.

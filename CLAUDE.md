@@ -53,6 +53,9 @@ hand over one combined package for the week start; don't tell the owner to uploa
 - **Cloud save**: `SAVE.save()` stamps `updatedAt` (not for automatic day/week roll-overs, `save(true)`) and queues a
   push to `/api/save` 3 s later (`cloudQueue`/`cloudPush`, keepalive on page hide). On sign-in `cloudPull()` adopts the
   server save if it is newer, else uploads the local one. The kennel image cache (`ba_dogs:*`) is not synced.
+- **`fight-engine.js`** — runs the game's own engine on the server: the pure sections of `public/index.html` are
+  marked `//@engine … //@/engine` and loaded into a `node:vm` sandbox (`loadEngine` → `defFromMeta`, `start`, `round`).
+  **Keep those sections free of DOM/UI code**; the server refuses to start if fewer than 8 are found.
 - **`public/index.html`** — the whole game client in one file (≈2,300 lines: CSS, a big `DATA` JSON on line ~243
   with fighters/traits/combat/legendaries/sets, engine, UI). Progress lives in `localStorage` (`ba_save_v1:<account>`).
 
@@ -78,6 +81,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/arena/rivals` | ✔ | Up to 30 Scrappys held by other players, today's registered squads first `{token,id,uri,lvl,owner,squad}` |
 | `/arena/squad` (POST `{ids}`), `/arena/result` (POST `{id, attackerWon}`) | ✔ | Register today's squad / report an arena fight vs another player's dog |
 | `/arena/defense`, `/arena/defense/claim` (POST `{upTo}`) | ✔ | Pending defence bond XP for the caller / mark it collected |
+| `/club/me`, `/club/create` (POST `{dogId, opponent?}`), `/club/state?id=`, `/club/join` (POST `{id,dogId}`), `/club/cancel`, `/club/move` (POST `{id, move}`), `/club/leave` | ✔ | Fight Club beta: the server is the referee (see below) |
 | `/save` (GET/POST) | ✔ | Full browser save per wallet (cloud backup + cross-device sync), file `DATA_DIR/saves/<account>.json` |
 | `/admin/export[?download=1]`, `/admin/csv` | `?key=ADMIN_KEY` | Everything as JSON backup (summary, per-player rows, raw store + saves) / players as CSV. Dashboard page: **`/admin`** |
 
@@ -110,6 +114,13 @@ hand over one combined package for the week start; don't tell the owner to uploa
 - **Packs** (server-enforced): 4 packs, max 10 members, ranked by **wins per member**. One pack a week: joining with no
   pack is instant and locks the week (`lockWeek`); switching or leaving is only queued for Monday 00:00 UTC
   (`pending`, `"-"` = leave). Weekly bonuses Fang/Hide/Spirit, one per pack, defend +10%/+20%, barred after 3 weeks.
+- **Fight Club (beta, Season 1)**: duel by name (`opponent` = display name) or invite link `/?duel=<id>` (opens the
+  Club tab after sign-in). Both send a move (`bite|guard|taunt|ab0-2`); the server resolves the round with the shared
+  engine and a random seed, stores `{t,a,b,seed,auto}` and both pages replay rounds with `resolveSeeded` (A = left =
+  challenger). 20 s per round (`CLUB_TURN_MS`), missed round = auto-guard, 2 misses = forfeit, leave = forfeit, invites
+  expire after 15 min, max 3 open per player. Own record (`clubAdd/clubGet`), no tickets, no XP. Client: `SC`,
+  `scClubView`, `scEnter`, `scStep`, `scControls` in `public/index.html`; the old ROOM (P2P) code stays for hosts with a
+  realtime room. Season 2: matchmaking, Elo, Club ladder.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 
@@ -120,7 +131,9 @@ v6/v11 arena limit (now 3 tournaments/day) · v7 packs made real on the server (
 v8 daily recap · v9 weekly results · v11 streak inflation fixed (casual wins + per-dog arena counting) ·
 v12 playtest fixes ("Fight again" re-used the same rival; demo dogs leaked in; recap for newcomers) ·
 v13 exploit fix (always-bite won 77%) → pattern-reading AI + guard snap-back; recap counted abandoned tournaments ·
-v14 one-pack-a-week rule, losses tracked, full pack stats table · v15 `ACCESS_KEY` gate · v16 `/api/public/board` · v17 wallet chooser + Joey extension sign-in · v18 Joey app over WalletConnect (confirmed working live by the owner).
+v14 one-pack-a-week rule, losses tracked, full pack stats table · v15 `ACCESS_KEY` gate · v16 `/api/public/board` · v17 wallet chooser + Joey extension sign-in · v18 Joey app over WalletConnect (confirmed working live by the owner) ·
+v19 cloud saves + `/admin` · v20 real arena rivals + player names · v21 arena defence XP · v22 "buy this rival" link ·
+v23 server fight engine + Fight Club beta.
 
 ### Testing locally
 ```bash
@@ -135,7 +148,8 @@ Always syntax-check the inline game script after editing `public/index.html`.
 ### Known limitations / open decisions
 - Stats, XP and streaks are computed in the browser and trusted by the server (clamped only) — a determined user can fake them.
 - First day gives 10 tickets (5 starting + 5 daily grant).
-- Fight Club tab shows "Coming soon" (needs a realtime room; not available on Hostinger).
+- Fight Club duels live in server memory (`DUELS`): a server restart drops open/running duels (records are kept).
+  The D1/Cloudflare path has no shared memory across isolates, so the Club is Node-only for now.
 
 ---
 
