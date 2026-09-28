@@ -109,7 +109,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
   → `claimDefense` → `SAVE.bondXp`, then `/api/arena/defense/claim`) with a notice. Bond XP only — no trainer XP/ladder.
 - **Player names**: optional display name (`/api/profile`, 3–16 chars `[A-Za-z0-9 _.-]`, unique case-insensitive, no
   wallet look-alikes), set via ✏️ in the wallet card; shown in ladder, public board, arena labels and admin.
-- **Tickets**: 5/day + 1 per extra owned Scrappy (max 10), bank max 15. Ranked XP: win 30, loss 12, +10 vs rarer.
+- **Tickets**: 5/day + 1 per extra owned Scrappy (max 10), bank max 15 — unused ones carry to the next day but **not into a new week** (Monday starts at the daily grant, `newWeek` in `checkDay`). Ranked XP: win 30, loss 12, +10 vs rarer.
   Casual = no XP and does **not** touch the streak.
 - **Streak**: consecutive wins in ranked fights and live arena fights only (`streakAfter`).
 - **Bond** levels 1–10 (`need = 60 + (l-1)*45`), perks at 2/4/6/8/10. Trainer level every 250 XP. 3 daily quests.

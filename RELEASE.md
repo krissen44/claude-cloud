@@ -34,6 +34,9 @@ Last version confirmed live: **game v19** (cloud saves + `/admin`) + **website l
   borrower's trainer XP (max 150 a day), collected on the next visit. If a borrower wins a weekly prize mostly with a
   borrowed dog, week close shows an extra "🤝 Lender share" line for the lender (you decide whether to send it).
   Tested: holder can't borrow, one dog one loan, XP arrives at the owner, give back, prize-share line.
+- **v26 — no tickets into a new week**: unused ranked fights still bank into the next day (max 15), but not across
+  the week roll — Monday starts with just the daily grant. Keeps the weekly ladder fair (no hoarding on Sunday).
+  Website guide updated ("Banked: up to 15, into the next day — not into a new week").
 
 ### Planned (Season 2)
 - Fight Club: matchmaking queue, Elo, own ladder.

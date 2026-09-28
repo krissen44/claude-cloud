@@ -350,7 +350,9 @@ const SAVE = (() => {
   }
   function checkDay(){
     const t = today(), w = weekOf();
+    let newWeek = false;
     if (d.week !== w){
+      newWeek = true;
       // only the week that just ended counts as "last week"; a skipped week means nothing to carry
       d.lastWk = (d.week === weekOf(Date.now() - 7*864e5) && d.wk) || {wins:0,xp:0,streak:0};
       d.wk = {wins:0, losses:0, xp:0, streak:0};
@@ -361,7 +363,8 @@ const SAVE = (() => {
       const y = new Date(Date.now()-864e5).toISOString().slice(0,10);
       const missed = d.day && d.day !== y;
       if (missed) d.streak = 0;                          // missed a day → streak goes
-      d.tickets = Math.min(BANK_MAX, (d.tickets||0) + dailyGrant());
+      // unused tickets bank into the next day, but never into a new week: Monday starts at the plain daily grant
+      d.tickets = newWeek ? dailyGrant() : Math.min(BANK_MAX, (d.tickets||0) + dailyGrant());
       d.day = t; rollQuests(); save(true);
     }
     if (!d.today || d.today.day !== t){ d.today = freshToday(t); save(true); }
@@ -2664,7 +2667,7 @@ function kennelView(){
       <div class="mini"><span class="lvl">LEVEL ${tl}</span></div>
       <div class="xp"><i style="width:${Math.round(100*ti/250)}%"></i></div>
       <div class="mini">${ti} / 250 XP · ${D.fights} ranked fights<br>Streak now ${D.streak} · this week's best ${D.wk.streak} · all-time best ${D.best}</div>
-      <div class="tix">🎟️ <b>${D.tickets}</b> ranked fights left<div class="mini">+${SAVE.grant()} a day, banks up to 15. Out of them? Casual still runs — no XP, no ladder.</div></div>
+      <div class="tix">🎟️ <b>${D.tickets}</b> ranked fights left<div class="mini">+${SAVE.grant()} a day, banks up to 15 until Sunday — a new week starts fresh. Out of them? Casual still runs — no XP, no ladder.</div></div>
       ${mb ? `<div class="bon">${mb.emoji} <b>${mb.name}</b> — ${esc(mb.txt)}<div class="mini">Your pack earned it last week.</div></div>` : ''}
     </div>
     <div>
