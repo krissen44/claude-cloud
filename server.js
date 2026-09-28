@@ -24,6 +24,7 @@ fs.mkdirSync(SAVE_DIR, { recursive: true });
 let db = { players: {}, weekly: {}, holdings: {} };
 try { db = JSON.parse(fs.readFileSync(FILE, "utf8")); } catch {}
 db.holdings = db.holdings || {};
+db.profiles = db.profiles || {};
 db.packs = db.packs || {};
 let dirty = false;
 function flush() {
@@ -53,7 +54,18 @@ const STORE = {
     return { rank: 1 + Object.values(db.weekly).filter(r => r.week === wk && r[col] > k[col]).length, v: k[col] };
   },
   async count(wk) { return Object.values(db.weekly).filter(r => r.week === wk).length; },
-  async holdings(a, tokens, t) { db.holdings[a] = { tokens, updated: t }; dirty = true; },
+  async holdings(a, tokens, t, dogs) { db.holdings[a] = { tokens, dogs: dogs || [], updated: t }; dirty = true; },
+  async allHoldings() { return db.holdings; },
+  /* Display names: unique regardless of case. */
+  async profiles() { return db.profiles; },
+  async profileSet(a, name) {
+    if (name) {
+      const lc = name.toLowerCase();
+      if (Object.entries(db.profiles).some(([o, p]) => o !== a && p.name.toLowerCase() === lc)) return false;
+      db.profiles[a] = { name, updated: Date.now() };
+    } else delete db.profiles[a];
+    dirty = true; return true;
+  },
   async packGet(a) { return db.packs[a] || null; },
   async packSet(a, rec) { db.packs[a] = rec; dirty = true; },
   async packAll() { return Object.entries(db.packs).map(([account, r]) => ({ account, ...r })); },
@@ -77,7 +89,7 @@ const STORE = {
     }
     return out;
   },
-  async dump() { return { players: db.players, weekly: Object.values(db.weekly), holdings: db.holdings, packs: db.packs }; },
+  async dump() { return { players: db.players, weekly: Object.values(db.weekly), holdings: db.holdings, packs: db.packs, profiles: db.profiles }; },
 };
 
 /* In-memory cache with expiry, standing in for Cloudflare KV. */
@@ -163,7 +175,7 @@ td:first-child,th:first-child{text-align:left;font-family:ui-monospace,monospace
 <script>
 const $ = id => document.getElementById(id);
 let KEY = new URLSearchParams(location.search).get("key") || sessionStorage.getItem("ba_admin") || "", DATA = null, SORT = "totalXp", DIR = -1;
-const COLS = [["account","Wallet"],["lastSeen","Last seen"],["pack","Pack"],["scrappysHeld","Scrappys"],["dogs","Dogs played"],["maxBond","Max bond"],
+const COLS = [["account","Wallet"],["name","Name"],["lastSeen","Last seen"],["pack","Pack"],["scrappysHeld","Scrappys"],["dogs","Dogs played"],["maxBond","Max bond"],
   ["trainerLevel","Trainer"],["rankedFights","Ranked"],["totalWins","Wins"],["totalLosses","Losses"],["totalXp","XP (all weeks)"],
   ["weekWins","Wins wk"],["weekXp","XP wk"],["bestStreak","Best streak"],["arenaRuns","Arenas"],["weeksPlayed","Weeks"],["saveUpdated","Save"]];
 const fmt = (k, v) => /lastSeen|saveUpdated/.test(k) ? (v ? v.slice(0,16).replace("T"," ") : "—") : v;

@@ -982,7 +982,31 @@ function pickOpponent(exceptId){
 const ARENA_HOUR = 19;                       // UTC
 const ARENA_XP = [0, 35, 60, 100];           // by rounds won: out in round 1 … champion
 const ARENA_RUNS = 3;                        // tournaments per day
-const HANDLES = ['DiamondPaw','xrpChad','scrappymom','LedgerLad','Nakamoto.dog','pixelwhale','bonehodler','goodboy404','Taxon0','fetchking','rugproof','memeboi'];
+/* Arena rivals are real: Scrappys other signed-in players hold, at the bond
+   level their owner trained them to, shown as "#123 from <name or wallet>".
+   Only when nobody else has played yet (or in the demo) does a wild,
+   ownerless collection dog step in. */
+const RIVALS = {list:null, ready:[], total:0, at:0, loading:null};
+function ensureRivals(){
+  if (!LIVE() || !WALLET.token || WALLET.demo) return Promise.resolve([]);
+  if (RIVALS.loading) return RIVALS.loading;
+  const fresh = RIVALS.list && Date.now() - RIVALS.at < 5 * 60 * 1000;
+  RIVALS.loading = (async () => {
+    try {
+      if (!fresh){
+        const r = await api('/arena/rivals'); const j = await r.json();
+        if (r.ok){ RIVALS.list = j.rivals || []; RIVALS.total = j.total || 0; RIVALS.at = Date.now(); RIVALS.ready = []; }
+      }
+      for (const x of (RIVALS.list || []).slice(0, 9)){
+        if (RIVALS.ready.some(y => y.token === x.token)) continue;
+        try { const def = await loadDef({nft_id: 'riv' + x.token, uri: x.uri}); RIVALS.ready.push({...x, def}); } catch(e){}
+      }
+    } catch(e){}
+    RIVALS.loading = null;
+    return RIVALS.ready;
+  })();
+  return RIVALS.loading;
+}
 
 function nextArena(){
   const n = new Date(), t = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate(), ARENA_HOUR));
@@ -993,10 +1017,17 @@ function until(t){
   const m = Math.max(0, Math.round((t - Date.now())/60000));
   return m >= 60 ? Math.floor(m/60)+'h '+(m%60)+'m' : m+'m';
 }
-function ghostOpp(round){
-  const def = pickOpponent(null);
-  return {def, lvl: Math.min(BOND.maxLevel, 1 + round + rint(0,2)), who: HANDLES[rint(0,HANDLES.length-1)]};
+function ghostOpp(round, used){
+  used = used || new Set();
+  const fresh = RIVALS.ready.filter(x => !used.has(x.token)), pool = fresh.length ? fresh : RIVALS.ready;
+  if (pool.length){
+    const x = pool[rint(0, pool.length - 1)]; used.add(x.token);
+    return {def: x.def, lvl: x.lvl, who: x.owner};
+  }
+  // nobody else has played yet: a wild collection dog, no owner to show
+  return {def: pickOpponent(null), lvl: Math.min(BOND.maxLevel, 1 + round + rint(0,2)), who: null};
 }
+const rivalLabel = (dogName, who) => who ? `${dogName} from ${who}` : `a wild ${dogName}`;
 /* Ghost vs ghost, no animation: the same engine, both sides on the AI. */
 function simFight(defA, lvlA, defB, lvlB){
   const keep = {P, E, turn, log, ev, over};
@@ -1013,10 +1044,10 @@ function squadDefs(){
   return SAVE.data.arena.squad.map(id => ROSTER().find(f => f.id === id)).filter(Boolean);
 }
 function runGhostArena(){
-  const sq = squadDefs(), lines = [];
+  const sq = squadDefs(), lines = [], used = new Set();
   let won = 0;
   for (let r = 0; r < 3; r++){
-    const me = sq[r % sq.length], o = ghostOpp(r);
+    const me = sq[r % sq.length], o = ghostOpp(r, used);
     const w = simFight(me, SAVE.dog(me.id).lvl, o.def, o.lvl);
     lines.push({r, me: me.name, opp: o.def.name, who: o.who, w});
     if (!w) break;
@@ -1036,14 +1067,14 @@ function untilUtcMidnight(){
 }
 function startLiveArena(){
   const sq = squadDefs();
-  arenaRun = {round:0, won:0, sq, lines:[]};
+  arenaRun = {round:0, won:0, sq, lines:[], used:new Set()};
   arenaNext();
 }
 function arenaNext(){
-  const r = arenaRun.round, me = arenaRun.sq[r % arenaRun.sq.length], o = ghostOpp(r);
+  const r = arenaRun.round, me = arenaRun.sq[r % arenaRun.sq.length], o = ghostOpp(r, arenaRun.used);
   arenaRun.opp = o;
   startFight(me, o.def, false, o.lvl);
-  say(`<span class="turn">🏟️ Arena — round ${r+1} of 3 · ${esc(me.name)} against ${esc(o.who)}'s ghost.</span>`);
+  say(`<span class="turn">🏟️ Arena — round ${r+1} of 3 · ${esc(me.name)} against ${esc(rivalLabel(o.def.name, o.who))} (Bond ${o.lvl}).</span>`);
 }
 function arenaAfterFight(win){
   const r = arenaRun;
@@ -1059,7 +1090,7 @@ function arenaAfterFight(win){
 }
 function arenaLines(lines){
   const names = ['Quarter-final','Semi-final','Final'];
-  return lines.map(l => `<p class="q">${l.w?'✅':'❌'} <span><b>${names[l.r]}</b> — ${esc(l.me)} vs ${esc(l.who)}'s ${esc(l.opp)}</span></p>`).join('');
+  return lines.map(l => `<p class="q">${l.w?'✅':'❌'} <span><b>${names[l.r]}</b> — ${esc(l.me)} vs ${esc(rivalLabel(l.opp, l.who))}</span></p>`).join('');
 }
 
 /* ============================ fight club ============================ */
@@ -1531,7 +1562,8 @@ window.addEventListener('pagehide', () => { if (cloudTimer) cloudPush(true); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && cloudTimer) cloudPush(true); });
 function walletSignOut(){
   lsSet('ba_session', null);
-  Object.assign(WALLET, {token:null, account:null, demo:false, owned:null, error:''});
+  Object.assign(WALLET, {token:null, account:null, demo:false, owned:null, error:'', name:null, editName:false});
+  RIVALS.list = null; RIVALS.ready = []; RIVALS.total = 0;
   OWNED = null; SAVE.useAccount(null); tab = 'kennel'; menu();
 }
 
@@ -1707,6 +1739,7 @@ async function loadKennel(fresh){
     const r = await api('/me/kennel' + (fresh ? '?fresh=1' : ''));
     if (r.status === 401){ walletSignOut(); WALLET.error = 'Your session ended — sign in again.'; menu(); return; }
     const j = await r.json(); if (!r.ok) throw new Error(j.error || 'kennel');
+    WALLET.name = j.name || null;
     const cacheKey = 'ba_dogs:' + WALLET.account, cache = lsGet(cacheKey) || {};
     const out = [], failed = [];
     let next = 0, done = 0;
@@ -1785,8 +1818,13 @@ function walletCard(){
       </div>
       <div class="row" style="justify-content:flex-start;margin-top:10px"><button id="pickCancel" class="sm">Cancel</button></div>
       ${WALLET.error ? `<p class="mini" style="margin:8px 0 0;color:var(--hpLow)">${esc(WALLET.error)}</p>` : ''}</div>`;
+  if (WALLET.token && !WALLET.demo && WALLET.editName) return `<div class="card">
+      <p class="mini" style="margin:0 0 8px"><b>Your name in Bark Arena.</b> Shown on the leaderboard, and to rivals who meet your Scrappys in the arena ("#123 from <i>name</i>"). 3–16 letters, numbers, space, _ . -</p>
+      <div class="row" style="justify-content:flex-start"><input id="nameIn" maxlength="16" value="${esc(WALLET.name || '')}" placeholder="e.g. BarkBoss" style="flex:1;min-width:140px;padding:9px 12px;border-radius:10px;border:2px solid var(--panelB);font:inherit;background:var(--panel);color:var(--ink)">
+        <button id="nameSave">Save</button><button id="nameCancel" class="sm">Cancel</button></div>
+      ${WALLET.nameError ? `<p class="mini" style="margin:8px 0 0;color:var(--hpLow)">${esc(WALLET.nameError)}</p>` : ''}</div>`;
   if (WALLET.token && !WALLET.demo) return `<div class="card"><div class="wal">
-      <div><b style="font-size:12px">🔗 ${esc(WALLET.account.slice(0,6) + '…' + WALLET.account.slice(-4))}</b>
+      <div><b style="font-size:12px">🔗 ${WALLET.name ? esc(WALLET.name) + ' · ' : ''}${esc(WALLET.account.slice(0,6) + '…' + WALLET.account.slice(-4))}</b> <button id="nameEdit" class="sm" style="padding:3px 8px">✏️ ${WALLET.name ? 'Name' : 'Set a name'}</button>
         <div class="mini">${WALLET.loading ? esc(WALLET.progress) : (OWNED ? OWNED.length + ' Pixel Scrappy' + (OWNED.length===1?'':'s') + ' in this wallet' : '')}</div></div>
       <div class="row"><button id="reload">↻ Refresh</button><button id="signout">Sign out</button></div></div>
       ${WALLET.error ? `<p class="mini" style="margin:8px 0 0;color:var(--hpLow)">${esc(WALLET.error)}</p>` : ''}</div>`;
@@ -1808,6 +1846,19 @@ function walletWire(){
   if (q('xamCancel')) q('xamCancel').onclick = () => { WALLET.login = null; lsSet('ba_pending', null); menu(); };
   if (q('demo'))      q('demo').onclick = () => { S.unlock(); S.click(); WALLET.demo = true; menu(); };
   if (q('signout'))   q('signout').onclick = () => { S.click(); walletSignOut(); };
+  if (q('nameEdit'))  q('nameEdit').onclick = () => { S.click(); WALLET.editName = true; WALLET.nameError = ''; menu(); const i = q('nameIn'); if (i) i.focus(); };
+  if (q('nameCancel')) q('nameCancel').onclick = () => { S.click(); WALLET.editName = false; menu(); };
+  if (q('nameIn'))    q('nameIn').onkeydown = e => { if (e.key === 'Enter') q('nameSave').click(); };
+  if (q('nameSave'))  q('nameSave').onclick = async () => {
+    S.click();
+    const name = q('nameIn').value.replace(/\s+/g, ' ').trim();
+    try {
+      const r = await api('/profile', {method:'POST', body:{name}}); const j = await r.json();
+      if (!r.ok) throw new Error(j.error === 'name_taken' ? 'That name is already taken.' : 'Use 3–16 letters, numbers, space, _ . or - (and nothing that looks like a wallet).');
+      WALLET.name = j.name; WALLET.editName = false; WALLET.nameError = '';
+    } catch(e){ WALLET.nameError = e.message; }
+    menu();
+  };
   if (q('reload'))    q('reload').onclick = () => { S.click(); lsSet('ba_dogs:' + WALLET.account, null); loadKennel(true); };
 }
 function walletBoot(){
@@ -2163,7 +2214,7 @@ function ladderView(){
 function ladderDemo(){
   const D = SAVE.data;
   const r = seeded('ladder'+SAVE.weekOf());
-  const names = ['DiamondPaw','xrpChad','scrappymom','LedgerLad','Nakamoto.dog','pixelwhale','bonehodler','goodboy404','Taxon0','fetchking'];
+  const names = Array.from({length:10}, (_, i) => 'Demo player ' + (i + 1));
   const rows = names.map(n => ({n, xp: Math.round(300+r()*2200), w: Math.round(8+r()*70), s: 2+Math.floor(r()*11)}));
   rows.push({n:'YOU', xp:D.wk.xp, w:D.wk.wins, s:D.wk.streak, you:true});
   const board = (key, label, fmt) => {
@@ -2250,7 +2301,9 @@ function arenaView(){
     <div class="wal">
       <div><b style="font-size:12px">🏟️ Daily Arena</b>
         <div class="mini"><b>${ARENA_RUNS} tournaments a day</b>, whenever you like · new ones in <b>${untilUtcMidnight()}</b> (00:00 UTC)<br>
-        Each one is a knockout of three rounds — win all three for Champion.</div></div>
+        Each one is a knockout of three rounds — win all three for Champion.<br>
+        ${RIVALS.total ? `Your rivals: <b>${RIVALS.total}</b> Scrappy${RIVALS.total===1?'':'s'} held by other players, at their real bond level.`
+          : (LIVE() && !WALLET.demo ? 'Your rivals are Scrappys other players hold. Until someone else has played, wild Scrappys step in.' : 'Demo: wild Scrappys only.')}</div></div>
       <button id="sign" class="${signed?'on':''}">${signed ? '✅ Signed up for today' : 'Sign up for today'}</button>
     </div>
     <p class="mini" style="margin:10px 0 0">${signed
@@ -2370,7 +2423,7 @@ async function weekLadder(wk){
   }
   // demo: the same simulated rivals the ladder tab shows, plus your real last week
   const r = seeded('ladder' + wk), L = SAVE.data.lastWk || {xp:0, wins:0, streak:0};
-  const names = ['DiamondPaw','xrpChad','scrappymom','LedgerLad','Nakamoto.dog','pixelwhale','bonehodler','goodboy404','Taxon0','fetchking'];
+  const names = Array.from({length:10}, (_, i) => 'Demo player ' + (i + 1));
   const rows = names.map(n => ({who:n, xp:Math.round(300+r()*2200), wins:Math.round(8+r()*70), streak:2+Math.floor(r()*11)}));
   rows.push({who:'YOU', xp:L.xp, wins:L.wins, streak:L.streak, you:true});
   const board = k => rows.slice().sort((a,b) => b[k]-a[k]);
@@ -2463,7 +2516,8 @@ function menu(){
     <p class="mini" style="margin:9px 0 0"><button id="wipe" class="sm">Reset progress</button></p></div>`;
 
   app.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { S.unlock(); S.click(); tab = b.dataset.t; menu();
-    if (tab === 'packs') loadPacks(); });
+    if (tab === 'packs') loadPacks();
+    if (tab === 'arena') ensureRivals().then(() => { if (tab === 'arena' && !arenaRun) menu(); }); });
   const rc = document.getElementById('recapOpen'); if (rc) rc.onclick = () => { S.click(); showRecap(); };
   app.querySelectorAll('[data-weekrecap]').forEach(b => b.onclick = () => { S.click(); showWeekRecap(); });
   if (weekRecapDue()) showWeekRecap();            // a new week: last week's results come first
@@ -2496,9 +2550,11 @@ function menu(){
   const sg = document.getElementById('sign');
   if (sg) sg.onclick = () => { S.unlock(); S.click(); SAVE.signUp(!SAVE.signedToday()); menu(); };
   const ra = document.getElementById('runArena');
-  if (ra) ra.onclick = () => {
+  if (ra) ra.onclick = async () => {
     S.unlock(); S.click();
     if (!SAVE.data.arena.squad.length || arenaLocked()) return;
+    ra.disabled = true; ra.textContent = 'Finding rivals…';
+    await ensureRivals();                                   // real players' Scrappys, ready before the bell
     if (arenaLimited()) SAVE.arenaUse();
     if (SAVE.signedToday()) { startLiveArena(); return; }
     const r = runGhostArena();

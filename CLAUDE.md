@@ -70,6 +70,8 @@ Git branch used so far: `claude/dreamy-pasteur-du9fm3` (repo `krissen44/claude-c
 | `/taken` | ✔ | Token numbers held by any signed-in player (never drawn as rivals) |
 | `/packs`, `/pack` (POST join/leave/cancel) | ✔ | Real pack membership + standings for 9 weeks |
 | `/stats` (POST) | ✔ | Weekly wins/losses/xp/streak (server keeps the max) |
+| `/profile` (POST `{name}`) | ✔ | Set/clear the display name (409 `name_taken`, 400 `bad_name`) |
+| `/arena/rivals` | ✔ | Up to 30 random Scrappys held by other players `{token,id,uri,lvl,owner}` |
 | `/save` (GET/POST) | ✔ | Full browser save per wallet (cloud backup + cross-device sync), file `DATA_DIR/saves/<account>.json` |
 | `/admin/export[?download=1]`, `/admin/csv` | `?key=ADMIN_KEY` | Everything as JSON backup (summary, per-player rows, raw store + saves) / players as CSV. Dashboard page: **`/admin`** |
 
@@ -81,8 +83,13 @@ Git branch used so far: `claude/dreamy-pasteur-du9fm3` (repo `krissen44/claude-c
 - **Opponent AI** (`ai()` / `predictFoe()`): counters patterns from the player's move history (order-1/2 context +
   frequency), never peeks at the current move (except the intended 30% "Insight" trait). Simulation baseline
   (2,000 fights each): random 46%, always-bite 35%, alternating 21–22%, bite/taunt 4%. Re-run a simulation after AI/rule changes.
-- **Rivals**: random collection dogs (#21–5000, `COLLECTION_SIZE`), fetched in the background into a rotating pool
+- **Rivals (ranked fights)**: random collection dogs (#21–5000, `COLLECTION_SIZE`), fetched in the background into a rotating pool
   (`OPP`), ~12% Legendaries, never a token in `/taken`; demo dogs only until the pool loads. Bond level ±1 of yours.
+- **Rivals (arena)**: only Scrappys other signed-in players hold (`/api/arena/rivals`, from `holdings[].dogs` + the
+  owner's cloud save for the real bond level), labelled "#123 from <name|short wallet>" (`RIVALS`, `ensureRivals`,
+  `ghostOpp`, `rivalLabel`). No other players yet / demo → a "wild" collection dog without owner. No invented handles anywhere.
+- **Player names**: optional display name (`/api/profile`, 3–16 chars `[A-Za-z0-9 _.-]`, unique case-insensitive, no
+  wallet look-alikes), set via ✏️ in the wallet card; shown in ladder, public board, arena labels and admin.
 - **Tickets**: 5/day + 1 per extra owned Scrappy (max 10), bank max 15. Ranked XP: win 30, loss 12, +10 vs rarer.
   Casual = no XP and does **not** touch the streak.
 - **Streak**: consecutive wins in ranked fights and live arena fights only (`streakAfter`).

@@ -135,10 +135,11 @@ function storeOf(env) {
       return {rank: n.n + 1, v: me.v};
     },
     count: async (wk) => (await DB.prepare(`SELECT COUNT(*) AS n FROM weekly WHERE week = ?1`).bind(wk).first()).n,
-    holdings: async (a, tokens, t) => {
+    holdings: async (a, tokens, t, dogs) => {
       await DB.prepare(`CREATE TABLE IF NOT EXISTS holdings (account TEXT PRIMARY KEY, tokens TEXT, updated INTEGER)`).run();
-      await DB.prepare(`INSERT INTO holdings (account, tokens, updated) VALUES (?1, ?2, ?3)
-        ON CONFLICT(account) DO UPDATE SET tokens = ?2, updated = ?3`).bind(a, JSON.stringify(tokens), t).run();
+      try { await DB.prepare(`ALTER TABLE holdings ADD COLUMN dogs TEXT`).run(); } catch {}
+      await DB.prepare(`INSERT INTO holdings (account, tokens, updated, dogs) VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(account) DO UPDATE SET tokens = ?2, updated = ?3, dogs = ?4`).bind(a, JSON.stringify(tokens), t, JSON.stringify(dogs || [])).run();
     },
     packGet: async (a) => {
       await packTable(DB);
@@ -157,6 +158,24 @@ function storeOf(env) {
         ON CONFLICT(account, week) DO UPDATE SET pack = ?4`).bind(a, wk, Date.now(), pack || null).run();
     },
     weekRows: async (wk) => { await packTable(DB); return (await DB.prepare(`SELECT account, wins, losses, xp, streak, pack FROM weekly WHERE week = ?1`).bind(wk).all()).results || []; },
+    allHoldings: async () => {
+      const rows = (await DB.prepare(`SELECT account, tokens, dogs, updated FROM holdings`).all().catch(() => ({results: []}))).results || [];
+      return Object.fromEntries(rows.map(r => [r.account, {tokens: JSON.parse(r.tokens || "[]"), dogs: JSON.parse(r.dogs || "[]"), updated: r.updated}]));
+    },
+    profiles: async () => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS profiles (account TEXT PRIMARY KEY, name TEXT, name_lc TEXT UNIQUE, updated INTEGER)`).run();
+      const rows = (await DB.prepare(`SELECT account, name, updated FROM profiles`).all()).results || [];
+      return Object.fromEntries(rows.map(r => [r.account, {name: r.name, updated: r.updated}]));
+    },
+    profileSet: async (a, name) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS profiles (account TEXT PRIMARY KEY, name TEXT, name_lc TEXT UNIQUE, updated INTEGER)`).run();
+      if (!name) { await DB.prepare(`DELETE FROM profiles WHERE account = ?1`).bind(a).run(); return true; }
+      try {
+        await DB.prepare(`INSERT INTO profiles (account, name, name_lc, updated) VALUES (?1, ?2, ?3, ?4)
+          ON CONFLICT(account) DO UPDATE SET name = ?2, name_lc = ?3, updated = ?4`).bind(a, name, name.toLowerCase(), Date.now()).run();
+        return true;
+      } catch { return false; }                                  // name_lc taken by someone else
+    },
     saveGet: async (a) => {
       await DB.prepare(`CREATE TABLE IF NOT EXISTS saves (account TEXT PRIMARY KEY, data TEXT, updated INTEGER)`).run();
       const r = await DB.prepare(`SELECT data, updated FROM saves WHERE account = ?1`).bind(a).first();
@@ -178,7 +197,8 @@ function storeOf(env) {
       const players = Object.fromEntries((await all(`SELECT account, seen FROM players`)).map(r => [r.account, r.seen]));
       const holdings = Object.fromEntries((await all(`SELECT account, tokens, updated FROM holdings`).catch(() => [])).map(r => [r.account, {tokens: JSON.parse(r.tokens || "[]"), updated: r.updated}]));
       const packs = Object.fromEntries((await all(`SELECT account, pack, pending, week, lock_week AS lockWeek FROM packs`)).map(r => [r.account, r]));
-      return {players, weekly: await all(`SELECT * FROM weekly`), holdings, packs};
+      const profiles = Object.fromEntries((await all(`SELECT account, name, updated FROM profiles`).catch(() => [])).map(r => [r.account, {name: r.name, updated: r.updated}]));
+      return {players, weekly: await all(`SELECT * FROM weekly`), holdings, packs, profiles};
     },
     taken: async () => {
       await DB.prepare(`CREATE TABLE IF NOT EXISTS holdings (account TEXT PRIMARY KEY, tokens TEXT, updated INTEGER)`).run();
@@ -228,9 +248,12 @@ async function kennel(env, account, fresh) {
   const nfts = await ownedNfts(env, account, fresh);
   await storeOf(env).seen(account, Date.now());                  // counts as activity for the admin numbers
   // Remember which Scrappys this player fights with, so nobody meets them as a rival.
-  const tokens = nfts.map(n => +(String(n.uri).match(/(\d+)\.json$/) || [])[1]).filter(Boolean);
-  await storeOf(env).holdings(account, tokens, Date.now());
-  const res = {account, nfts};
+  const tokenOfUri = uri => +(String(uri).match(/(\d+)\.json$/) || [])[1] || 0;
+  const tokens = nfts.map(n => tokenOfUri(n.uri)).filter(Boolean);
+  const dogs = nfts.map(n => ({t: tokenOfUri(n.uri), id: n.nft_id, uri: n.uri})).filter(d => d.t);
+  await storeOf(env).holdings(account, tokens, Date.now(), dogs);
+  const prof = (await storeOf(env).profiles())[account];
+  const res = {account, nfts, name: prof ? prof.name : null};
   if (!nfts.length) {
     // Tell the player (and the admin) why nothing matched, instead of a silent 0.
     const every = await accountNfts(env, account, true);
@@ -355,6 +378,34 @@ async function packMove(env, account, b) {
   return packs(env, account);
 }
 
+/* ------------------------------------------------------------------ names & arena rivals */
+const displayName = (names, a) => (names && names[a] && names[a].name) || shortAcct(a);
+const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 _.\-]{1,14}[A-Za-z0-9_.]$/;           // 3–16 chars, no leading/trailing space
+async function setProfile(env, account, b) {
+  const name = String((b && b.name) || "").replace(/\s+/g, " ").trim();
+  if (name && !NAME_RE.test(name)) return json({error: "bad_name"}, 400);
+  if (name && /^r[1-9A-HJ-NP-Za-km-z]{5,}/.test(name)) return json({error: "bad_name"}, 400);   // no look-alike wallets
+  if (!(await storeOf(env).profileSet(account, name))) return json({error: "name_taken"}, 409);
+  if (env.KV) await env.KV.put("public:board", "", {expirationTtl: 1});
+  return json({ok: true, name: name || null});
+}
+/* Arena rivals: only Scrappys other signed-in players hold, at the bond level
+   their owner has trained them to, labelled with the owner's name. */
+async function arenaRivals(env, account) {
+  const st = storeOf(env), hold = await st.allHoldings(), names = await st.profiles();
+  const out = [];
+  for (const [owner, h] of Object.entries(hold)) {
+    if (owner === account) continue;
+    const save = (await st.saveGet(owner) || {}).data || {};
+    for (const d of h.dogs || []) {
+      const g = (save.dogs || {})[d.id] || {};
+      out.push({token: d.t, id: d.id, uri: d.uri, lvl: Math.max(1, Math.min(10, g.lvl | 0 || 1)), owner: displayName(names, owner)});
+    }
+  }
+  for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; }
+  return json({rivals: out.slice(0, 30), total: out.length});
+}
+
 /* ------------------------------------------------------------------ saves */
 /* The whole browser save (bonds, trainer XP, quests, tickets, arena, …) is
    mirrored here per wallet: a backup, and the same progress on every device. */
@@ -389,7 +440,7 @@ async function adminData(env) {
     const bonds = Object.values(s.dogs || {}).map(g => g.lvl || 1);
     const sum = k => weeks.reduce((n, r) => n + (r[k] | 0), 0);
     return {
-      account: a, lastSeen: d.players[a] ? new Date(d.players[a]).toISOString() : "",
+      account: a, name: ((d.profiles || {})[a] || {}).name || "", lastSeen: d.players[a] ? new Date(d.players[a]).toISOString() : "",
       saveUpdated: saves[a] ? new Date(saves[a].updated).toISOString() : "",
       trainerXp: s.trainerXp | 0, trainerLevel: 1 + Math.floor((s.trainerXp | 0) / 250), rankedFights: s.fights | 0,
       streak: s.streak | 0, bestStreak: s.best | 0, tickets: s.tickets | 0,
@@ -508,7 +559,8 @@ async function ladder(env, me, week) {
   const wk = /^\d{4}-\d{2}-\d{2}$/.test(week || "") && week <= now ? weekOf(new Date(week + "T12:00:00Z")) : now;
   const st = storeOf(env);
   const [x, w, s] = await Promise.all([st.top(wk, "xp"), st.top(wk, "wins"), st.top(wk, "streak")]);
-  const fmt = (rows) => rows.map(r => ({who: shortAcct(r.account), v: r.v, you: r.account === me}));
+  const names = await st.profiles();
+  const fmt = (rows) => rows.map(r => ({who: displayName(names, r.account), v: r.v, you: r.account === me}));
   const mine = me ? {xp: await st.rank(wk, "xp", me), wins: await st.rank(wk, "wins", me), streak: await st.rank(wk, "streak", me)} : null;
   return json({week:wk, players: await st.count(wk), xp: fmt(x), wins: fmt(w), streak: fmt(s), mine});
 }
@@ -520,7 +572,8 @@ async function publicBoard(env) {
   const c = env.KV ? await env.KV.get(k, "json") : null;
   if (c) return c;
   const st = storeOf(env), wk = weekOf(), last = weekOf(new Date(Date.now() - 7 * 864e5));
-  const fmt = rows => rows.map(r => ({who: shortAcct(r.account), v: r.v}));
+  const names = await st.profiles();
+  const fmt = rows => rows.map(r => ({who: displayName(names, r.account), v: r.v}));
   const [x, w, s] = await Promise.all([st.top(wk, "xp"), st.top(wk, "wins"), st.top(wk, "streak")]);
   const [lx, lw, ls] = await Promise.all([st.top(last, "xp"), st.top(last, "wins"), st.top(last, "streak")]);
   const out = {
@@ -628,6 +681,8 @@ export default {
       if (p === "/me/kennel") return withCors(await kennel(env, account, url.searchParams.has("fresh")), cors);
       if (p === "/packs") return withCors(await packs(env, account), cors);
       if (p === "/pack" && req.method === "POST") return withCors(await packMove(env, account, await req.json()), cors);
+      if (p === "/profile" && req.method === "POST") return withCors(await setProfile(env, account, await req.json().catch(() => null)), cors);
+      if (p === "/arena/rivals") return withCors(await arenaRivals(env, account), cors);
       if (p === "/save" && req.method === "GET") return withCors(await saveGet(env, account), cors);
       if (p === "/save" && req.method === "POST") return withCors(await savePut(env, account, await req.json().catch(() => null)), cors);
       if (p === "/taken") return withCors(json({tokens: await storeOf(env).taken()}), cors);
