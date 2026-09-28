@@ -25,6 +25,9 @@ let db = { players: {}, weekly: {}, holdings: {} };
 try { db = JSON.parse(fs.readFileSync(FILE, "utf8")); } catch {}
 db.holdings = db.holdings || {};
 db.profiles = db.profiles || {};
+db.arenaReg = db.arenaReg || {};      // account -> {day, ids}: today's arena squad
+db.defense = db.defense || {};        // account -> [{id, xp, won, vs, at}]: bond XP earned while away
+db.defenseDay = db.defenseDay || {};  // "nftId|day" -> XP credited that day (cap)
 db.packs = db.packs || {};
 let dirty = false;
 function flush() {
@@ -56,6 +59,18 @@ const STORE = {
   async count(wk) { return Object.values(db.weekly).filter(r => r.week === wk).length; },
   async holdings(a, tokens, t, dogs) { db.holdings[a] = { tokens, dogs: dogs || [], updated: t }; dirty = true; },
   async allHoldings() { return db.holdings; },
+  async arenaRegSet(a, day, ids) { db.arenaReg[a] = { day, ids }; dirty = true; },
+  async arenaRegAll() { return db.arenaReg; },
+  async defenseAdd(owner, e, dayKey, cap) {
+    const used = db.defenseDay[dayKey] || 0, xp = Math.max(0, Math.min(e.xp, cap - used));
+    if (!xp) return 0;
+    db.defenseDay[dayKey] = used + xp;
+    (db.defense[owner] = db.defense[owner] || []).push({ ...e, xp });
+    for (const k of Object.keys(db.defenseDay)) if (k.slice(-10) < dayKey.slice(-10)) delete db.defenseDay[k];   // keep only today
+    dirty = true; return xp;
+  },
+  async defenseGet(a) { return db.defense[a] || []; },
+  async defenseClear(a, upTo) { db.defense[a] = (db.defense[a] || []).filter(e => e.at > upTo); if (!db.defense[a].length) delete db.defense[a]; dirty = true; },
   /* Display names: unique regardless of case. */
   async profiles() { return db.profiles; },
   async profileSet(a, name) {

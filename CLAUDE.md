@@ -71,7 +71,9 @@ Git branch used so far: `claude/dreamy-pasteur-du9fm3` (repo `krissen44/claude-c
 | `/packs`, `/pack` (POST join/leave/cancel) | ✔ | Real pack membership + standings for 9 weeks |
 | `/stats` (POST) | ✔ | Weekly wins/losses/xp/streak (server keeps the max) |
 | `/profile` (POST `{name}`) | ✔ | Set/clear the display name (409 `name_taken`, 400 `bad_name`) |
-| `/arena/rivals` | ✔ | Up to 30 random Scrappys held by other players `{token,id,uri,lvl,owner}` |
+| `/arena/rivals` | ✔ | Up to 30 Scrappys held by other players, today's registered squads first `{token,id,uri,lvl,owner,squad}` |
+| `/arena/squad` (POST `{ids}`), `/arena/result` (POST `{id, attackerWon}`) | ✔ | Register today's squad / report an arena fight vs another player's dog |
+| `/arena/defense`, `/arena/defense/claim` (POST `{upTo}`) | ✔ | Pending defence bond XP for the caller / mark it collected |
 | `/save` (GET/POST) | ✔ | Full browser save per wallet (cloud backup + cross-device sync), file `DATA_DIR/saves/<account>.json` |
 | `/admin/export[?download=1]`, `/admin/csv` | `?key=ADMIN_KEY` | Everything as JSON backup (summary, per-player rows, raw store + saves) / players as CSV. Dashboard page: **`/admin`** |
 
@@ -88,6 +90,11 @@ Git branch used so far: `claude/dreamy-pasteur-du9fm3` (repo `krissen44/claude-c
 - **Rivals (arena)**: only Scrappys other signed-in players hold (`/api/arena/rivals`, from `holdings[].dogs` + the
   owner's cloud save for the real bond level), labelled "#123 from <name|short wallet>" (`RIVALS`, `ensureRivals`,
   `ghostOpp`, `rivalLabel`). No other players yet / demo → a "wild" collection dog without owner. No invented handles anywhere.
+- **Arena defence XP**: picking a squad registers it for the UTC day (`/api/arena/squad`, `arenaRegister`). Rivals come
+  from registered squads first. Each arena fight against another player's dog is reported (`/api/arena/result`,
+  `arenaReport`); if that dog is in its owner's squad today, the owner gets bond XP queued (18 win / 6 loss, cap 120 per
+  dog per day, max 12 reports per attacker per day). The owner collects it on the next kennel load (`/api/arena/defense`
+  → `claimDefense` → `SAVE.bondXp`, then `/api/arena/defense/claim`) with a notice. Bond XP only — no trainer XP/ladder.
 - **Player names**: optional display name (`/api/profile`, 3–16 chars `[A-Za-z0-9 _.-]`, unique case-insensitive, no
   wallet look-alikes), set via ✏️ in the wallet card; shown in ladder, public board, arena labels and admin.
 - **Tickets**: 5/day + 1 per extra owned Scrappy (max 10), bank max 15. Ranked XP: win 30, loss 12, +10 vs rarer.

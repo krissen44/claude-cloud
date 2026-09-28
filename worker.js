@@ -158,6 +158,31 @@ function storeOf(env) {
         ON CONFLICT(account, week) DO UPDATE SET pack = ?4`).bind(a, wk, Date.now(), pack || null).run();
     },
     weekRows: async (wk) => { await packTable(DB); return (await DB.prepare(`SELECT account, wins, losses, xp, streak, pack FROM weekly WHERE week = ?1`).bind(wk).all()).results || []; },
+    arenaRegSet: async (a, day, ids) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS arena_reg (account TEXT PRIMARY KEY, day TEXT, ids TEXT)`).run();
+      await DB.prepare(`INSERT INTO arena_reg (account, day, ids) VALUES (?1, ?2, ?3)
+        ON CONFLICT(account) DO UPDATE SET day = ?2, ids = ?3`).bind(a, day, JSON.stringify(ids)).run();
+    },
+    arenaRegAll: async () => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS arena_reg (account TEXT PRIMARY KEY, day TEXT, ids TEXT)`).run();
+      const rows = (await DB.prepare(`SELECT account, day, ids FROM arena_reg`).all()).results || [];
+      return Object.fromEntries(rows.map(r => [r.account, {day: r.day, ids: JSON.parse(r.ids || "[]")}]));
+    },
+    defenseAdd: async (owner, e, dayKey, cap) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS defense (account TEXT, id TEXT, xp INTEGER, won INTEGER, vs TEXT, at INTEGER)`).run();
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS defense_day (k TEXT PRIMARY KEY, xp INTEGER)`).run();
+      const used = ((await DB.prepare(`SELECT xp FROM defense_day WHERE k = ?1`).bind(dayKey).first()) || {}).xp || 0;
+      const xp = Math.max(0, Math.min(e.xp, cap - used));
+      if (!xp) return 0;
+      await DB.prepare(`INSERT INTO defense_day (k, xp) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET xp = ?2`).bind(dayKey, used + xp).run();
+      await DB.prepare(`INSERT INTO defense (account, id, xp, won, vs, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`).bind(owner, e.id, xp, e.won ? 1 : 0, e.vs, e.at).run();
+      return xp;
+    },
+    defenseGet: async (a) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS defense (account TEXT, id TEXT, xp INTEGER, won INTEGER, vs TEXT, at INTEGER)`).run();
+      return ((await DB.prepare(`SELECT id, xp, won, vs, at FROM defense WHERE account = ?1 ORDER BY at`).bind(a).all()).results || []).map(r => ({...r, won: !!r.won}));
+    },
+    defenseClear: async (a, upTo) => { await DB.prepare(`DELETE FROM defense WHERE account = ?1 AND at <= ?2`).bind(a, upTo).run(); },
     allHoldings: async () => {
       const rows = (await DB.prepare(`SELECT account, tokens, dogs, updated FROM holdings`).all().catch(() => ({results: []}))).results || [];
       return Object.fromEntries(rows.map(r => [r.account, {tokens: JSON.parse(r.tokens || "[]"), dogs: JSON.parse(r.dogs || "[]"), updated: r.updated}]));
@@ -391,19 +416,53 @@ async function setProfile(env, account, b) {
 }
 /* Arena rivals: only Scrappys other signed-in players hold, at the bond level
    their owner has trained them to, labelled with the owner's name. */
+const today = () => new Date().toISOString().slice(0, 10);
+const DEFENSE_XP = {win: 18, loss: 6}, DEFENSE_CAP = 120;            // bond XP per defence, per dog per day
 async function arenaRivals(env, account) {
-  const st = storeOf(env), hold = await st.allHoldings(), names = await st.profiles();
-  const out = [];
+  const st = storeOf(env), hold = await st.allHoldings(), names = await st.profiles(), reg = await st.arenaRegAll(), day = today();
+  const squads = [], others = [];
   for (const [owner, h] of Object.entries(hold)) {
     if (owner === account) continue;
     const save = (await st.saveGet(owner) || {}).data || {};
+    const r = reg[owner] && reg[owner].day === day ? reg[owner].ids : [];
     for (const d of h.dogs || []) {
       const g = (save.dogs || {})[d.id] || {};
-      out.push({token: d.t, id: d.id, uri: d.uri, lvl: Math.max(1, Math.min(10, g.lvl | 0 || 1)), owner: displayName(names, owner)});
+      const x = {token: d.t, id: d.id, uri: d.uri, lvl: Math.max(1, Math.min(10, g.lvl | 0 || 1)), owner: displayName(names, owner), squad: r.includes(d.id)};
+      (x.squad ? squads : others).push(x);
     }
   }
-  for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; }
-  return json({rivals: out.slice(0, 30), total: out.length});
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  // today's registered squads first; other players' dogs only fill up while few squads are in
+  const out = [...shuffle(squads), ...shuffle(others)].slice(0, 30);
+  return json({rivals: out, total: squads.length + others.length, squads: squads.length});
+}
+/* Register today's arena squad: these dogs defend (and earn bond XP) in other players' arenas. */
+async function arenaSquad(env, account, b) {
+  const ids = Array.isArray(b && b.ids) ? b.ids.map(String).slice(0, 3) : [];
+  const h = (await storeOf(env).allHoldings())[account] || {};
+  const own = new Set((h.dogs || []).map(d => d.id));
+  const valid = ids.filter(id => own.has(id));
+  await storeOf(env).arenaRegSet(account, today(), valid);
+  return json({ok: true, day: today(), ids: valid});
+}
+/* An arena fight against another player's dog: credit that dog's owner with bond XP. */
+async function arenaResult(env, account, b) {
+  const id = String((b && b.id) || ""), day = today();
+  if (!id) return json({error: "bad_id"}, 400);
+  if (env.KV) {                                                    // 3 tournaments x 3 rounds a day, a little slack
+    const k = `defrep:${account}:${day}`, n = +(await env.KV.get(k) || 0);
+    if (n >= 12) return json({ok: true, credited: 0});
+    await env.KV.put(k, String(n + 1), {expirationTtl: 2 * 86400});
+  }
+  const st = storeOf(env), hold = await st.allHoldings(), reg = await st.arenaRegAll();
+  const owner = Object.keys(hold).find(o => o !== account && (hold[o].dogs || []).some(d => d.id === id));
+  if (!owner) return json({ok: true, credited: 0});
+  // only dogs in the owner's registered squad for today earn bond XP
+  if (!(reg[owner] && reg[owner].day === day && reg[owner].ids.includes(id))) return json({ok: true, credited: 0});
+  const names = await st.profiles(), won = !b.attackerWon;
+  const xp = await st.defenseAdd(owner, {id, xp: won ? DEFENSE_XP.win : DEFENSE_XP.loss, won, vs: displayName(names, account), at: Date.now()},
+    `${id}|${day}`, DEFENSE_CAP);
+  return json({ok: true, credited: xp});
 }
 
 /* ------------------------------------------------------------------ saves */
@@ -682,6 +741,14 @@ export default {
       if (p === "/packs") return withCors(await packs(env, account), cors);
       if (p === "/pack" && req.method === "POST") return withCors(await packMove(env, account, await req.json()), cors);
       if (p === "/profile" && req.method === "POST") return withCors(await setProfile(env, account, await req.json().catch(() => null)), cors);
+      if (p === "/arena/squad" && req.method === "POST") return withCors(await arenaSquad(env, account, await req.json().catch(() => null)), cors);
+      if (p === "/arena/result" && req.method === "POST") return withCors(await arenaResult(env, account, await req.json().catch(() => null)), cors);
+      if (p === "/arena/defense" && req.method === "GET") return withCors(json({items: await storeOf(env).defenseGet(account)}), cors);
+      if (p === "/arena/defense/claim" && req.method === "POST") {
+        const b = await req.json().catch(() => ({}));
+        await storeOf(env).defenseClear(account, +b.upTo || 0);
+        return withCors(json({ok: true}), cors);
+      }
       if (p === "/arena/rivals") return withCors(await arenaRivals(env, account), cors);
       if (p === "/save" && req.method === "GET") return withCors(await saveGet(env, account), cors);
       if (p === "/save" && req.method === "POST") return withCors(await savePut(env, account, await req.json().catch(() => null)), cors);
