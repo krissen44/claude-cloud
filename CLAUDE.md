@@ -13,6 +13,10 @@ exactly the files to upload and say where each goes.
 
 Git branch used so far: `claude/dreamy-pasteur-du9fm3` (repo `krissen44/claude-cloud`).
 
+**Release rule (owner's decision):** changes are **not uploaded one by one**. They collect during the week and go live
+together at the **week roll (Monday 00:00 UTC)**. Record every change in `RELEASE.md` (what, why, upload steps) and
+hand over one combined package for the week start; don't tell the owner to upload mid-week.
+
 ## Collection facts
 
 - **Pixel Scrappy**: 5,000 NFTs on the XRPL. Issuer `rGAVUGyhdbxQs1G7nwCCFU4w8P4HfgFKD6`, **taxon 369**.
