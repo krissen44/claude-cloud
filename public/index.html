@@ -220,6 +220,7 @@ button.sm:hover{border-color:var(--accent);color:var(--ink)}
 .pst th:first-child,.pst td:first-child{text-align:left;color:var(--ink2)}
 .pst th{font-weight:600;color:var(--ink2)}
 .pst tr.avg td{color:var(--accent)}
+a.btn.shop{display:inline-block;text-decoration:none;font-size:12px;padding:8px 12px}
 .recap{position:fixed;inset:0;z-index:50;background:rgba(10,16,28,.62);display:flex;align-items:center;justify-content:center;padding:16px}
 .recap .card{max-width:440px;width:100%;max-height:calc(100vh - 32px);overflow:auto;margin:0}
 .recap h2{font-family:'Press Start 2P',monospace;font-size:12px;margin:2px 0 4px;color:var(--accent);text-align:center}
@@ -1070,6 +1071,20 @@ async function claimDefense(){
     if (xp) WALLET.defenseNote = `While you were away your arena squad defended ${items.length} time${items.length===1?'':'s'} (${wins} win${wins===1?'':'s'}): +${xp} bond XP.` + (ups.length ? ' ' + ups.join(' · ') + '!' : '');
     menu();
   } catch(e){}
+}
+/* "Buy this rival": every fight against a real collection dog ends with a link
+   to that exact piece on xrp.cafe — each fight a small shop window. The NFT id
+   comes from the server's collection index; until it arrives (or if it can't),
+   the link points at the collection. */
+const NFT_URL = {};
+function shopLink(def){
+  const t = def && tokenOf(def);
+  if (!t || !LIVE() || WALLET.demo) return '';
+  const known = NFT_URL[t];
+  if (!known) fetch(CONFIG.WORKER_URL.replace(/\/$/, '') + '/public/nft?t=' + t).then(r => r.json()).then(j => {
+    NFT_URL[t] = j.url; const a = document.querySelector('a[data-shop="' + t + '"]'); if (a) a.href = j.url;
+  }).catch(() => {});
+  return `<a class="btn shop" data-shop="${t}" href="${esc(known || 'https://xrp.cafe/collection/pixel-scrappy')}" target="_blank" rel="noopener">🛒 Like this rival? #${t} on xrp.cafe</a>`;
 }
 const rivalLabel = (dogName, who) => who ? `${dogName} from ${who}` : `a wild ${dogName}`;
 /* Ghost vs ghost, no animation: the same engine, both sides on the AI. */
@@ -2105,7 +2120,8 @@ function renderControls(){
       <div style="text-align:left;margin:10px auto;max-width:420px">${arenaLines(r.lines)}</div>
       ${r.done ? `<div class="mini">+${r.xp} XP shared across your squad — full XP, because you fought it live.</div>` : ''}
       <div class="row" style="margin-top:12px">
-        ${r.done ? `<button id="menu">Back to the arena</button>` : `<button id="again">Next round →</button>`}</div></div>`;
+        ${r.done ? `<button id="menu">Back to the arena</button>` : `<button id="again">Next round →</button>`}</div>
+      ${shopLink(E.def) ? `<div class="row" style="margin-top:10px">${shopLink(E.def)}</div>` : ''}</div>`;
     const nx = document.getElementById('again'); if (nx) nx.onclick = () => { S.click(); arenaNext(); };
     const mn = document.getElementById('menu'); if (mn) mn.onclick = () => { arenaRun = null; tab = 'arena'; menu(); };
     return;
@@ -2123,7 +2139,8 @@ function renderControls(){
       <div class="mini">${g.lvl>=BOND.maxLevel ? 'Bond maxed' : g.xp+' / '+need+' to the next level'} · ${g.w}W ${g.l}L${SAVE.data.streak>1?' · '+SAVE.data.streak+' win streak 🔥':''}</div>
       ${ups}
       <div class="row" style="margin-top:12px">
-        <button id="again">${SAVE.data.tickets>0 ? 'Fight again ('+SAVE.data.tickets+' left)' : 'Casual fight'}</button><button id="menu">Back to the kennel</button></div></div>`;
+        <button id="again">${SAVE.data.tickets>0 ? 'Fight again ('+SAVE.data.tickets+' left)' : 'Casual fight'}</button><button id="menu">Back to the kennel</button></div>
+      ${shopLink(E.def) ? `<div class="row" style="margin-top:10px">${shopLink(E.def)}</div>` : ''}</div>`;
     document.getElementById('again').onclick = () => {
       const r = SAVE.data.tickets > 0 && SAVE.spend();
       startFight(P.def, pickOpponent(P.def.id), r);      // a fresh rival every fight, not a rematch

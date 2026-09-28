@@ -403,6 +403,41 @@ async function packMove(env, account, b) {
   return packs(env, account);
 }
 
+/* ------------------------------------------------------------------ collection index */
+/* Every Pixel Scrappy with its NFTokenID and current owner, read with the Clio
+   method nfts_by_issuer and cached for a day (memory + disk). Used for the
+   "buy this rival" link and anything that needs to know who holds a token. */
+const INDEX_TTL = 24 * 3600;
+let indexBuild = null;
+async function collectionIndex(env) {
+  const c = (env.KV && await env.KV.get("nftindex", "json")) || (env.FILES && await env.FILES.getJson("nftindex"));
+  if (c && Date.now() - c.at < INDEX_TTL * 1000) return c;
+  if (!indexBuild) indexBuild = (async () => {
+    const byToken = {}; let marker, pages = 0;
+    try {
+      do {
+        const d = await xrplRequest({method: "nfts_by_issuer", params: [{issuer: env.ISSUER, limit: 400,
+          ...(env.TAXON && env.TAXON !== "*" ? {nft_taxon: Number(env.TAXON)} : {}), ...(marker ? {marker} : {})}]});
+        for (const n of d.nfts || []) {
+          const t = +(hex2str(n.uri || n.URI).match(/(\d+)\.json$/) || [])[1];
+          if (t) byToken[t] = {id: n.nft_id || n.NFTokenID, owner: n.owner || n.Owner || ""};
+        }
+        marker = d.marker; pages++;
+      } while (marker && pages < 40);
+    } catch (e) { if (!Object.keys(byToken).length) return c || {at: 0, byToken: {}}; }
+    const out = {at: Date.now(), byToken};
+    if (env.KV) await env.KV.put("nftindex", JSON.stringify(out), {expirationTtl: INDEX_TTL});
+    if (env.FILES) await env.FILES.putJson("nftindex", out);
+    return out;
+  })().finally(() => { indexBuild = null; });
+  return indexBuild;
+}
+async function nftLookup(env, token) {
+  const t = +token; if (!(t >= 1 && t <= 99999)) return json({error: "bad_token"}, 400);
+  const e = (await collectionIndex(env)).byToken[t];
+  return json(e ? {token: t, id: e.id, owner: e.owner, url: `https://xrp.cafe/nft/${e.id}`} : {token: t, id: null, url: "https://xrp.cafe/collection/pixel-scrappy"});
+}
+
 /* ------------------------------------------------------------------ names & arena rivals */
 const displayName = (names, a) => (names && names[a] && names[a].name) || shortAcct(a);
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 _.\-]{1,14}[A-Za-z0-9_.]$/;           // 3–16 chars, no leading/trailing space
@@ -727,6 +762,7 @@ export default {
         r.headers.set("cache-control", "no-store");
         return r;
       }
+      if (p === "/public/nft") return withCors(await nftLookup(env, url.searchParams.get("t")), cors);
       if (p === "/check") return withCors(await check(env, url.searchParams.get("account")), cors);
       if (p === "/auth/start" && req.method === "POST") return withCors(await authStart(env), cors);
       if (p === "/auth/joey/start" && req.method === "POST") return withCors(await joeyStart(env), cors);
