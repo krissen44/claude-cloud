@@ -1082,6 +1082,54 @@ async function claimDefense(){
     menu();
   } catch(e){}
 }
+/* Weekly prizes: the treasury makes a free sell offer (0 XRP) out to each
+   winner. The kennel shows it, and "Accept" hands the player a Xaman request
+   for NFTokenAcceptOffer — or they accept it in any other wallet. */
+const PRIZE = {list:[], claim:null, done:''};
+const PLACE_TXT = {'1':'1st place on the XP ladder', '2':'2nd place on the XP ladder', '3':'3rd place on the XP ladder', 'pack':'most active member of the winning pack'};
+async function loadPrizes(){
+  if (!LIVE() || !WALLET.token || WALLET.demo) return;
+  try {
+    const r = await api('/prizes'), j = await r.json();
+    if (!r.ok) return;
+    PRIZE.list = (j.prizes || []).filter(p => p.status === 'offered');
+    if (PRIZE.list.length && tab === 'kennel') menu();
+  } catch(e){}
+}
+function prizeCards(){
+  const done = PRIZE.done ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🏆 Prize collected</b>
+      <div class="mini">${esc(PRIZE.done)}</div></div><button id="prizeOk" class="sm">OK</button></div></div>` : '';
+  return done + PRIZE.list.map(p => {
+    const key = p.week + '|' + p.place, c = PRIZE.claim && PRIZE.claim.key === key ? PRIZE.claim : null;
+    return `<div class="card"><div class="wal"><div><b style="font-size:12px">🏆 You won a Pixel Scrappy!</b>
+      <div class="mini">Week of ${esc(p.week)} — ${PLACE_TXT[p.place] || 'prize'}. <b>Pixel Scrappy #${p.token}</b> is waiting for you as a free offer (0 XRP) that only your wallet can accept.</div></div>
+      ${c && c.qr ? '' : `<button data-prize="${key}" ${c ? 'disabled' : ''}>🎁 Accept</button>`}</div>
+      ${c ? (c.qr ? `<div style="text-align:center;margin-top:10px"><img src="${c.qr}" alt="Xaman QR" style="width:200px;height:200px;max-width:100%">
+          <div class="mini"><a href="${c.link}" target="_blank" rel="noopener">Open in Xaman</a> · ${esc(c.msg)}</div></div>`
+        : `<p class="mini" style="margin:8px 0 0"><b>${esc(c.msg)}</b></p>`) : ''}
+      <p class="mini" style="margin:8px 0 0">No Xaman? Accept the offer in any XRPL wallet that shows NFT offers, then tap Accept here once more.</p></div>`;
+  }).join('');
+}
+async function prizeClaim(key){
+  const [week, place] = key.split('|'), p = PRIZE.list.find(x => x.week + '|' + x.place === key);
+  PRIZE.claim = {key, msg:'Looking up your offer on the ledger…'}; menu();
+  const got = () => { PRIZE.claim = null; PRIZE.list = PRIZE.list.filter(x => x !== p);
+    PRIZE.done = `Pixel Scrappy #${p.token} is in your wallet now. Welcome to the kennel!`; loadKennel(true); };
+  try {
+    const r = await api('/prizes/claim', {method:'POST', body:{week, place}}), j = await r.json();
+    if (j.state === 'claimed'){ got(); return; }
+    if (!r.ok || !j.uuid) throw new Error(j.error === 'offer_not_found' ? "The offer isn't on the ledger yet — try again in a minute."
+      : j.error === 'xaman_not_configured' ? 'Accept the offer in your wallet, then tap Accept again.' : 'Could not prepare the request — try again.');
+    PRIZE.claim = {key, qr:j.qr, link:j.deeplink, msg:'Scan with Xaman and sign — free, no XRP paid.'}; menu();
+    const t0 = Date.now();
+    while (PRIZE.claim && PRIZE.claim.key === key && Date.now() - t0 < 10 * 60 * 1000){
+      await wait(2500);
+      const s = await (await api('/prizes/status?uuid=' + j.uuid)).json().catch(() => ({}));
+      if (s.state === 'signed'){ got(); return; }
+      if (s.state && s.state !== 'pending') throw new Error(s.state === 'rejected' ? 'Declined in Xaman.' : s.state === 'expired' ? 'The request expired.' : 'It did not go through (' + (s.result || s.state) + ').');
+    }
+  } catch(e){ PRIZE.claim = {key, msg: e.message}; menu(); setTimeout(() => { if (PRIZE.claim && PRIZE.claim.key === key && !PRIZE.claim.qr){ PRIZE.claim = null; menu(); } }, 6000); }
+}
 /* "Buy this rival": every fight against a real collection dog ends with a link
    to that exact piece on xrp.cafe — each fight a small shop window. The NFT id
    comes from the server's collection index; until it arrives (or if it can't),
@@ -1883,6 +1931,7 @@ async function cloudPull(){
 window.addEventListener('pagehide', () => { if (cloudTimer) cloudPush(true); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && cloudTimer) cloudPush(true); });
 function walletSignOut(){
+  PRIZE.list = []; PRIZE.claim = null; PRIZE.done = '';
   lsSet('ba_session', null);
   Object.assign(WALLET, {token:null, account:null, demo:false, owned:null, error:'', name:null, editName:false});
   RIVALS.list = null; RIVALS.ready = []; RIVALS.total = 0;
@@ -2087,7 +2136,7 @@ async function loadKennel(fresh){
   } catch(e){ WALLET.error = 'Could not load your kennel (' + e.message + ').'; }
   WALLET.loading = false; if (SC.linkId) tab = 'club'; menu();
   if (SC.linkId) scRefresh();
-  oppTopUp(); loadPacks(); claimDefense(); arenaRegister();
+  oppTopUp(); loadPacks(); claimDefense(); arenaRegister(); loadPrizes();
 }
 
 /* ---- the real weekly ladder ---- */
@@ -2172,6 +2221,8 @@ function walletWire(){
   if (q('demo'))      q('demo').onclick = () => { S.unlock(); S.click(); WALLET.demo = true; menu(); };
   if (q('signout'))   q('signout').onclick = () => { S.click(); walletSignOut(); };
   if (q('defOk'))     q('defOk').onclick = () => { S.click(); WALLET.defenseNote = ''; menu(); };
+  if (q('prizeOk'))   q('prizeOk').onclick = () => { S.click(); PRIZE.done = ''; menu(); };
+  app.querySelectorAll('[data-prize]').forEach(b => b.onclick = () => { S.unlock(); S.click(); prizeClaim(b.dataset.prize); });
   if (q('nameEdit'))  q('nameEdit').onclick = () => { S.click(); WALLET.editName = true; WALLET.nameError = ''; menu(); const i = q('nameIn'); if (i) i.focus(); };
   if (q('nameCancel')) q('nameCancel').onclick = () => { S.click(); WALLET.editName = false; menu(); };
   if (q('nameIn'))    q('nameIn').onkeydown = e => { if (e.key === 'Enter') q('nameSave').click(); };
@@ -2503,13 +2554,13 @@ function kennelView(){
   if (needLogin()) return walletCard() + (WALLET.loading ? `<div class="card"><p class="mini" style="margin:0">🐾 ${esc(WALLET.progress)}</p></div>` : '') + introCard();
   const R = ROSTER();
   if (!R.length) return walletCard() + `<div class="card"><p class="mini" style="margin:0"><b>No Pixel Scrappy in this wallet yet.</b> The kennel fills itself with the ones you hold — grab one on <a href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener">xrp.cafe</a>, then hit ↻ Refresh. Or try the demo dogs in the meantime.</p>
-    <div class="row" style="justify-content:flex-start;margin-top:10px"><button id="demo">Try the demo</button></div></div>`;
+    <div class="row" style="justify-content:flex-start;margin-top:10px"><button id="demo">Try the demo</button></div></div>` + prizeCards();
   const defNote = WALLET.defenseNote ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🛡️ Arena defence</b>
       <div class="mini">${esc(WALLET.defenseNote)}</div></div><button id="defOk" class="sm">OK</button></div></div>` : '';
   const gen = R.filter(f => !f.legendary).map(f => card(f)).join('');
   const leg = R.filter(f =>  f.legendary).map(f => card(f)).join('');
   const dogs = (gen || '') + (leg ? `</div><h3 class="h3" style="margin:16px 0 10px">★ ${R === DATA.fighters ? 'THE 20 LEGENDARIES' : 'YOUR LEGENDARIES'} — hand-built, each with its own signature</h3><div class="pick">` + leg : '');
-  return walletCard() + defNote + `
+  return walletCard() + prizeCards() + defNote + `
   <div class="card pnl">
     <div>
       <h3>TRAINER</h3>

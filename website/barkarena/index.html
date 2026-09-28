@@ -120,6 +120,10 @@ section{margin-top:56px}
 .board li:nth-child(odd){background:var(--raised)}
 .board li b{font-family:var(--display);font-size:15px;font-weight:800}
 .board li .rk{font-weight:700;color:var(--subtle)}
+.prizes{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.prizes li{display:grid;grid-template-columns:minmax(90px,auto) 1fr auto;gap:10px;align-items:center;padding:7px 8px;border-radius:10px;font:13px var(--mono)}
+.prizes li:nth-child(odd){background:var(--raised)}
+.prizes li b{font-family:var(--display);font-size:14px;font-weight:800}
 .board li:nth-child(-n+3) .rk{color:var(--ink)}
 .board .empty{color:var(--subtle);font-size:14px;margin:6px 0 0}
 .ptable{width:100%;border-collapse:collapse;font-size:14px;margin-top:4px}
@@ -203,6 +207,7 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
     </div>
     <p class="meta lbmeta" id="lbmeta">Loading the standings…</p>
     <div class="boards" id="boards"></div>
+    <div class="card" id="proof" style="margin-top:14px" hidden></div>
     <div class="card" style="margin-top:14px">
       <h3 style="margin:0 0 4px;font-size:18px">🐾 Pack standings</h3>
       <p class="meta" style="margin:0 0 8px">Ranked by wins per member.</p>
@@ -328,6 +333,8 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
       <details class="card"><summary>What happens to my progress if I sell a Scrappy?</summary><div class="body"><p>The bond level stays with the NFT, so the new owner inherits the training. Your trainer level and weekly stats stay with you.</p></div></details>
       <details class="card"><summary>When do things reset?</summary><div class="body"><p>Tickets, quests and arena tournaments: every day at 00:00 UTC. Leaderboard, pack standings and pack moves: every Monday at 00:00 UTC.</p></div></details>
       <details class="card"><summary>Why do I keep losing when I always bite?</summary><div class="body"><p>Rivals learn your habits. A fixed pattern gets countered — and a guard that blocks your bite snaps back for 2. Vary your moves and watch what the opponent does.</p></div></details>
+      <details class="card"><summary>Are there prizes?</summary><div class="body"><p>Yes. Every week the top 3 of the XP ladder and the most active member of the winning pack win a Pixel Scrappy from the treasury. It arrives as a free offer (0 XRP) that only your wallet can accept — the game shows it in your kennel with an Accept button, or accept it in any XRPL wallet.</p></div></details>
+      <details class="card"><summary>How do I know the results weren't changed?</summary><div class="body"><p>When a week ends its final standings and prize winners are frozen and hashed (SHA-256). That hash is written into a transaction memo on the XRP Ledger, where it can never be edited. Anyone can download the raw results, hash them, and compare — the link is under “Last week — final”.</p></div></details>
       <details class="card"><summary>How does a Fight Club duel stay fair?</summary><div class="body"><p>Both moves go to the game server, which only reveals them once both are in and then rolls the dice with the same fight engine the game uses. Nobody sees your move first, and both screens replay exactly the server's fight. It's a beta for Season 1: it pays no XP and keeps its own win/loss record. Matchmaking and a Club ladder follow in Season 2.</p></div></details>
       <details class="card"><summary>Can I play without a Pixel Scrappy?</summary><div class="body"><p>Yes, in the demo with sample dogs. Demo fights don't count for the leaderboard or packs.</p></div></details>
     </div>
@@ -348,7 +355,8 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
 (function(){
   var API = "https://game.scrappyxrp.fun/api/public/board";
   var PACKS = {ledger:"⛓️ Ledger Hounds", moon:"🌙 Moon Diggers", bone:"🦴 Bone Collectors", static:"⚡ Static Pack"};
-  var data = null, view = "now";
+  var data = null, view = "now", proof = {};
+  var PLACE = {"1":"🥇 1st", "2":"🥈 2nd", "3":"🥉 3rd", "pack":"🐾 Top pack"};
   var $ = function(id){ return document.getElementById(id); };
   var esc = function(t){ return String(t).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };
   function board(title, rows, sfx){
@@ -369,6 +377,30 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
     $("lbmeta").textContent = (view === "now" ? "Week of " : "Final results · week of ") + d.week + " · " + d.players + " player" + (d.players === 1 ? "" : "s") + (view === "now" ? " · resets Monday 00:00 UTC" : "");
     $("boards").innerHTML = board("⭐ Most XP", d.xp) + board("🥊 Most wins", d.wins) + board("🔥 Longest streak", d.streak, "🔥");
     $("ptable").innerHTML = packs(d.packs);
+    showProof(view === "last" ? d.week : null);
+  }
+  /* Last week's sealed results: prizes and the SHA-256 anchored on the XRPL. */
+  function showProof(week){
+    var el = $("proof");
+    if (!week){ el.hidden = true; return; }
+    var r = proof[week];
+    if (r === undefined){
+      proof[week] = null;
+      fetch(API.replace("/board", "/results?week=" + week), {cache:"no-store"}).then(function(x){ return x.ok ? x.json() : null; })
+        .then(function(j){ proof[week] = j || false; render(); }).catch(function(){ proof[week] = false; });
+      return;
+    }
+    if (!r){ el.hidden = true; return; }
+    var prizes = (r.prizes || []).map(function(p){
+      return '<li><span class="rk">' + (PLACE[p.place] || esc(p.place)) + '</span><span>' + esc(p.name) + '</span><b>' +
+        (p.token ? 'Pixel Scrappy #' + p.token + (p.status === "claimed" ? " ✅" : " 🎁") : "coming") + '</b></li>'; }).join("");
+    el.innerHTML = '<h3 style="margin:0 0 4px;font-size:18px">🏆 Prizes &amp; proof</h3>' +
+      (prizes ? '<ol class="prizes">' + prizes + '</ol>' : '<p class="meta">No prizes this week — nobody earned XP.</p>') +
+      '<p class="meta" style="margin:10px 0 0">' + (r.anchor
+        ? '⚓ These final results are sealed on the XRP Ledger: <a href="https://livenet.xrpl.org/transactions/' + esc(r.anchor.txid) + '" target="_blank" rel="noopener">transaction ' + esc(r.anchor.txid.slice(0, 10)) + '…</a>'
+        : '⚓ The final results are sealed with a hash; the ledger proof follows shortly.') +
+      '<br><span style="word-break:break-all">SHA-256 ' + esc(r.sha256) + '</span> · <a href="' + API.replace("/board", "/results?week=" + week) + '" target="_blank" rel="noopener">raw results</a></p>';
+    el.hidden = false;
   }
   Array.prototype.forEach.call(document.querySelectorAll(".lbtabs button"), function(b){
     b.onclick = function(){

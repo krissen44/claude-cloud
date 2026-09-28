@@ -21,18 +21,22 @@ Last version confirmed live: **game v19** (cloud saves + `/admin`) + **website l
   `//@engine` sections of `public/index.html`) and both screens replay its rounds. New file: **`fight-engine.js`**.
   Tested with two/three browsers: same fight on both screens, records, invite link, give up, two-miss forfeit.
 
+- **v24 — week close: verifiable results + weekly prizes**: 15 min after the week roll the finished week is frozen
+  (final standings + prize winners + SHA-256). In `/admin` → "Week close": **⚓ Anchor** (Xaman QR, AccountSet with the
+  hash as memo, issuer wallet, no XRP moves) and per winner **🎁 Send** (Xaman QR, free sell offer of a treasury Scrappy,
+  only the winner can accept). Winners get a card in their kennel with "Accept" (Xaman) — or accept in any wallet.
+  The website shows the prizes, the transaction and the hash under "Last week — final".
+  Also fixed: the public board could answer 500 for a second after a name change (cache entry parse).
+  Tested with a mocked ledger + Xaman: freeze, hash check, anchor once only, offer, accept, wrong-player blocked.
+
 ### Planned for Season 1 (owner's decisions, 2026-09-28)
 - Fight Club Season 2: matchmaking queue, Elo, own ladder.
-- **Verifiable ladder**: weekly hash of the final results as a memo on the ledger — signed via **Xaman QR in /admin**
-  (no key on the server).
-- **Treasury prizes**: the 50 floor-sweep NFTs sit in the **issuer wallet**; each week **top 3 of the XP ladder + the most
-  active member of the winning pack** get one, via NFTokenCreateOffer (sell, Amount 0, Destination = winner), signed by
-  Xaman QR in /admin.
 - **Lending**: holders lend a dog to non-holders (database delegation, NFT never moves); the dog keeps its bond XP, the
   holder gets **25 % of the borrower's trainer XP** with that dog and a **share of prizes** the borrower wins.
 
 ### Website (scrappyxrp.fun)
-- `barkarena/index.html`: guide/FAQ for real arena rivals, player names, defence XP and the Fight Club beta.
+- `barkarena/index.html`: guide/FAQ for real arena rivals, player names, defence XP, the Fight Club beta, prizes and
+  the ledger proof (prizes + tx + hash under "Last week — final").
 
 ## Upload checklist (Monday)
 1. Hostinger game app → environment variables: `ADMIN_KEY` is already set (live since v19); make sure **`ACCESS_KEY` is removed**.
@@ -41,3 +45,6 @@ Last version confirmed live: **game v19** (cloud saves + `/admin`) + **website l
 4. Check: open the game in a private window, sign in, set a name (✏️), open the arena tab (squad registered, rivals
    "from <name>"), and look at `/admin` (new Name column). Fight Club: create an invite link, open it in a second
    browser with another wallet, fight a few rounds.
+5. First week close (Monday after the upload, from 00:15 UTC): open `/admin` → "Week close". The treasury line should
+   list the issuer's Pixel Scrappys. Anchor the week (scan with Xaman **logged into the issuer wallet**), then send each
+   prize. ⚠️ The issuer wallet needs 2 XRP owner reserve free per open offer until the winner accepts.

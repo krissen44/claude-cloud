@@ -83,6 +83,9 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/arena/defense`, `/arena/defense/claim` (POST `{upTo}`) | ✔ | Pending defence bond XP for the caller / mark it collected |
 | `/club/me`, `/club/create` (POST `{dogId, opponent?}`), `/club/state?id=`, `/club/join` (POST `{id,dogId}`), `/club/cancel`, `/club/move` (POST `{id, move}`), `/club/leave` | ✔ | Fight Club beta: the server is the referee (see below) |
 | `/save` (GET/POST) | ✔ | Full browser save per wallet (cloud backup + cross-device sync), file `DATA_DIR/saves/<account>.json` |
+| `/public/results[?week=]` | – | Frozen results of a finished week: canonical `json` string + `sha256` + `anchor` tx + prizes (CORS `*`) |
+| `/prizes`, `/prizes/claim` (POST `{week,place}`), `/prizes/status?uuid=` | ✔ | The player's prize offers; claim → Xaman NFTokenAcceptOffer payload for the ledger sell offer |
+| `/admin/season`, `/admin/anchor` (POST `{week}`), `/admin/prize` (POST `{week,place,nftId}`), `/admin/xaman?uuid=` | `?key=ADMIN_KEY` | Week close: results, treasury, Xaman payloads signed by the issuer wallet, payload status |
 | `/admin/export[?download=1]`, `/admin/csv` | `?key=ADMIN_KEY` | Everything as JSON backup (summary, per-player rows, raw store + saves) / players as CSV. Dashboard page: **`/admin`** |
 
 ### Game rules (as implemented — keep the website guide in sync)
@@ -121,6 +124,14 @@ hand over one combined package for the week start; don't tell the owner to uploa
   expire after 15 min, max 3 open per player. Own record (`clubAdd/clubGet`), no tickets, no XP. Client: `SC`,
   `scClubView`, `scEnter`, `scStep`, `scControls` in `public/index.html`; the old ROOM (P2P) code stays for hosts with a
   realtime room. Season 2: matchmaking, Elo, Club ladder.
+- **Week close (verifiable results + prizes)**: 15 min after Monday 00:00 UTC a finished week is frozen once
+  (`weekResult` → `db.results[week]` = canonical JSON of players, packs, prize winners + SHA-256). `/admin` shows it:
+  "⚓ Anchor" = Xaman QR for an AccountSet from the issuer with memo `barkarena/results` `{week, sha256, results URL}`;
+  "🎁 Send" = Xaman QR for NFTokenCreateOffer (Flags 1 sell, Amount "0", Destination = winner) with an NFT from the
+  **treasury = Pixel Scrappys held by the issuer wallet**. Prizes: top 3 of the XP ladder + the most active member
+  (wins+losses) of the winning pack who isn't already top 3. Winners see a card in the kennel (`PRIZE`, `prizeCards`,
+  `prizeClaim`) → Xaman NFTokenAcceptOffer, or accept in any wallet (claim then detects ownership). The website shows
+  prizes + tx + hash under "Last week — final". No key on the server — every ledger write is a Xaman signature.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 
@@ -133,7 +144,7 @@ v12 playtest fixes ("Fight again" re-used the same rival; demo dogs leaked in; r
 v13 exploit fix (always-bite won 77%) → pattern-reading AI + guard snap-back; recap counted abandoned tournaments ·
 v14 one-pack-a-week rule, losses tracked, full pack stats table · v15 `ACCESS_KEY` gate · v16 `/api/public/board` · v17 wallet chooser + Joey extension sign-in · v18 Joey app over WalletConnect (confirmed working live by the owner) ·
 v19 cloud saves + `/admin` · v20 real arena rivals + player names · v21 arena defence XP · v22 "buy this rival" link ·
-v23 server fight engine + Fight Club beta.
+v23 server fight engine + Fight Club beta · v24 week close: results hash on the XRPL + treasury prizes.
 
 ### Testing locally
 ```bash

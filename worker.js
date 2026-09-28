@@ -233,6 +233,15 @@ function storeOf(env) {
       const profiles = Object.fromEntries((await all(`SELECT account, name, updated FROM profiles`).catch(() => [])).map(r => [r.account, {name: r.name, updated: r.updated}]));
       return {players, weekly: await all(`SELECT * FROM weekly`), holdings, packs, profiles};
     },
+    resultGet: async (wk) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS results (week TEXT PRIMARY KEY, data TEXT)`).run();
+      const r = await DB.prepare(`SELECT data FROM results WHERE week = ?1`).bind(wk).first();
+      return r ? JSON.parse(r.data) : null;
+    },
+    resultSet: async (wk, rec) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS results (week TEXT PRIMARY KEY, data TEXT)`).run();
+      await DB.prepare(`INSERT INTO results (week, data) VALUES (?1, ?2) ON CONFLICT(week) DO UPDATE SET data = ?2`).bind(wk, JSON.stringify(rec)).run();
+    },
     taken: async () => {
       await DB.prepare(`CREATE TABLE IF NOT EXISTS holdings (account TEXT PRIMARY KEY, tokens TEXT, updated INTEGER)`).run();
       const rows = (await DB.prepare(`SELECT tokens FROM holdings`).all()).results || [];
@@ -621,6 +630,194 @@ async function clubRoute(env, account, p, req, url) {
   return json({error: "not_found"}, 404);
 }
 
+/* ------------------------------------------------------------------ week close: verifiable results + prizes */
+/* After a week ends its results are frozen once: a canonical JSON of the final
+   player and pack standings plus the prize winners, and its SHA-256. The admin
+   anchors that hash on the XRPL (an AccountSet with a memo, signed with Xaman
+   from the issuer wallet), so anyone can check later that the published
+   results were never changed: sha256(json) = the memo on the ledger.
+   Prizes: the treasury (Pixel Scrappys held by the issuer wallet) pays the top
+   3 of the XP ladder and the most active member of the winning pack. The admin
+   signs an NFTokenCreateOffer (sell, Amount 0, Destination = winner) per prize;
+   the winner accepts it in the game (Xaman) or in any wallet. No key on the server. */
+const CLOSE_GRACE_MS = 15 * 60 * 1000;                     // late stats posts land before we freeze
+const PRIZE_PLACES = ["1", "2", "3", "pack"];
+const weekEndMs = wk => Date.parse(wk + "T00:00:00Z") + 7 * 864e5;
+const closable = wk => /^\d{4}-\d{2}-\d{2}$/.test(wk) && weekOf(new Date(wk + "T12:00:00Z")) === wk && Date.now() >= weekEndMs(wk) + CLOSE_GRACE_MS;
+async function sha256hex(s) {
+  const b = await crypto.subtle.digest("SHA-256", enc.encode(s));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+}
+async function buildResults(env, wk) {
+  const st = storeOf(env), names = await st.profiles();
+  const rows = (await st.weekRows(wk)).filter(r => (r.xp | 0) > 0 || (r.wins | 0) + (r.losses | 0) > 0)
+    .sort((a, b) => (b.xp | 0) - (a.xp | 0) || (b.wins | 0) - (a.wins | 0) || (a.account < b.account ? -1 : 1));
+  const players = rows.map((r, i) => ({rank: i + 1, account: r.account, name: displayName(names, r.account),
+    xp: r.xp | 0, wins: r.wins | 0, losses: r.losses | 0, streak: r.streak | 0, pack: r.pack || null}));
+  const packs = (await packRows(env, wk)).filter(p => p.members > 0)
+    .map(p => ({id: p.id, members: p.members, wins: p.wins, losses: p.losses, xp: p.xp, perMember: Math.round(100 * p.wins / p.members) / 100}))
+    .sort((a, b) => b.perMember - a.perMember || b.wins - a.wins || (a.id < b.id ? -1 : 1))
+    .map((p, i) => ({rank: i + 1, ...p}));
+  const prizes = players.filter(p => p.xp > 0).slice(0, 3).map((p, i) => ({place: String(i + 1), account: p.account, name: p.name}));
+  const win = packs[0];
+  if (win && win.wins > 0) {
+    const taken = new Set(prizes.map(p => p.account));
+    const active = players.filter(p => p.pack === win.id && !taken.has(p.account))
+      .sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses) || b.xp - a.xp)[0];
+    if (active) prizes.push({place: "pack", account: active.account, name: active.name, pack: win.id});
+  }
+  return {game: "Bark Arena", week: wk, players, packs, prizes};
+}
+/* The frozen record of a finished week (made on first use, never rebuilt). */
+async function weekResult(env, wk) {
+  const st = storeOf(env);
+  let rec = await st.resultGet(wk);
+  if (rec || !closable(wk)) return rec || null;
+  const data = JSON.stringify(await buildResults(env, wk));
+  rec = {week: wk, json: data, sha256: await sha256hex(data), frozen: Date.now(), anchor: null, prizes: {}};
+  await st.resultSet(wk, rec);
+  return rec;
+}
+const lastWeeks = n => Array.from({length: n}, (_, i) => weekOf(new Date(Date.now() - (i + 1) * 7 * 864e5)));
+function publicResult(rec) {
+  const d = JSON.parse(rec.json);
+  return {week: rec.week, sha256: rec.sha256, json: rec.json, anchor: rec.anchor,
+    prizes: d.prizes.map(p => ({place: p.place, name: p.name, pack: p.pack || null,
+      token: (rec.prizes[p.place] || {}).token || null, status: (rec.prizes[p.place] || {}).status || "pending"})),
+    verify: "sha256(json) must equal the sha256 in the memo of the anchor transaction"};
+}
+async function publicResults(env, week) {
+  const weeks = week ? [week] : lastWeeks(8);
+  for (const wk of weeks) {
+    const rec = await weekResult(env, wk);
+    if (rec) return json(publicResult(rec));
+  }
+  return json({error: "no_results"}, 404);
+}
+
+/* --- Xaman payloads, signed by the admin (issuer wallet) or a prize winner --- */
+async function xamanPayload(env, txjson, instruction, signer, pending) {
+  if (!env.XUMM_API_KEY) return json({error: "xaman_not_configured"}, 501);
+  const r = await fetch(`${XUMM}/payload`, {method: "POST",
+    headers: {"content-type": "application/json", "X-API-Key": env.XUMM_API_KEY, "X-API-Secret": env.XUMM_API_SECRET},
+    body: JSON.stringify({txjson, options: {submit: true, expire: 10, ...(signer ? {signers: [signer]} : {})},
+      custom_meta: {instruction}})});
+  if (!r.ok) return json({error: "xaman_unavailable", status: r.status}, 502);
+  const p = await r.json();
+  await env.KV.put(`xpay:${p.uuid}`, JSON.stringify(pending), {expirationTtl: 24 * 3600});
+  return json({uuid: p.uuid, qr: p.refs.qr_png, deeplink: p.next.always});
+}
+/* Poll a payload; once signed, record what it did (only once). */
+async function xamanResolve(env, uuid, account) {
+  if (!/^[0-9a-f-]{36}$/i.test(uuid || "")) return json({error: "bad_uuid"}, 400);
+  const pend = await env.KV.get(`xpay:${uuid}`, "json");
+  if (!pend || (account && pend.account !== account)) return json({error: "unknown_payload"}, 404);
+  const r = await fetch(`${XUMM}/payload/${uuid}`, {headers: {"X-API-Key": env.XUMM_API_KEY, "X-API-Secret": env.XUMM_API_SECRET}});
+  if (!r.ok) return json({error: "xaman_unavailable"}, 502);
+  const p = await r.json();
+  if (p.meta.expired && !p.meta.signed) return json({state: "expired"});
+  if (!p.meta.resolved) return json({state: "pending"});
+  if (!p.meta.signed) return json({state: "rejected"});
+  const txid = p.response.txid, result = p.response.dispatched_result || "", signer = p.response.account;
+  if (result && result !== "tesSUCCESS") return json({state: "failed", result});
+  if (!pend.done) {
+    const st = storeOf(env), rec = await st.resultGet(pend.week);
+    if (rec) {
+      if (pend.kind === "anchor") rec.anchor = {txid, account: signer, at: Date.now()};
+      if (pend.kind === "offer") rec.prizes[pend.place] = {...rec.prizes[pend.place], status: "offered", offerTx: txid, at: Date.now()};
+      if (pend.kind === "accept") rec.prizes[pend.place] = {...rec.prizes[pend.place], status: "claimed", claimTx: txid, claimed: Date.now()};
+      await st.resultSet(pend.week, rec);
+      if (env.KV) await env.KV.put("public:board", "", {expirationTtl: 1});
+    }
+    await env.KV.put(`xpay:${uuid}`, JSON.stringify({...pend, done: true}), {expirationTtl: 24 * 3600});
+  }
+  return json({state: "signed", txid, result});
+}
+const memoHex = s => hexOf(s);
+async function adminSeason(env) {
+  const weeks = [];
+  for (const wk of lastWeeks(6)) {
+    const rec = await weekResult(env, wk);
+    if (!rec) { weeks.push({week: wk, open: true}); continue; }
+    const d = JSON.parse(rec.json);
+    weeks.push({week: wk, sha256: rec.sha256, anchor: rec.anchor, players: d.players.length, top: d.players.slice(0, 5), packs: d.packs,
+      prizes: d.prizes.map(p => ({...p, ...(rec.prizes[p.place] || {})}))});
+  }
+  let treasury = [], treasuryError = null;
+  try {
+    const used = new Set();
+    for (const wk of lastWeeks(60)) {
+      const rec = await storeOf(env).resultGet(wk);
+      if (rec) for (const x of Object.values(rec.prizes || {})) if (x.nftId) used.add(x.nftId);
+    }
+    treasury = (await accountNfts(env, env.ISSUER)).filter(n => !used.has(n.nft_id))
+      .map(n => ({nftId: n.nft_id, token: +(n.uri.match(/(\d+)\.json$/) || [])[1] || null}))
+      .sort((a, b) => (a.token || 0) - (b.token || 0));
+  } catch (e) { treasuryError = String(e.message); }
+  return json({issuer: env.ISSUER, xaman: !!env.XUMM_API_KEY, weeks, treasury, treasuryError});
+}
+async function adminAnchor(env, b) {
+  const rec = await weekResult(env, String(b.week || ""));
+  if (!rec) return json({error: "week_not_closed"}, 409);
+  if (rec.anchor) return json({error: "already_anchored", anchor: rec.anchor}, 409);
+  const origin = firstOrigin(env) || (env.RETURN_URL || "").replace(/\/$/, "");
+  const memo = JSON.stringify({game: "Bark Arena", week: rec.week, sha256: rec.sha256, results: `${origin}/api/public/results?week=${rec.week}`});
+  return xamanPayload(env, {TransactionType: "AccountSet", Account: env.ISSUER,
+      Memos: [{Memo: {MemoType: memoHex("barkarena/results"), MemoFormat: memoHex("application/json"), MemoData: memoHex(memo)}}]},
+    `Bark Arena: anchor the results of the week of ${rec.week} (sha256 ${rec.sha256.slice(0, 12)}…). No XRP is sent.`,
+    env.ISSUER, {kind: "anchor", week: rec.week});
+}
+async function adminPrize(env, b) {
+  const rec = await weekResult(env, String(b.week || ""));
+  if (!rec) return json({error: "week_not_closed"}, 409);
+  const place = String(b.place || ""), win = JSON.parse(rec.json).prizes.find(p => p.place === place);
+  if (!win) return json({error: "no_such_prize"}, 404);
+  if ((rec.prizes[place] || {}).status === "offered" || (rec.prizes[place] || {}).status === "claimed") return json({error: "already_offered"}, 409);
+  const nft = (await accountNfts(env, env.ISSUER)).find(n => n.nft_id === String(b.nftId || ""));
+  if (!nft) return json({error: "not_in_treasury"}, 404);
+  const token = +(nft.uri.match(/(\d+)\.json$/) || [])[1] || null;
+  rec.prizes[place] = {account: win.account, nftId: nft.nft_id, token, status: "signing"};
+  await storeOf(env).resultSet(rec.week, rec);
+  return xamanPayload(env, {TransactionType: "NFTokenCreateOffer", Account: env.ISSUER, NFTokenID: nft.nft_id,
+      Amount: "0", Flags: 1, Destination: win.account},
+    `Bark Arena prize, week of ${rec.week}, place ${place}: Pixel Scrappy #${token} for ${win.name}. A free sell offer only this player can accept.`,
+    env.ISSUER, {kind: "offer", week: rec.week, place});
+}
+/* The player's side: prizes won, and accepting one. */
+async function myPrizes(env, account) {
+  const out = [];
+  for (const wk of lastWeeks(12)) {
+    const rec = await storeOf(env).resultGet(wk); if (!rec) continue;
+    for (const [place, x] of Object.entries(rec.prizes || {}))
+      if (x.account === account && (x.status === "offered" || x.status === "claimed"))
+        out.push({week: wk, place, token: x.token, nftId: x.nftId, status: x.status});
+  }
+  return json({prizes: out});
+}
+async function claimPrize(env, account, b) {
+  const rec = await storeOf(env).resultGet(String(b.week || "")), place = String(b.place || "");
+  const x = rec && rec.prizes[place];
+  if (!x || x.account !== account || x.status !== "offered") return json({error: "no_prize"}, 404);
+  let offers = [];
+  try { offers = (await xrplRequest({method: "nft_sell_offers", params: [{nft_id: x.nftId, ledger_index: "validated"}]})).offers || []; }
+  catch (e) { if (e.message !== "objectNotFound") return json({error: "xrpl_unavailable"}, 502); }   // no offers left = objectNotFound
+  const offer = offers.find(o => o.destination === account && String(o.amount) === "0");
+  if (!offer) {
+    // already accepted in another wallet? then it's theirs
+    const mine = await accountNfts(env, account).catch(() => []);
+    if (mine.some(n => n.nft_id === x.nftId)) {
+      rec.prizes[place] = {...x, status: "claimed", claimed: Date.now()}; await storeOf(env).resultSet(rec.week, rec);
+      return json({state: "claimed"});
+    }
+    return json({error: "offer_not_found"}, 404);
+  }
+  const res = await xamanPayload(env, {TransactionType: "NFTokenAcceptOffer", Account: account, NFTokenSellOffer: offer.nft_offer_index},
+    `Bark Arena prize: accept Pixel Scrappy #${x.token} into your wallet. It's free — no XRP is paid.`,
+    account, {kind: "accept", week: rec.week, place, account});
+  const j = await res.json();
+  return json({...j, offer: offer.nft_offer_index}, res.status);
+}
+
 /* ------------------------------------------------------------------ saves */
 /* The whole browser save (bonds, trainer XP, quests, tickets, arena, …) is
    mirrored here per wallet: a backup, and the same progress on every device. */
@@ -784,7 +981,8 @@ async function ladder(env, me, week) {
    No sign-in, wallets shortened, cached for a minute. */
 async function publicBoard(env) {
   const k = "public:board";
-  const c = env.KV ? await env.KV.get(k, "json") : null;
+  // a cleared entry is "" (see setProfile), which is not JSON: treat it as a miss
+  const c = env.KV ? await env.KV.get(k, "json").catch(() => null) : null;
   if (c) return c;
   const st = storeOf(env), wk = weekOf(), last = weekOf(new Date(Date.now() - 7 * 864e5));
   const names = await st.profiles();
@@ -883,6 +1081,23 @@ export default {
         r.headers.set("cache-control", "no-store");
         return r;
       }
+      if (p === "/public/results") {
+        const r = await publicResults(env, url.searchParams.get("week"));
+        r.headers.set("access-control-allow-origin", "*");
+        r.headers.set("cache-control", "public, max-age=60");
+        return r;
+      }
+      if (p.startsWith("/admin/") && p !== "/admin/export" && p !== "/admin/csv") {
+        if (!adminOk(env, url)) return json({error: "forbidden"}, 403);
+        const b = req.method === "POST" ? await req.json().catch(() => ({})) : {};
+        let r = json({error: "not_found"}, 404);
+        if (p === "/admin/season") r = await adminSeason(env);
+        if (p === "/admin/anchor" && req.method === "POST") r = await adminAnchor(env, b);
+        if (p === "/admin/prize" && req.method === "POST") r = await adminPrize(env, b);
+        if (p === "/admin/xaman") r = await xamanResolve(env, url.searchParams.get("uuid"));
+        r.headers.set("cache-control", "no-store");
+        return r;
+      }
       if (p === "/public/nft") return withCors(await nftLookup(env, url.searchParams.get("t")), cors);
       if (p === "/check") return withCors(await check(env, url.searchParams.get("account")), cors);
       if (p === "/auth/start" && req.method === "POST") return withCors(await authStart(env), cors);
@@ -898,6 +1113,9 @@ export default {
       if (p === "/packs") return withCors(await packs(env, account), cors);
       if (p === "/pack" && req.method === "POST") return withCors(await packMove(env, account, await req.json()), cors);
       if (p === "/profile" && req.method === "POST") return withCors(await setProfile(env, account, await req.json().catch(() => null)), cors);
+      if (p === "/prizes") return withCors(await myPrizes(env, account), cors);
+      if (p === "/prizes/claim" && req.method === "POST") return withCors(await claimPrize(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/prizes/status") return withCors(await xamanResolve(env, url.searchParams.get("uuid"), account), cors);
       if (p.startsWith("/club/")) return withCors(await clubRoute(env, account, p, req, url), cors);
       if (p === "/arena/squad" && req.method === "POST") return withCors(await arenaSquad(env, account, await req.json().catch(() => null)), cors);
       if (p === "/arena/result" && req.method === "POST") return withCors(await arenaResult(env, account, await req.json().catch(() => null)), cors);

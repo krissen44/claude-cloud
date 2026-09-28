@@ -31,6 +31,7 @@ db.defense = db.defense || {};        // account -> [{id, xp, won, vs, at}]: bon
 db.defenseDay = db.defenseDay || {};  // "nftId|day" -> XP credited that day (cap)
 db.clubRec = db.clubRec || {};        // account -> {w, l, d}: Fight Club record
 db.packs = db.packs || {};
+db.results = db.results || {};        // week -> frozen results {json, sha256, anchor, prizes}
 let dirty = false;
 function flush() {
   if (!dirty) return;
@@ -93,6 +94,8 @@ const STORE = {
     r.pack = pack || null; db.weekly[k] = r; dirty = true;
   },
   async weekRows(wk) { return Object.values(db.weekly).filter(r => r.week === wk); },
+  async resultGet(wk) { return db.results[wk] || null; },
+  async resultSet(wk, rec) { db.results[wk] = rec; dirty = true; },
   async taken() { return [...new Set(Object.values(db.holdings).flatMap(h => h.tokens))]; },
   /* Full game saves, one file per wallet (accounts are validated r-addresses). */
   async saveGet(a) { try { return JSON.parse(fs.readFileSync(path.join(SAVE_DIR, a + ".json"), "utf8")); } catch { return null; } },
@@ -108,7 +111,7 @@ const STORE = {
     }
     return out;
   },
-  async dump() { return { players: db.players, weekly: Object.values(db.weekly), holdings: db.holdings, packs: db.packs, profiles: db.profiles }; },
+  async dump() { return { players: db.players, weekly: Object.values(db.weekly), holdings: db.holdings, packs: db.packs, profiles: db.profiles, results: db.results }; },
 };
 
 /* In-memory cache with expiry, standing in for Cloudflare KV. */
@@ -183,6 +186,12 @@ th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white
 th{position:sticky;top:0;background:#fff;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);cursor:pointer}
 td:first-child,th:first-child{text-align:left;font-family:ui-monospace,monospace}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.wk{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}.wk h3{margin:0 0 4px;font-size:16px}
+.wk td,.wk th{text-align:left;white-space:normal}
+.mono{font-family:ui-monospace,monospace;font-size:12px;word-break:break-all}.ok{color:#177a3c;font-weight:700}
+select{border:2px solid var(--ink);border-radius:999px;padding:6px 10px;font:inherit}
+#modal{position:fixed;inset:0;background:#0e172699;display:grid;place-items:center;padding:16px}
+#modal .card{max-width:360px;text-align:center}#modal img{width:240px;height:240px;image-rendering:pixelated}
 </style></head><body>
 <h1>🐾 Bark Arena — admin</h1><p class="muted" id="sub">Enter the admin key (ADMIN_KEY on Hostinger).</p>
 <div class="card row" id="login"><input id="key" type="password" placeholder="ADMIN_KEY" autocomplete="current-password"><button class="btn" id="go">Open</button></div>
@@ -191,7 +200,14 @@ td:first-child,th:first-child{text-align:left;font-family:ui-monospace,monospace
   <div class="card row"><a class="btn" id="dlJson">⬇ Full backup (JSON)</a><a class="btn ghost" id="dlCsv">⬇ Players (CSV)</a>
     <button class="btn ghost" id="reload">↻ Refresh</button><input id="filter" placeholder="Filter wallet / pack…"></div>
   <div class="card"><div class="wrap"><table id="tbl"></table></div></div>
+  <div class="card"><h2 style="margin:0;font-size:18px">🏁 Week close — verifiable results &amp; prizes</h2>
+    <p class="muted" style="margin:4px 0 0">A finished week is frozen 15 minutes after Monday 00:00 UTC. Anchor its SHA-256 on the XRPL and send the prizes
+      (top 3 XP + most active member of the winning pack) from the treasury — every step is a Xaman QR you sign with the issuer wallet.</p>
+    <div id="season"><p class="muted">Loading…</p></div></div>
 </div>
+<div id="modal" hidden><div class="card"><b id="mTitle">Sign in Xaman</b><p class="muted" id="mText" style="margin:6px 0"></p>
+  <img id="mQr" alt="Xaman QR"><p><a id="mLink" target="_blank" rel="noopener">Open in Xaman</a></p>
+  <p id="mState" class="muted">Waiting for the signature…</p><button class="btn ghost" id="mClose">Close</button></div></div>
 <script>
 const $ = id => document.getElementById(id);
 let KEY = new URLSearchParams(location.search).get("key") || sessionStorage.getItem("ba_admin") || "", DATA = null, SORT = "totalXp", DIR = -1;
@@ -219,8 +235,54 @@ async function load(){
     .map(([l,v]) => "<div class='card stat'><span>"+l+"</span><b>"+v+"</b></div>").join("");
   $("dlJson").href = "/api/admin/export?download=1&key=" + encodeURIComponent(KEY);
   $("dlCsv").href = "/api/admin/csv?key=" + encodeURIComponent(KEY);
-  draw();
+  draw(); season();
 }
+/* week close */
+let SEASON = null, MPOLL = null;
+const api = (p, body) => fetch("/api/admin/" + p + (p.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(KEY),
+  body ? {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify(body), cache:"no-store"} : {cache:"no-store"}).then(r => r.json());
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const txLink = id => "<a class='mono' target='_blank' rel='noopener' href='https://livenet.xrpl.org/transactions/" + id + "'>" + id.slice(0, 10) + "…</a>";
+const PLACE = {"1":"🥇 1st XP","2":"🥈 2nd XP","3":"🥉 3rd XP","pack":"🐾 Winning pack, most active"};
+async function season(){
+  SEASON = await api("season");
+  const opts = (SEASON.treasury || []).map(n => "<option value='" + n.nftId + "'>#" + (n.token || "?") + "</option>").join("");
+  $("season").innerHTML = "<p class='muted'>Treasury (issuer " + esc(SEASON.issuer) + "): <b>" + (SEASON.treasury || []).length + "</b> Pixel Scrappys free" +
+    (SEASON.treasuryError ? " — ledger error: " + esc(SEASON.treasuryError) : "") + (SEASON.xaman ? "" : " · <b>XUMM keys missing</b>") + "</p>" +
+    (SEASON.weeks.some(w => !w.open && w.players) ? "" : "<p class='muted'>No finished week with players yet.</p>") +
+    SEASON.weeks.filter(w => w.open || w.players).map(w => w.open ? "<div class='wk'><h3>Week of " + w.week + "</h3><p class='muted'>Still running — closes 15 min after it ends.</p></div>" :
+      "<div class='wk'><h3>Week of " + w.week + " · " + w.players + " players</h3>" +
+      "<div class='mono'>sha256 " + w.sha256 + "</div>" +
+      "<p>" + (w.anchor ? "<span class='ok'>⚓ Anchored</span> " + txLink(w.anchor.txid) : "<button class='btn' data-anchor='" + w.week + "'>⚓ Anchor on the XRPL (Xaman)</button>") +
+      " <a class='muted' target='_blank' href='/api/public/results?week=" + w.week + "'>public results</a></p>" +
+      (w.prizes.length ? "<table><tr><th>Prize</th><th>Winner</th><th>Status</th><th></th></tr>" + w.prizes.map(p =>
+        "<tr><td>" + PLACE[p.place] + (p.pack ? " (" + esc(p.pack) + ")" : "") + "</td><td>" + esc(p.name) + "<br><span class='mono'>" + esc(p.account) + "</span></td><td>" +
+        (p.status === "claimed" ? "<span class='ok'>✅ claimed #" + p.token + "</span>" : p.status === "offered" ? "🎁 offered #" + p.token + " " + (p.offerTx ? txLink(p.offerTx) : "") + "<br><span class='muted'>waiting for the winner</span>" : "—") +
+        "</td><td>" + (p.status === "offered" || p.status === "claimed" ? "" : opts ? "<select data-nft='" + w.week + "|" + p.place + "'>" + opts + "</select> <button class='btn' data-prize='" + w.week + "|" + p.place + "'>🎁 Send (Xaman)</button>" : "<span class='muted'>treasury empty</span>") +
+        "</td></tr>").join("") + "</table>" : "<p class='muted'>No prize winners (nobody earned XP).</p>") + "</div>").join("");
+  $("season").querySelectorAll("[data-anchor]").forEach(b => b.onclick = () => sign(api("anchor", {week: b.dataset.anchor}), "Anchor week " + b.dataset.anchor, "Sign the AccountSet with the memo — no XRP is sent."));
+  $("season").querySelectorAll("[data-prize]").forEach(b => b.onclick = () => {
+    const [week, place] = b.dataset.prize.split("|"), sel = $("season").querySelector("[data-nft='" + b.dataset.prize + "']");
+    const tok = sel.options[sel.selectedIndex].text;
+    if (!confirm("Offer Pixel Scrappy " + tok + " as the " + PLACE[place] + " prize for the week of " + week + "?")) return;
+    sign(api("prize", {week, place, nftId: sel.value}), "Prize " + tok, "Sign the free sell offer (Amount 0) — only the winner can accept it.");
+  });
+}
+async function sign(req, title, text){
+  const j = await req;
+  if (!j.uuid){ alert("Could not create the Xaman request: " + (j.error || "error")); season(); return; }
+  $("mTitle").textContent = title; $("mText").textContent = text; $("mQr").src = j.qr; $("mLink").href = j.deeplink;
+  $("mState").textContent = "Waiting for the signature…"; $("modal").hidden = false;
+  clearInterval(MPOLL);
+  MPOLL = setInterval(async () => {
+    const s = await api("xaman?uuid=" + j.uuid).catch(() => ({}));
+    if (s.state === "pending" || !s.state) return;
+    clearInterval(MPOLL);
+    $("mState").innerHTML = s.state === "signed" ? "<span class='ok'>✅ Signed and submitted</span> " + (s.txid ? txLink(s.txid) : "") : "❌ " + s.state + (s.result ? " (" + s.result + ")" : "");
+    season();
+  }, 2500);
+}
+$("mClose").onclick = () => { clearInterval(MPOLL); $("modal").hidden = true; season(); };
 $("go").onclick = () => { KEY = $("key").value.trim(); load(); };
 $("key").onkeydown = e => { if (e.key === "Enter") $("go").click(); };
 $("reload").onclick = load; $("filter").oninput = () => DATA && draw();
