@@ -393,6 +393,10 @@ const SAVE = (() => {
       if (g.lvl >= BOND.maxLevel) g.xp = Math.min(g.xp, BOND.need(g.lvl));
       save(); return levels;
     },
+    // a borrowed dog shows the bond it has in its owner's kennel
+    setBond(id, lvl, xp){ const g = dog(id); g.lvl = Math.max(1, Math.min(BOND.maxLevel, lvl|0 || 1)); g.xp = Math.max(0, xp|0); save(true); },
+    // trainer XP from lending (25 % of what a borrower earned with your dog)
+    trainerAdd(n){ d.trainerXp += Math.max(0, n|0); save(); },
     signedToday(){ return d.arena.signed === today(); },
     // one arena per UTC day; it counts as used the moment it starts, so quitting mid-bracket can't reroll it
     // tournaments started today; one counts the moment it starts, so quitting mid-bracket can't reroll it
@@ -447,6 +451,7 @@ const SAVE = (() => {
       }
       if (!ranked) { out.xp = 0; return out; }            // casual: no XP, and the streak is left alone
       g.xp += xp; d.trainerXp += Math.round(xp/2); d.wk.xp += xp;
+      if (typeof lendGain === 'function') lendGain(id, xp);          // a borrowed dog: its owner's share
       // Arena XP is shared across the squad; its wins and streak are booked per fight in arenaDone.
       if (!fromArena){ d.fights++; win ? d.wk.wins++ : (d.wk.losses = (d.wk.losses||0) + 1); win ? g.w++ : g.l++; }
       while (g.lvl < BOND.maxLevel && g.xp >= BOND.need(g.lvl)){
@@ -1102,7 +1107,7 @@ function prizeCards(){
   return done + PRIZE.list.map(p => {
     const key = p.week + '|' + p.place, c = PRIZE.claim && PRIZE.claim.key === key ? PRIZE.claim : null;
     return `<div class="card"><div class="wal"><div><b style="font-size:12px">🏆 You won a Pixel Scrappy!</b>
-      <div class="mini">Week of ${esc(p.week)} — ${PLACE_TXT[p.place] || 'prize'}. <b>Pixel Scrappy #${p.token}</b> is waiting for you as a free offer (0 XRP) that only your wallet can accept.</div></div>
+      <div class="mini">Week of ${esc(p.week)} — ${PLACE_TXT[p.place] || 'a lender’s share — a Scrappy you lent helped win a weekly prize'}. <b>Pixel Scrappy #${p.token}</b> is waiting for you as a free offer (0 XRP) that only your wallet can accept.</div></div>
       ${c && c.qr ? '' : `<button data-prize="${key}" ${c ? 'disabled' : ''}>🎁 Accept</button>`}</div>
       ${c ? (c.qr ? `<div style="text-align:center;margin-top:10px"><img src="${c.qr}" alt="Xaman QR" style="width:200px;height:200px;max-width:100%">
           <div class="mini"><a href="${c.link}" target="_blank" rel="noopener">Open in Xaman</a> · ${esc(c.msg)}</div></div>`
@@ -1129,6 +1134,97 @@ async function prizeClaim(key){
       if (s.state && s.state !== 'pending') throw new Error(s.state === 'rejected' ? 'Declined in Xaman.' : s.state === 'expired' ? 'The request expired.' : 'It did not go through (' + (s.result || s.state) + ').');
     }
   } catch(e){ PRIZE.claim = {key, msg: e.message}; menu(); setTimeout(() => { if (PRIZE.claim && PRIZE.claim.key === key && !PRIZE.claim.qr){ PRIZE.claim = null; menu(); } }, 6000); }
+}
+/* Lending: a holder lends a Scrappy to a player without one — the NFT stays
+   put, the server just records it. The borrower's kennel shows the dog (at the
+   bond level it has in its owner's kennel); what the borrower earns with it is
+   reported to the server: the bond XP goes to the dog, 25 % of the trainer XP to
+   the owner, both collected on the owner's next visit. */
+const LEND = {out:[], in:[], note:'', err:'', open:false};
+async function loadLending(){
+  if (!LIVE() || !WALLET.token || WALLET.demo) return;
+  let j;
+  try { const r = await api('/lend'); j = await r.json(); if (!r.ok) return; } catch(e){ return; }
+  LEND.out = j.out || []; LEND.in = j.in || [];
+  // borrowed dogs join the kennel, at their real bond level
+  for (const l of LEND.in){
+    if ((OWNED || []).some(f => f.id === l.dog.id)) continue;
+    try {
+      const def = await loadDef({nft_id: l.dog.id, uri: l.dog.uri});
+      def.borrowed = {loan: l.id, from: l.ownerName, end: l.end};
+      SAVE.setBond(l.dog.id, l.lvl, l.xp);
+      OWNED = (OWNED || []).concat(def);
+    } catch(e){}
+  }
+  // loans that ended: the dog leaves the kennel again
+  OWNED = (OWNED || []).filter(f => !f.borrowed || LEND.in.some(l => l.id === f.borrowed.loan));
+  // what my lent dogs earned while away
+  const rw = j.rewards || [];
+  if (rw.length){
+    let bond = 0, trainer = 0; const ups = [];
+    for (const e of rw){
+      const f = (OWNED || []).find(x => x.id === e.id && !x.borrowed);
+      if (f){ bond += e.bond; for (const l of SAVE.bondXp(e.id, e.bond)) ups.push(`${f.name} reached Bond ${l}`); }
+      trainer += e.trainer;
+    }
+    if (trainer) SAVE.trainerAdd(trainer);
+    await api('/lend/claim', {method:'POST', body:{upTo: Math.max(...rw.map(e => e.at))}}).catch(() => {});
+    if (bond || trainer) LEND.note = `Your lent Scrappys fought ${rw.length} time${rw.length===1?'':'s'}: +${bond} bond XP for them, +${trainer} trainer XP for you (your 25 % share).` + (ups.length ? ' ' + ups.join(' · ') + '!' : '');
+  }
+  if (tab === 'kennel' && !WALLET.loading) menu();
+}
+/* called by SAVE.award: a ranked or arena fight with a borrowed dog */
+function lendGain(id, xp){
+  const f = (OWNED || []).find(x => x.id === id && x.borrowed);
+  if (!f || !xp || !LIVE() || !WALLET.token) return;
+  api('/lend/report', {method:'POST', body:{id: f.borrowed.loan, bond: xp, trainer: Math.round(xp / 2)}}).catch(() => {});
+}
+const LEND_ERR = {no_such_player:'No player with that name.', borrower_holds:'They hold Pixel Scrappys themselves — lending is for players without one.',
+  borrower_busy:'They are already borrowing a Scrappy.', dog_lent:'That Scrappy is already lent out.',
+  too_many_loans:'You can lend up to 3 Scrappys at a time.', not_your_dog:'Pick one of your own Scrappys.'};
+function lendCard(){
+  const own = (OWNED || []).filter(f => !f.borrowed);
+  const note = LEND.note ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🤝 Lending</b>
+      <div class="mini">${esc(LEND.note)}</div></div><button id="lendOk" class="sm">OK</button></div></div>` : '';
+  const until = t => new Date(t).toISOString().slice(0, 10);
+  const inn = LEND.in.map(l => `<div class="wal" style="margin-top:8px"><div><div class="mini">🤝 Borrowed from <b>${esc(l.ownerName)}</b> until ${until(l.end)}</div>
+      <b>Pixel Scrappy #${l.dog.t}</b> <span class="lvl">BOND ${l.lvl}</span></div><button class="ghost sm" data-lendend="${l.id}">Give back</button></div>`).join('');
+  if (!own.length) return note + (inn ? `<div class="card"><h3 class="h3">BORROWED</h3>${inn}
+      <p class="mini" style="margin:8px 0 0">Fight with it like your own — ranked and arena. Its bond XP goes to the dog, and its owner gets a share of your XP.</p></div>` : '');
+  const out = LEND.out.map(l => `<div class="wal" style="margin-top:8px"><div><div class="mini">Lent to <b>${esc(l.borrowerName)}</b> until ${until(l.end)}</div>
+      <b>Pixel Scrappy #${l.dog.t}</b></div><button class="ghost sm" data-lendend="${l.id}">End</button></div>`).join('');
+  const free = own.filter(f => !LEND.out.some(l => l.dog.id === f.id));
+  return note + `<div class="card"><h3 class="h3">🤝 LEND A SCRAPPY</h3>
+    <p class="mini" style="margin:0 0 8px">Let a player without a Pixel Scrappy fight with one of yours. The NFT never leaves your wallet. Its bond XP stays with the dog, and you get <b>25 %</b> of the trainer XP they earn with it — plus a share if they win a weekly prize with it.</p>
+    ${out}
+    ${LEND.out.length < 3 && free.length ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">
+      <select id="lendDog" style="padding:8px 12px">${free.map(f => `<option value="${esc(f.id)}">${esc(f.name)} · Bond ${SAVE.dog(f.id).lvl}</option>`).join('')}</select>
+      <input id="lendTo" type="text" maxlength="16" placeholder="Player name" style="flex:1;min-width:120px;padding:9px 14px">
+      <select id="lendDays" style="padding:8px 12px"><option value="1">1 day</option><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select>
+      <button id="lendGo">Lend</button></div>` : ''}
+    ${LEND.err ? `<p class="mini" style="margin:8px 0 0"><b>${esc(LEND.err)}</b></p>` : ''}
+    ${inn}</div>`;
+}
+function lendWire(){
+  const q = id => document.getElementById(id);
+  if (q('lendOk')) q('lendOk').onclick = () => { S.click(); LEND.note = ''; menu(); };
+  app.querySelectorAll('[data-lendend]').forEach(b => b.onclick = async () => {
+    if (!confirm('End this loan now?')) return;
+    S.click(); b.disabled = true;
+    await api('/lend/end', {method:'POST', body:{id: b.dataset.lendend}}).catch(() => {});
+    await loadLending(); menu();
+  });
+  if (q('lendGo')) q('lendGo').onclick = async () => {
+    S.unlock(); S.click();
+    const to = q('lendTo').value.trim(); if (!to){ q('lendTo').focus(); return; }
+    q('lendGo').disabled = true; LEND.err = '';
+    try {
+      const r = await api('/lend', {method:'POST', body:{dogId: q('lendDog').value, to, days: +q('lendDays').value}}), j = await r.json();
+      if (!r.ok) LEND.err = LEND_ERR[j.error] || 'That did not work (' + (j.error || r.status) + ').';
+      else { LEND.out = j.out || []; LEND.note = `Lent to ${to}. They'll find it in their kennel.`; }
+    } catch(e){ LEND.err = 'The server is not reachable right now.'; }
+    menu();
+  };
 }
 /* "Buy this rival": every fight against a real collection dog ends with a link
    to that exact piece on xrp.cafe — each fight a small shop window. The NFT id
@@ -1560,7 +1656,7 @@ function scListHtml(){
 function scClubView(){
   if (!WALLET.token) return signInFirst() + (SC.linkId ? `<div class="card"><p class="mini" style="margin:0">🥊 <b>Someone challenged you to a Fight Club duel.</b> Sign in and it's waiting here.</p></div>` : '');
   const rec = (SC.me && SC.me.record) || {w:0, l:0, d:0}, sel = SAVE.data.club.dog;
-  const pick = ROSTER().map(f => `<button data-fcdog="${f.id}" class="${sel===f.id?'insq':''}"><img src="${f.img}" alt="">
+  const pick = ROSTER().filter(f => !f.borrowed).map(f => `<button data-fcdog="${f.id}" class="${sel===f.id?'insq':''}"><img src="${f.img}" alt="">
       <span><b>${esc(f.name)}</b><br><span class="lvl">BOND ${SAVE.dog(f.id).lvl}</span></span></button>`).join('');
   return `<div class="card"><div class="wal">
       <div><b style="font-size:12px">🥊 Fight Club · Beta</b>
@@ -1932,6 +2028,7 @@ window.addEventListener('pagehide', () => { if (cloudTimer) cloudPush(true); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && cloudTimer) cloudPush(true); });
 function walletSignOut(){
   PRIZE.list = []; PRIZE.claim = null; PRIZE.done = '';
+  LEND.out = []; LEND.in = []; LEND.note = ''; LEND.err = '';
   lsSet('ba_session', null);
   Object.assign(WALLET, {token:null, account:null, demo:false, owned:null, error:'', name:null, editName:false});
   RIVALS.list = null; RIVALS.ready = []; RIVALS.total = 0;
@@ -2136,7 +2233,7 @@ async function loadKennel(fresh){
   } catch(e){ WALLET.error = 'Could not load your kennel (' + e.message + ').'; }
   WALLET.loading = false; if (SC.linkId) tab = 'club'; menu();
   if (SC.linkId) scRefresh();
-  oppTopUp(); loadPacks(); claimDefense(); arenaRegister(); loadPrizes();
+  oppTopUp(); loadPacks(); claimDefense(); arenaRegister(); loadPrizes(); loadLending();
 }
 
 /* ---- the real weekly ladder ---- */
@@ -2199,7 +2296,7 @@ function walletCard(){
       ${WALLET.nameError ? `<p class="mini" style="margin:8px 0 0;color:var(--hpLow)">${esc(WALLET.nameError)}</p>` : ''}</div>`;
   if (WALLET.token && !WALLET.demo) return `<div class="card"><div class="wal">
       <div><b style="font-size:12px">🔗 ${WALLET.name ? esc(WALLET.name) + ' · ' : ''}${esc(WALLET.account.slice(0,6) + '…' + WALLET.account.slice(-4))}</b> <button id="nameEdit" class="sm" style="padding:3px 8px">✏️ ${WALLET.name ? 'Name' : 'Set a name'}</button>
-        <div class="mini">${WALLET.loading ? esc(WALLET.progress) : (OWNED ? OWNED.length + ' Pixel Scrappy' + (OWNED.length===1?'':'s') + ' in this wallet' : '')}</div></div>
+        <div class="mini">${WALLET.loading ? esc(WALLET.progress) : (OWNED ? (n => n + ' Pixel Scrappy' + (n===1?'':'s') + ' in this wallet')(OWNED.filter(f => !f.borrowed).length) + (OWNED.some(f => f.borrowed) ? ' · 🤝 1 borrowed' : '') : '')}</div></div>
       <div class="row"><button id="reload">↻ Refresh</button><button id="signout">Sign out</button></div></div>
       ${WALLET.error ? `<p class="mini" style="margin:8px 0 0;color:var(--hpLow)">${esc(WALLET.error)}</p>` : ''}</div>`;
   return `<div class="card"><div class="wal">
@@ -2547,14 +2644,14 @@ function kennelView(){
       <span><b>${esc(f.name)}</b><br>${esc(f.rarity).toUpperCase()}
       <br><span class="lvl">BOND ${g.lvl}</span>
       <span class="xp" style="display:block"><i style="width:${pct}%"></i></span>
-      ${g.w+g.l ? g.w+'W '+g.l+'L' : 'never fought'}
+      ${g.w+g.l ? g.w+'W '+g.l+'L' : 'never fought'}${f.borrowed ? `<br><span class="tag">🤝 from ${esc(f.borrowed.from)}</span>` : ''}
       <span style="display:block;margin-top:4px">${kitOf(f).map(t=>`<span class="tag">${t.signature?'★ ':''}${esc(t.value)}</span>`).join('') || '<span class="tag">no kit</span>'}${setBonus(f) ? `<span class="tag">Set: ${esc(f.set)} ${f.setMatch}</span>` : ''}</span>
       </span></button>`;
   };
   if (needLogin()) return walletCard() + (WALLET.loading ? `<div class="card"><p class="mini" style="margin:0">🐾 ${esc(WALLET.progress)}</p></div>` : '') + introCard();
   const R = ROSTER();
-  if (!R.length) return walletCard() + `<div class="card"><p class="mini" style="margin:0"><b>No Pixel Scrappy in this wallet yet.</b> The kennel fills itself with the ones you hold — grab one on <a href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener">xrp.cafe</a>, then hit ↻ Refresh. Or try the demo dogs in the meantime.</p>
-    <div class="row" style="justify-content:flex-start;margin-top:10px"><button id="demo">Try the demo</button></div></div>` + prizeCards();
+  if (!R.length) return walletCard() + `<div class="card"><p class="mini" style="margin:0"><b>No Pixel Scrappy in this wallet yet.</b> The kennel fills itself with the ones you hold — grab one on <a href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener">xrp.cafe</a>, then hit ↻ Refresh. Or try the demo dogs in the meantime. A holder can also <b>lend</b> you one — tell them your player name (✏️ above).</p>
+    <div class="row" style="justify-content:flex-start;margin-top:10px"><button id="demo">Try the demo</button></div></div>` + prizeCards() + lendCard();
   const defNote = WALLET.defenseNote ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🛡️ Arena defence</b>
       <div class="mini">${esc(WALLET.defenseNote)}</div></div><button id="defOk" class="sm">OK</button></div></div>` : '';
   const gen = R.filter(f => !f.legendary).map(f => card(f)).join('');
@@ -2583,7 +2680,7 @@ function kennelView(){
     <div class="pick">${dogs}</div>
     <p class="mini" style="margin:11px 0 0"><b>Kit rule.</b> Each Scrappy carries eight traits, one per layer — only the <b>three rarest</b> fight, and at most one of them is an active ability. That keeps a fight readable and makes the individual traits matter, not just the rarity tier. </p>
     <p class="mini" style="margin:7px 0 0"><b>Bond unlocks:</b> ${Object.entries(BOND.perks).map(([l,p])=>`<b>L${l}</b> ${esc(p.txt)}`).join(' · ')}</p>
-  </div>`;
+  </div>` + (LIVE() && !WALLET.demo ? lendCard() : '');
 }
 
 function ladderView(){
@@ -2931,7 +3028,7 @@ function menu(){
   if (tab === 'club') renderLobby();
   if (tab === 'club' && clubServer()){ scWire(); if (WALLET.token && !SC.me) scRefresh().then(() => { if (tab === 'club' && !clubMode) menu(); }); }
   if (tab === 'ladder' && LIVE()) fillLadder();
-  walletWire();
+  walletWire(); lendWire();
   app.querySelectorAll('[data-sq]').forEach(b => b.onclick = () => { S.unlock(); S.click(); SAVE.toggleSquad(b.dataset.sq); menu(); });
   const sg = document.getElementById('sign');
   if (sg) sg.onclick = () => { S.unlock(); S.click(); SAVE.signUp(!SAVE.signedToday()); menu(); };

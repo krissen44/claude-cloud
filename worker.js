@@ -233,6 +233,27 @@ function storeOf(env) {
       const profiles = Object.fromEntries((await all(`SELECT account, name, updated FROM profiles`).catch(() => [])).map(r => [r.account, {name: r.name, updated: r.updated}]));
       return {players, weekly: await all(`SELECT * FROM weekly`), holdings, packs, profiles};
     },
+    loansAll: async () => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS loans (id TEXT PRIMARY KEY, data TEXT)`).run();
+      return ((await DB.prepare(`SELECT data FROM loans`).all()).results || []).map(r => JSON.parse(r.data));
+    },
+    loanSet: async (l) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS loans (id TEXT PRIMARY KEY, data TEXT)`).run();
+      await DB.prepare(`INSERT INTO loans (id, data) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET data = ?2`).bind(l.id, JSON.stringify(l)).run();
+    },
+    lendAdd: async (owner, e, dayKey, cap) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS lendq (account TEXT, data TEXT, at INTEGER)`).run();
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS lend_day (k TEXT PRIMARY KEY, xp INTEGER)`).run();
+      const used = ((await DB.prepare(`SELECT xp FROM lend_day WHERE k = ?1`).bind(dayKey).first()) || {}).xp || 0;
+      const trainer = Math.max(0, Math.min(e.trainer, cap - used));
+      await DB.prepare(`INSERT INTO lend_day (k, xp) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET xp = ?2`).bind(dayKey, used + trainer).run();
+      await DB.prepare(`INSERT INTO lendq (account, data, at) VALUES (?1, ?2, ?3)`).bind(owner, JSON.stringify({...e, trainer}), e.at).run();
+    },
+    lendGet: async (a) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS lendq (account TEXT, data TEXT, at INTEGER)`).run();
+      return ((await DB.prepare(`SELECT data FROM lendq WHERE account = ?1 ORDER BY at`).bind(a).all()).results || []).map(r => JSON.parse(r.data));
+    },
+    lendClear: async (a, upTo) => { await DB.prepare(`DELETE FROM lendq WHERE account = ?1 AND at <= ?2`).bind(a, upTo).run(); },
     resultGet: async (wk) => {
       await DB.prepare(`CREATE TABLE IF NOT EXISTS results (week TEXT PRIMARY KEY, data TEXT)`).run();
       const r = await DB.prepare(`SELECT data FROM results WHERE week = ?1`).bind(wk).first();
@@ -630,6 +651,66 @@ async function clubRoute(env, account, p, req, url) {
   return json({error: "not_found"}, 404);
 }
 
+/* ------------------------------------------------------------------ lending */
+/* A holder lends one of their Scrappys to a player without one. The NFT never
+   moves — this is a record here. The borrower fights with it like their own;
+   every bond XP it earns goes to the dog (the owner's save, collected on their
+   next visit) and the owner gets 25 % of the trainer XP the borrower earns with
+   it. If a borrower wins a weekly prize mostly with a borrowed dog, the lender
+   gets a prize share (an extra line for the admin in week close). */
+const LEND_MAX_OUT = 3, LEND_DAYS = [1, 14], LEND_SHARE = 0.25, LEND_TRAINER_CAP = 150;   // trainer XP per owner per day
+async function activeLoans(env) {
+  const st = storeOf(env), hold = await st.allHoldings(), now = Date.now();
+  return (await st.loansAll()).filter(l => !l.ended && now < l.end &&
+    ((hold[l.owner] || {}).dogs || []).some(d => d.id === l.dog.id));       // sold the dog = loan over
+}
+async function lendInfo(env, account) {
+  const st = storeOf(env), names = await st.profiles(), loans = await activeLoans(env);
+  const view = l => ({id: l.id, dog: l.dog, owner: l.owner, ownerName: displayName(names, l.owner),
+    borrower: l.borrower, borrowerName: displayName(names, l.borrower), end: l.end});
+  const inn = loans.filter(l => l.borrower === account).map(l => view(l));
+  for (const l of inn) {                                                     // the dog's real bond, from its owner's save
+    const g = (((await st.saveGet(l.owner)) || {}).data || {}).dogs || {};
+    l.lvl = Math.max(1, (g[l.dog.id] || {}).lvl | 0 || 1); l.xp = (g[l.dog.id] || {}).xp | 0;
+  }
+  return {out: loans.filter(l => l.owner === account).map(view), in: inn, rewards: await st.lendGet(account)};
+}
+async function lendStart(env, account, b) {
+  const st = storeOf(env), hold = await st.allHoldings(), loans = await activeLoans(env);
+  const dog = ((hold[account] || {}).dogs || []).find(d => d.id === String(b.dogId || ""));
+  if (!dog) return json({error: "not_your_dog"}, 400);
+  const names = await st.profiles(), want = String(b.to || "").trim().toLowerCase();
+  const to = Object.keys(names).find(a => names[a].name.toLowerCase() === want);
+  if (!to || to === account) return json({error: "no_such_player"}, 404);
+  if (((hold[to] || {}).tokens || []).length) return json({error: "borrower_holds"}, 409);
+  if (loans.some(l => l.borrower === to)) return json({error: "borrower_busy"}, 409);
+  if (loans.some(l => l.dog.id === dog.id)) return json({error: "dog_lent"}, 409);
+  if (loans.filter(l => l.owner === account).length >= LEND_MAX_OUT) return json({error: "too_many_loans"}, 429);
+  const days = Math.max(LEND_DAYS[0], Math.min(LEND_DAYS[1], b.days | 0 || 7));
+  const loan = {id: rid(), owner: account, borrower: to, dog: {id: dog.id, uri: dog.uri, t: dog.t}, start: Date.now(), end: Date.now() + days * 864e5, xp: {}};
+  await st.loanSet(loan);
+  return json({ok: true, ...(await lendInfo(env, account))});
+}
+async function lendEnd(env, account, b) {
+  const st = storeOf(env), l = (await st.loansAll()).find(x => x.id === String(b.id || ""));
+  if (!l || (l.owner !== account && l.borrower !== account)) return json({error: "no_such_loan"}, 404);
+  if (!l.ended) { l.ended = Date.now(); await st.loanSet(l); }
+  return json({ok: true, ...(await lendInfo(env, account))});
+}
+/* The borrower's page reports what a fight with the borrowed dog earned. */
+async function lendReport(env, account, b) {
+  const st = storeOf(env), l = (await activeLoans(env)).find(x => x.id === String(b.id || "") && x.borrower === account);
+  if (!l) return json({error: "no_such_loan"}, 404);
+  const bond = Math.max(0, Math.min(100, b.bond | 0)), trainer = Math.max(0, Math.min(50, b.trainer | 0));
+  if (!bond && !trainer) return json({ok: true});
+  const wk = weekOf();
+  l.xp[wk] = (l.xp[wk] || 0) + bond;                                         // ladder XP with this dog, for the prize share
+  await st.loanSet(l);
+  const share = Math.round(trainer * LEND_SHARE);
+  await st.lendAdd(l.owner, {id: l.dog.id, t: l.dog.t, bond, trainer: share, from: account, at: Date.now()}, `${l.owner}|${today()}`, LEND_TRAINER_CAP);
+  return json({ok: true});
+}
+
 /* ------------------------------------------------------------------ week close: verifiable results + prizes */
 /* After a week ends its results are frozen once: a canonical JSON of the final
    player and pack standings plus the prize winners, and its SHA-256. The admin
@@ -665,6 +746,14 @@ async function buildResults(env, wk) {
     const active = players.filter(p => p.pack === win.id && !taken.has(p.account))
       .sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses) || b.xp - a.xp)[0];
     if (active) prizes.push({place: "pack", account: active.account, name: active.name, pack: win.id});
+  }
+  // lender's share: a prize won mostly (≥ 50 % of the week's XP) with a borrowed dog
+  const loans = await st.loansAll();
+  for (const p of [...prizes]) {
+    const xp = (players.find(x => x.account === p.account) || {}).xp || 0;
+    const best = loans.filter(l => l.borrower === p.account && (l.xp || {})[wk]).sort((a, b) => b.xp[wk] - a.xp[wk])[0];
+    if (best && xp && best.xp[wk] * 2 >= xp)
+      prizes.push({place: "L" + p.place, account: best.owner, name: displayName(names, best.owner), lenderOf: p.place, dog: best.dog.t || null});
   }
   return {game: "Bark Arena", week: wk, players, packs, prizes};
 }
@@ -1113,6 +1202,15 @@ export default {
       if (p === "/packs") return withCors(await packs(env, account), cors);
       if (p === "/pack" && req.method === "POST") return withCors(await packMove(env, account, await req.json()), cors);
       if (p === "/profile" && req.method === "POST") return withCors(await setProfile(env, account, await req.json().catch(() => null)), cors);
+      if (p === "/lend" && req.method === "GET") return withCors(json(await lendInfo(env, account)), cors);
+      if (p === "/lend" && req.method === "POST") return withCors(await lendStart(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/lend/end" && req.method === "POST") return withCors(await lendEnd(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/lend/report" && req.method === "POST") return withCors(await lendReport(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/lend/claim" && req.method === "POST") {
+        const b = await req.json().catch(() => ({}));
+        await storeOf(env).lendClear(account, +b.upTo || 0);
+        return withCors(json({ok: true}), cors);
+      }
       if (p === "/prizes") return withCors(await myPrizes(env, account), cors);
       if (p === "/prizes/claim" && req.method === "POST") return withCors(await claimPrize(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/prizes/status") return withCors(await xamanResolve(env, url.searchParams.get("uuid"), account), cors);

@@ -29,10 +29,14 @@ Last version confirmed live: **game v19** (cloud saves + `/admin`) + **website l
   Also fixed: the public board could answer 500 for a second after a name change (cache entry parse).
   Tested with a mocked ledger + Xaman: freeze, hash check, anchor once only, offer, accept, wrong-player blocked.
 
-### Planned for Season 1 (owner's decisions, 2026-09-28)
-- Fight Club Season 2: matchmaking queue, Elo, own ladder.
-- **Lending**: holders lend a dog to non-holders (database delegation, NFT never moves); the dog keeps its bond XP, the
-  holder gets **25 % of the borrower's trainer XP** with that dog and a **share of prizes** the borrower wins.
+- **v25 — lending**: holders lend a Scrappy (by player name, 1–14 days, up to 3 at once) to a player without one. The
+  NFT never moves. The borrower fights ranked + arena with it; its bond XP goes to the dog, the owner gets 25 % of the
+  borrower's trainer XP (max 150 a day), collected on the next visit. If a borrower wins a weekly prize mostly with a
+  borrowed dog, week close shows an extra "🤝 Lender share" line for the lender (you decide whether to send it).
+  Tested: holder can't borrow, one dog one loan, XP arrives at the owner, give back, prize-share line.
+
+### Planned (Season 2)
+- Fight Club: matchmaking queue, Elo, own ladder.
 
 ### Website (scrappyxrp.fun)
 - `barkarena/index.html`: guide/FAQ for real arena rivals, player names, defence XP, the Fight Club beta, prizes and
@@ -45,6 +49,7 @@ Last version confirmed live: **game v19** (cloud saves + `/admin`) + **website l
 4. Check: open the game in a private window, sign in, set a name (✏️), open the arena tab (squad registered, rivals
    "from <name>"), and look at `/admin` (new Name column). Fight Club: create an invite link, open it in a second
    browser with another wallet, fight a few rounds.
-5. First week close (Monday after the upload, from 00:15 UTC): open `/admin` → "Week close". The treasury line should
+5. Week close right after the upload (from 00:15 UTC the week that just ended can be closed): open `/admin` → "Week close". The treasury line should
    list the issuer's Pixel Scrappys. Anchor the week (scan with Xaman **logged into the issuer wallet**), then send each
    prize. ⚠️ The issuer wallet needs 2 XRP owner reserve free per open offer until the winner accepts.
+6. Lending check: lend a dog from a holder wallet to a test wallet without Scrappys (it needs a player name).

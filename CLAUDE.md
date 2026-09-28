@@ -83,6 +83,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/arena/defense`, `/arena/defense/claim` (POST `{upTo}`) | ✔ | Pending defence bond XP for the caller / mark it collected |
 | `/club/me`, `/club/create` (POST `{dogId, opponent?}`), `/club/state?id=`, `/club/join` (POST `{id,dogId}`), `/club/cancel`, `/club/move` (POST `{id, move}`), `/club/leave` | ✔ | Fight Club beta: the server is the referee (see below) |
 | `/save` (GET/POST) | ✔ | Full browser save per wallet (cloud backup + cross-device sync), file `DATA_DIR/saves/<account>.json` |
+| `/lend` (GET; POST `{dogId,to,days}`), `/lend/end` (POST `{id}`), `/lend/report` (POST `{id,bond,trainer}`), `/lend/claim` (POST `{upTo}`) | ✔ | Lending: loans given/taken + rewards waiting for the owner; borrower reports XP earned with the dog |
 | `/public/results[?week=]` | – | Frozen results of a finished week: canonical `json` string + `sha256` + `anchor` tx + prizes (CORS `*`) |
 | `/prizes`, `/prizes/claim` (POST `{week,place}`), `/prizes/status?uuid=` | ✔ | The player's prize offers; claim → Xaman NFTokenAcceptOffer payload for the ledger sell offer |
 | `/admin/season`, `/admin/anchor` (POST `{week}`), `/admin/prize` (POST `{week,place,nftId}`), `/admin/xaman?uuid=` | `?key=ADMIN_KEY` | Week close: results, treasury, Xaman payloads signed by the issuer wallet, payload status |
@@ -132,6 +133,13 @@ hand over one combined package for the week start; don't tell the owner to uploa
   (wins+losses) of the winning pack who isn't already top 3. Winners see a card in the kennel (`PRIZE`, `prizeCards`,
   `prizeClaim`) → Xaman NFTokenAcceptOffer, or accept in any wallet (claim then detects ownership). The website shows
   prizes + tx + hash under "Last week — final". No key on the server — every ledger write is a Xaman signature.
+- **Lending** (Season 1): a holder lends a dog (by player name, 1–14 days, max 3 out) to a player who holds **no**
+  Pixel Scrappy (max 1 borrowed). NFT never moves; `db.loans`. Ends early by either side, or when the owner no longer
+  holds the dog. Borrower's kennel shows it (`f.borrowed`, bond level from the owner's cloud save via `SAVE.setBond`);
+  `SAVE.award` → `lendGain` → `/lend/report`: the bond XP goes to the dog, **25 %** of the borrower's trainer XP to the
+  owner (cap 150/day), queued in `db.lendq`, collected on the owner's next kennel load (`loadLending`). Borrowed dogs
+  can fight ranked + arena, not the Club, and don't register for arena defence. Prize share: a prize won with ≥ 50 % of
+  the week's XP on one borrowed dog adds a line `L<place>` for the lender in week close (admin decides to send it).
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 
@@ -144,7 +152,7 @@ v12 playtest fixes ("Fight again" re-used the same rival; demo dogs leaked in; r
 v13 exploit fix (always-bite won 77%) → pattern-reading AI + guard snap-back; recap counted abandoned tournaments ·
 v14 one-pack-a-week rule, losses tracked, full pack stats table · v15 `ACCESS_KEY` gate · v16 `/api/public/board` · v17 wallet chooser + Joey extension sign-in · v18 Joey app over WalletConnect (confirmed working live by the owner) ·
 v19 cloud saves + `/admin` · v20 real arena rivals + player names · v21 arena defence XP · v22 "buy this rival" link ·
-v23 server fight engine + Fight Club beta · v24 week close: results hash on the XRPL + treasury prizes.
+v23 server fight engine + Fight Club beta · v24 week close: results hash on the XRPL + treasury prizes · v25 lending.
 
 ### Testing locally
 ```bash

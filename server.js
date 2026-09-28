@@ -31,7 +31,10 @@ db.defense = db.defense || {};        // account -> [{id, xp, won, vs, at}]: bon
 db.defenseDay = db.defenseDay || {};  // "nftId|day" -> XP credited that day (cap)
 db.clubRec = db.clubRec || {};        // account -> {w, l, d}: Fight Club record
 db.packs = db.packs || {};
-db.results = db.results || {};        // week -> frozen results {json, sha256, anchor, prizes}
+db.results = db.results || {};
+db.loans = db.loans || {};            // id -> {owner, borrower, dog, start, end, ended?, xp:{week:xp}}
+db.lendq = db.lendq || {};            // owner -> [{id, bond, trainer, from, at}]: earned by lent dogs, not yet collected
+db.lendDay = db.lendDay || {};        // "owner|day" -> trainer XP credited that day (cap)        // week -> frozen results {json, sha256, anchor, prizes}
 let dirty = false;
 function flush() {
   if (!dirty) return;
@@ -94,6 +97,17 @@ const STORE = {
     r.pack = pack || null; db.weekly[k] = r; dirty = true;
   },
   async weekRows(wk) { return Object.values(db.weekly).filter(r => r.week === wk); },
+  async loansAll() { return Object.values(db.loans); },
+  async loanSet(l) { db.loans[l.id] = l; dirty = true; },
+  async lendAdd(owner, e, dayKey, cap) {
+    const used = db.lendDay[dayKey] || 0, trainer = Math.max(0, Math.min(e.trainer, cap - used));
+    db.lendDay[dayKey] = used + trainer;
+    for (const k of Object.keys(db.lendDay)) if (k.slice(-10) < dayKey.slice(-10)) delete db.lendDay[k];   // keep only today
+    (db.lendq[owner] = db.lendq[owner] || []).push({ ...e, trainer });
+    dirty = true;
+  },
+  async lendGet(a) { return db.lendq[a] || []; },
+  async lendClear(a, upTo) { db.lendq[a] = (db.lendq[a] || []).filter(e => e.at > upTo); if (!db.lendq[a].length) delete db.lendq[a]; dirty = true; },
   async resultGet(wk) { return db.results[wk] || null; },
   async resultSet(wk, rec) { db.results[wk] = rec; dirty = true; },
   async taken() { return [...new Set(Object.values(db.holdings).flatMap(h => h.tokens))]; },
@@ -111,7 +125,7 @@ const STORE = {
     }
     return out;
   },
-  async dump() { return { players: db.players, weekly: Object.values(db.weekly), holdings: db.holdings, packs: db.packs, profiles: db.profiles, results: db.results }; },
+  async dump() { return { players: db.players, weekly: Object.values(db.weekly), holdings: db.holdings, packs: db.packs, profiles: db.profiles, results: db.results, loans: db.loans }; },
 };
 
 /* In-memory cache with expiry, standing in for Cloudflare KV. */
@@ -256,7 +270,7 @@ async function season(){
       "<p>" + (w.anchor ? "<span class='ok'>⚓ Anchored</span> " + txLink(w.anchor.txid) : "<button class='btn' data-anchor='" + w.week + "'>⚓ Anchor on the XRPL (Xaman)</button>") +
       " <a class='muted' target='_blank' href='/api/public/results?week=" + w.week + "'>public results</a></p>" +
       (w.prizes.length ? "<table><tr><th>Prize</th><th>Winner</th><th>Status</th><th></th></tr>" + w.prizes.map(p =>
-        "<tr><td>" + PLACE[p.place] + (p.pack ? " (" + esc(p.pack) + ")" : "") + "</td><td>" + esc(p.name) + "<br><span class='mono'>" + esc(p.account) + "</span></td><td>" +
+        "<tr><td>" + (PLACE[p.place] || "🤝 Lender share (" + PLACE[p.lenderOf] + (p.dog ? ", dog #" + p.dog : "") + ")") + (p.pack ? " (" + esc(p.pack) + ")" : "") + "</td><td>" + esc(p.name) + "<br><span class='mono'>" + esc(p.account) + "</span></td><td>" +
         (p.status === "claimed" ? "<span class='ok'>✅ claimed #" + p.token + "</span>" : p.status === "offered" ? "🎁 offered #" + p.token + " " + (p.offerTx ? txLink(p.offerTx) : "") + "<br><span class='muted'>waiting for the winner</span>" : "—") +
         "</td><td>" + (p.status === "offered" || p.status === "claimed" ? "" : opts ? "<select data-nft='" + w.week + "|" + p.place + "'>" + opts + "</select> <button class='btn' data-prize='" + w.week + "|" + p.place + "'>🎁 Send (Xaman)</button>" : "<span class='muted'>treasury empty</span>") +
         "</td></tr>").join("") + "</table>" : "<p class='muted'>No prize winners (nobody earned XP).</p>") + "</div>").join("");
