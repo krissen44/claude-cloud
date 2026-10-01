@@ -56,6 +56,11 @@ Last version confirmed live: **game v19** (cloud saves + `/admin`) + **website l
   Legendary** dogs drop in from the sky with a light pillar, a "★ LEGENDARY ★" / "✦ MYTHIC ✦" banner and a fanfare,
   and keep an aura for the whole fight (gold rays and sparkles / a violet ring) — in every fight, arena included.
   Visual only; Fight Club still replays identically on both screens (tested).
+- **v29 — sounds for the new effects**: a snapping bite (crunching on big hits), a leap and a landing, the crowd roaring
+  on big hits and wins (arena and Fight Club), a KO slide-whistle with dizzy tweets, and a sound per signature move
+  (thunder, light choir, stampede, rocket + boom, falling chart, crash, wave, prism sparkle, twin whoosh, munching food,
+  matrix blips, eerie runes, black-hole hum, alchemy bells, shield chime, crystal ping). All synthesized in the browser,
+  no sound files; the 🔊 button still mutes everything.
 
 ### Planned (Season 2)
 - Fight Club: matchmaking queue, Elo, own ladder.

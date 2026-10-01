@@ -1135,6 +1135,39 @@ const S = (() => {
     energy(){ tone(880, 1180, .09, 'triangle', .18); },
     miss(){ noise(.12,'bandpass',2200,.16,0,2); },
     round(){ tone(760,760,.06,'square',.16); tone(1010,1010,.08,'square',.16,.08); },
+    // bite: a sharp snap of teeth on a thud; a big one crunches twice
+    chomp(big){
+      noise(.05, 'highpass', 3200, .34); tone(260, 90, .09, 'square', .22, .01);
+      tone(big?110:150, big?40:60, big?.24:.15, 'sine', big?.5:.36, .02);
+      if (big){ noise(.07, 'bandpass', 1500, .3, .09, 2); noise(.06, 'bandpass', 1100, .26, .16, 2); }
+    },
+    leap(){ tone(220, 520, .16, 'triangle', .14); noise(.12, 'bandpass', 700, .1, 0, .7); },
+    land(){ tone(140, 50, .14, 'sine', .3); noise(.1, 'lowpass', 500, .2); },
+    // the crowd roars on a big hit (arena and club only)
+    crowd(big){
+      noise(big?1.1:.7, 'bandpass', 900, big?.22:.14, 0, .6); noise(big?1:.6, 'bandpass', 1700, big?.12:.08, .05, .8);
+      if (big){ tone(1400, 1700, .12, 'square', .05, .2); tone(1600, 1900, .12, 'square', .05, .45); }
+    },
+    ko(){ tone(900, 160, .6, 'sine', .22); tone(120, 45, .3, 'sine', .4, .55); noise(.2, 'lowpass', 400, .25, .55);
+          [1800, 2200, 1800, 2200].forEach((f, i) => tone(f, f, .05, 'sine', .07, .95 + i*.12)); },
+    // signature moves
+    thunder(){ noise(.08, 'highpass', 3000, .4); noise(.9, 'lowpass', 220, .5, .04); tone(80, 35, .8, 'sine', .3, .05); },
+    choir(){ [523, 659, 784, 1047].forEach((f, i) => { tone(f, f, .9, 'sine', .07, i*.03); tone(f*1.005, f*1.005, .9, 'triangle', .04, i*.03); }); },
+    stampede(){ for (let i=0;i<7;i++){ tone(90, 50, .1, 'sine', .35, i*.07); noise(.05, 'lowpass', 300, .18, i*.07); } noise(.5, 'lowpass', 160, .25); },
+    rocket(){ tone(300, 1400, .35, 'sawtooth', .08); noise(.35, 'bandpass', 2500, .1, 0, 3); tone(70, 30, .4, 'sine', .45, .36); noise(.3, 'lowpass', 600, .3, .36); },
+    dip(){ tone(880, 140, .55, 'square', .14); tone(440, 70, .55, 'square', .08, .02); tone(400, 900, .2, 'triangle', .12, .6); },
+    crash(){ tone(700, 60, .45, 'sawtooth', .16); tone(60, 28, .6, 'sine', .55, .35); noise(.6, 'lowpass', 500, .45, .35); },
+    splash(){ noise(.55, 'lowpass', 1600, .35, 0, .5); [700, 950, 620, 1100, 820].forEach((f, i) => tone(f, f*1.6, .06, 'sine', .1, .15 + i*.06)); },
+    prism(){ [784, 988, 1175, 1397, 1568, 1976].forEach((f, i) => tone(f, f, .22, 'triangle', .12, i*.05)); tone(2200, 300, .3, 'sawtooth', .08, .1); },
+    twin(){ noise(.12, 'bandpass', 900, .2, 0, .8); noise(.12, 'bandpass', 1300, .18, .14, .8); },
+    munch(){ [0, .13, .26].forEach(d => { noise(.05, 'bandpass', 1800, .22, d, 1.5); tone(180, 120, .05, 'square', .08, d); }); [523,659,784].forEach((f,i)=>tone(f,f,.13,'sine',.18,.4 + i*.07)); },
+    matrix(){ for (let i=0;i<10;i++) tone([880, 1320, 660, 1760][i%4], 0, .04, 'square', .07, i*.05); },
+    runes(){ tone(220, 230, .8, 'triangle', .12); tone(277, 266, .8, 'triangle', .1, .05); tone(330, 345, .8, 'sine', .08, .1); },
+    voidHum(){ tone(180, 35, 1.2, 'sine', .4); noise(1, 'lowpass', 180, .3, .1); tone(90, 25, 1.1, 'sawtooth', .07, .2); },
+    alchemy(){ [1047, 1319, 1568, 2093].forEach((f, i) => { tone(f, f, .5, 'sine', .12, i*.09); tone(f*2.01, f*2.01, .3, 'sine', .04, i*.09); }); },
+    ward(){ tone(660, 1320, .12, 'triangle', .16); [1319, 1760].forEach((f, i) => tone(f, f, .45, 'sine', .12, .1 + i*.08)); },
+    crystal(){ [2093, 2637, 3136, 2637].forEach((f, i) => tone(f, f, .3, 'triangle', .1, i*.06)); noise(.1, 'highpass', 5000, .1); },
+    charge(){ tone(200, 900, .3, 'sawtooth', .07); tone(400, 1800, .3, 'sine', .07, .02); },
     fanfare(leg){ (leg ? [523,659,784,1047,1319] : [440,554,659,880]).forEach((f,i)=>tone(f,f,.16,'square',.2,i*.09)); tone(leg?1568:1109, leg?1568:1109, .4, 'triangle', .18, leg ? .5 : .4); },
     win(){ [523,659,784,1047].forEach((f,i)=>tone(f,f,.2,'square',.24,i*.11)); },
     lose(){ [392,330,262].forEach((f,i)=>tone(f,f,.24,'triangle',.22,i*.14)); }
@@ -2797,13 +2830,13 @@ function koFx(winSide){
   for (const [s, f] of [['l', P], ['r', E]]){
     const el = fighterEl(s); if (!el) continue;
     if (f.hp <= 0){
-      el.classList.add('faint'); fxDust(s, 16);
+      el.classList.add('faint'); fxDust(s, 16); S.ko();
       if (!el.querySelector('.dizzy')) el.insertAdjacentHTML('beforeend', '<span class="dizzy"><b></b><b></b><b></b></span>');
     }
   }
   if (winSide){
     const el = fighterEl(winSide);
-    if (el && !el.classList.contains('faint')){ el.classList.add('cheer'); crowdCheer(); }
+    if (el && !el.classList.contains('faint')){ el.classList.add('cheer'); crowdCheer(); if (stageTheme() !== 'meadow') S.crowd(true); }
   }
 }
 async function confetti(side){
@@ -2909,6 +2942,8 @@ function abCast(side, st){
   const p = anchor(side), f = feet(side), o = side === 'l' ? 'r' : 'l';
   anim(side, 'charge', 560);
   fxRise(side, [st.c, '#ffffff'], 12);
+  ({heal: () => S.munch(), alchemy: () => S.alchemy(), matrix: () => S.matrix(), runes: () => S.runes(), void: () => S.voidHum(),
+    double: () => S.twin(), energy: () => S.energy()}[st.k] || (() => S.charge()))();
   if (st.k === 'heal'){ itemPop(side, st.icon); marks.push({k:'ring', x:p.x, y:p.y, r0:20, r1:90, c:'rgba(123,224,138,.9)', life:20, max:20}); }
   else if (st.k === 'ward' || st.k === 'diamond'){ /* drawn on the shield event */ }
   else if (st.k === 'alchemy') marks.push({k:'circle', x:f.x, y:f.y, c:st.c, life:46, max:46});
@@ -2929,18 +2964,18 @@ function abShot(from, to, st){
     burst(b.x, b.y, 18, [st.c, '#ffffff'], 7); S.laser(); return;
   }
   if (st.k === 'zap'){ for (let i=0;i<3;i++) setTimeout(() => marks.push({k:'zap', x:tp.x + (Math.random()-.5)*30, y0:0, y:tp.y, c:st.c, life:7, max:7}), i*70);
-    whiteFlash(); S.bolt(); return; }
-  if (st.k === 'pillar'){ marks.push({k:'pillar', x:tp.x, y:tp.y, c:st.c, life:24, max:24}); whiteFlash(); S.bolt(); return; }
-  if (st.k === 'moon'){ marks.push({k:'moon', x1:a.x, y1:a.y, x2:b.x, y2:b.y, life:16, max:16}); S.whoosh(); return; }
-  if (st.k === 'charge'){ lungeTo(from, 1, 300); for (let i=0;i<4;i++) setTimeout(() => { fxDust(from, 6); fxStreak(from); }, i*70); S.whoosh(); return; }
-  if (st.k === 'dip'){ marks.push({k:'dip', x1:a.x, y1:a.y - 30, x2:b.x, y2:b.y, life:22, max:22}); S.bolt(); return; }
-  if (st.k === 'crash'){ marks.push({k:'crash', x:tp.x, y:tp.y, life:16, max:16}); stageFx('shake2', 430); S.bolt(); return; }
+    whiteFlash(); S.bolt(); S.thunder(); return; }
+  if (st.k === 'pillar'){ marks.push({k:'pillar', x:tp.x, y:tp.y, c:st.c, life:24, max:24}); whiteFlash(); S.choir(); return; }
+  if (st.k === 'moon'){ marks.push({k:'moon', x1:a.x, y1:a.y, x2:b.x, y2:b.y, life:16, max:16}); S.rocket(); return; }
+  if (st.k === 'charge'){ lungeTo(from, 1, 300); for (let i=0;i<4;i++) setTimeout(() => { fxDust(from, 6); fxStreak(from); }, i*70); S.stampede(); return; }
+  if (st.k === 'dip'){ marks.push({k:'dip', x1:a.x, y1:a.y - 30, x2:b.x, y2:b.y, life:22, max:22}); S.dip(); return; }
+  if (st.k === 'crash'){ marks.push({k:'crash', x:tp.x, y:tp.y, life:16, max:16}); stageFx('shake2', 430); S.crash(); return; }
   if (st.k === 'splash'){ marks.push({k:'splash', x1:a.x, y1:feet(from).y, x2:b.x, y2:b.y, life:20, max:20});
     for (let i=0;i<26;i++) parts.push({x:b.x, y:b.y, vx:(Math.random()-.5)*9, vy:-Math.random()*8, s:rint(3,6), c:['#4fb3f5','#bfe6ff','#ffffff'][rint(0,2)], life:rint(26,40), max:40});
-    S.whoosh(); return; }
+    S.splash(); return; }
   if (st.k === 'prism'){ ['#ff4d4d','#ffb02e','#ffe066','#5dff7a','#4fb3f5','#b98bff'].forEach((c, i) =>
       beams.push({x1:a.x, y1:a.y, x2:b.x, y2:b.y - 30 + i*12, life:18 + i, max:24, glow:c + '66', core:c, w:6}));
-    S.laser(); return; }
+    S.prism(); return; }
   // anything else: a beam in its colour
   beams.push({x1:a.x, y1:a.y, x2:b.x, y2:b.y, life:16, max:16, glow:st.c + '88', core:'#ffffff', w:11});
   burst(b.x, b.y, 14, [st.c, '#ffffff'], 7); S.bolt();
@@ -2961,10 +2996,10 @@ function abImpact(side, st, big){
 }
 /* the shield event, dressed for Validate, Oath, Gilded and Diamond Hand */
 function wardFx(side, st){
-  if (st.k === 'diamond'){ marks.push({k:'diamond', side, c:st.c, life:46, max:46}); comic(side, 'HODL!', 'blue'); S.guardUp(); return; }
+  if (st.k === 'diamond'){ marks.push({k:'diamond', side, c:st.c, life:46, max:46}); comic(side, 'HODL!', 'blue'); S.crystal(); return; }
   marks = marks.filter(m => !(m.k === 'bubble' && m.side === side));
   marks.push({k:'bubble', side, life:46, max:46, col: st.c, mark: st.mark});
-  S.guardUp();
+  S.ward();
 }
 
 /* ---- Mythic and Legendary: an entrance and an aura for the whole fight ---- */
@@ -2992,7 +3027,7 @@ async function introFx(){
       if (b){ b.textContent = leg ? '★ LEGENDARY ★' : '✦ MYTHIC ✦'; b.className = 'banner ' + (leg ? 'leg' : 'myth'); void b.offsetWidth; b.classList.add('on'); }
       S.fanfare(leg);
       await wait(460);
-      fxDust(s, 20); stageFx('shake2', 430); crowdCheer();
+      fxDust(s, 20); stageFx('shake2', 430); crowdCheer(); S.land(); if (stageTheme() !== 'meadow') S.crowd(true);
       marks.push({k:'ring', x:p.x, y:feet(s).y - 10, r0:20, r1:160, c: leg ? 'rgba(255,214,90,.95)' : 'rgba(185,139,255,.95)', life:22, max:22});
       fxRise(s, leg ? ['#ffd54a','#fff6c2','#ffffff'] : ['#b98bff','#6fc3ff','#ffffff'], 30, true);
       await wait(820);
@@ -3045,7 +3080,7 @@ async function play(){
       // a signature move is charged up first, in its own colours
       if (AB.l || AB.r){
         for (const s of ['l', 'r']) if (AB[s]) abCast(s, AB[s]);
-        S.energy(); await wait(340);
+        await wait(340);
       }
       for (const [s, m] of sides){
         if (m === 'bite' || (AB[s] && AB[s].k === 'double')){
@@ -3056,7 +3091,7 @@ async function play(){
         else if (m === 'guard') anim(s, 'guard', 560);
         else { anim(s, 'taunt', 560); fxWave(s); sayBubble(s, TAUNTS[rint(0, TAUNTS.length-1)]); }
       }
-      if (sides.some(([s, m]) => m === 'bite' || (AB[s] && AB[s].k === 'double'))) S.whoosh();
+      if (sides.some(([s, m]) => m === 'bite' || (AB[s] && AB[s].k === 'double'))){ S.leap(); S.whoosh(); }
       if (sides.some(([, m]) => m === 'taunt')) S.bark();
       await wait(300);
     }
@@ -3089,7 +3124,7 @@ async function play(){
       const big = e.kind==='big'||e.n>=7, counter = e.kind==='counter';
       const st = !counter && AB[from];
       const bitten = !counter && e.kind !== 'burn' && (MV[from] === 'bite' || (st && st.k === 'double'));
-      counter ? S.counter() : S.hit(big);
+      counter ? S.counter() : (bitten ? S.chomp(big) : S.hit(big));
       if (bitten){
         setTimeout(() => lungeBack(from), 260);
         chomp(e.who, big); biteMarks(e.who, big);
@@ -3100,7 +3135,7 @@ async function play(){
       fxRing(e.who, counter ? 'rgba(191,232,106,.95)' : 'rgba(255,255,255,.95)', big ? 92 : 62);
       burst(p.x,p.y,big?24:12, counter?['#bfe86a','#eaffb0','#fff']:['#ffd9d9','#ff6b6b','#fff'], big?9:5.5);
       floatTxt(e.who,'dmgN','-'+e.n);
-      if (big){ stageFx('shake2', 430); whiteFlash(); crowdCheer(); }
+      if (big){ stageFx('shake2', 430); whiteFlash(); crowdCheer(); if (stageTheme() !== 'meadow') S.crowd(false); }
       else stageFx('shake', 290);
       setBars();
       await wait(big ? 540 : 440);
