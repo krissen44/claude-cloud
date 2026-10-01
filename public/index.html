@@ -87,10 +87,6 @@ h1{font-family:'Press Start 2P',monospace;font-size:clamp(12px,3.2vw,18px);text-
 .fighter.cheer img{animation:cheer .6s ease-in-out infinite}
 @keyframes cheer{0%,100%{transform:var(--flip,none) translateY(0)}50%{transform:var(--flip,none) translateY(-16px)}}
 .fighter.right.cheer img{--flip:scaleX(-1)}
-.shield{position:absolute;inset:auto 0 70px;height:150px;pointer-events:none;
-  display:flex;align-items:center;justify-content:center;font-size:40px;opacity:0}
-.shield.on{animation:pop .5s}
-@keyframes pop{0%{opacity:0;transform:scale(.4)}40%{opacity:1;transform:scale(1.15)}100%{opacity:0;transform:scale(1)}}
 
 canvas.fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .float{position:absolute;font-family:'Press Start 2P',monospace;font-size:15px;pointer-events:none;
@@ -104,6 +100,147 @@ canvas.fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .snd:hover{background:rgba(255,255,255,.9)}
 .banner.on{animation:bann 1.1s ease-out}
 @keyframes bann{0%{opacity:0;transform:scale(.6)}25%{opacity:1;transform:scale(1)}75%{opacity:1}100%{opacity:0;transform:scale(1.1)}}
+
+/* ---------- living backdrops: meadow (ranked), stadium at dusk (arena), night ring (Fight Club) ---------- */
+.stage>.tint{position:absolute;inset:0;pointer-events:none;opacity:var(--dusk,0);transition:opacity 1.4s ease;
+  background:linear-gradient(180deg,rgba(255,120,60,.42),rgba(255,170,90,.18) 55%,rgba(255,170,90,0) 80%)}
+.th-arena>.tint{background:linear-gradient(180deg,rgba(20,10,60,.6),rgba(20,10,60,.15) 60%,transparent 85%)}
+.th-club>.tint{background:radial-gradient(ellipse at 50% 100%,rgba(255,47,184,.35),transparent 70%)}
+.stage.frenzy::after{content:"";position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 0 70px 14px rgba(255,40,40,.5);animation:frenzyPulse 1.1s ease-in-out infinite}
+@keyframes frenzyPulse{0%,100%{opacity:.5}50%{opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* meadow */
+.rays{position:absolute;left:-6px;top:-10px;width:100px;height:100px;border-radius:50%;
+  background:repeating-conic-gradient(rgba(255,236,150,.38) 0 9deg,rgba(255,236,150,0) 9deg 30deg);
+  -webkit-mask:radial-gradient(circle,#000 30%,transparent 70%);mask:radial-gradient(circle,#000 30%,transparent 70%);
+  animation:spin 30s linear infinite}
+.bird{position:absolute;top:46px;width:16px;height:8px;animation:fly 26s linear infinite}
+.bird.b2{top:30px;animation-duration:34s;animation-delay:-17s;transform:scale(.75)}
+.bird::before,.bird::after{content:"";position:absolute;top:3px;width:8px;height:2px;background:#33445a;border-radius:2px}
+.bird::before{left:0;transform-origin:100% 50%;animation:flapL .32s ease-in-out infinite alternate}
+.bird::after{left:8px;transform-origin:0 50%;animation:flapR .32s ease-in-out infinite alternate}
+@keyframes flapL{from{transform:rotate(28deg)}to{transform:rotate(-22deg)}}
+@keyframes flapR{from{transform:rotate(-28deg)}to{transform:rotate(22deg)}}
+@keyframes fly{0%{left:-30px;margin-top:0}25%{margin-top:-8px}50%{margin-top:4px}75%{margin-top:-6px}100%{left:104%;margin-top:0}}
+.tuft{position:absolute;top:-10px;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;
+  border-bottom:12px solid var(--grassD);transform-origin:50% 100%;animation:sway 2.6s ease-in-out infinite}
+@keyframes sway{0%,100%{transform:scale(var(--s,1)) rotate(-8deg)}50%{transform:scale(var(--s,1)) rotate(8deg)}}
+.flower{animation:bob 3.2s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+.bfly{position:absolute;bottom:120px;width:10px;height:8px;animation:flutter 16s ease-in-out infinite}
+.bfly.f2{animation-duration:21s;animation-delay:-9s}
+.bfly::before,.bfly::after{content:"";position:absolute;top:0;width:5px;height:7px;border-radius:50% 50% 40% 40%;background:#ff8ad1;animation:wing .18s ease-in-out infinite alternate}
+.bfly.f2::before,.bfly.f2::after{background:#ffd54a}
+.bfly::before{left:0;transform-origin:100% 50%}.bfly::after{left:5px;transform-origin:0 50%}
+@keyframes wing{from{transform:scaleX(1)}to{transform:scaleX(.25)}}
+@keyframes flutter{0%{left:6%;bottom:118px}20%{left:30%;bottom:150px}40%{left:52%;bottom:112px}60%{left:78%;bottom:160px}80%{left:44%;bottom:135px}100%{left:6%;bottom:118px}}
+
+/* stadium (arena) */
+.th-arena{background:linear-gradient(180deg,#2e2152 0%,#8d4a78 40%,#e3875c 72%,#f6b56a 100%)}
+.th-arena .ground{background:linear-gradient(180deg,#d9b27c 0%,#c49766 45%,#a87a52 100%)}
+.th-arena .ground::before{background:rgba(255,255,255,.3)}
+.th-arena .ring{position:absolute;left:10%;right:10%;top:16px;height:46px;border:3px solid rgba(255,255,255,.35);border-radius:50%}
+.th-arena .fence{background:repeating-linear-gradient(90deg,#5b3a2a 0 5px,transparent 5px 26px);opacity:.9}
+.th-arena .fence::before,.th-arena .fence::after{background:#5b3a2a}
+.flood{position:absolute;top:12px;width:34px;height:14px;border-radius:4px;background:#fffbe0;
+  box-shadow:0 0 26px 12px rgba(255,240,180,.55);animation:floodFlick 7s infinite}
+.flood::after{content:"";position:absolute;left:50%;top:10px;width:240px;height:260px;margin-left:-120px;pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,244,200,.22),rgba(255,244,200,0));clip-path:polygon(42% 0,58% 0,100% 100%,0 100%)}
+.flood.f1{left:7%}.flood.f2{right:7%;animation-delay:-3.5s}
+@keyframes floodFlick{0%,46%,50%,100%{opacity:1}48%{opacity:.7}}
+.pennants{position:absolute;left:0;top:84px;width:100%;height:34px;overflow:visible}
+.pen{transform-box:fill-box;transform-origin:50% 0;animation:penSwing 2.4s ease-in-out infinite}
+@keyframes penSwing{0%,100%{transform:rotate(-12deg)}50%{transform:rotate(12deg)}}
+.crowd{position:absolute;left:-3%;right:-3%;bottom:98px;height:46px;--cr:#2b1d3a;
+  background:radial-gradient(circle at 11px 11px,var(--cr) 6px,transparent 6.5px),
+             radial-gradient(ellipse 10px 15px at 11px 34px,var(--cr) 97%,transparent 100%);
+  background-size:22px 46px;background-repeat:repeat-x;animation:crowdBob 1.8s ease-in-out infinite}
+.crowd.back{bottom:112px;opacity:.6;background-position:11px 0;animation-delay:-.9s;transform:scale(.9)}
+.crowd.cheer{animation:crowdJump .2s ease-in-out 6 alternate}
+@keyframes crowdBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+@keyframes crowdJump{from{transform:translateY(0)}to{transform:translateY(-9px)}}
+
+/* night ring (Fight Club) */
+.th-club{background:radial-gradient(ellipse at 50% 115%,#4a1f6e 0%,#1a1236 52%,#08070f 100%)}
+.th-club .ground{background:linear-gradient(180deg,#30285a 0%,#211b40 50%,#151129 100%)}
+.th-club .ground::before{background:rgba(255,95,210,.35)}
+.th-club .mat{position:absolute;left:50%;top:18px;width:150px;height:44px;margin-left:-75px;border-radius:50%;
+  border:3px solid rgba(255,95,210,.45);box-shadow:0 0 18px rgba(255,95,210,.35),inset 0 0 18px rgba(255,95,210,.25)}
+.th-club .crowd{--cr:#0b0a18}
+.spot{position:absolute;top:-24px;width:150px;height:380px;pointer-events:none;transform-origin:50% 0;
+  background:linear-gradient(180deg,rgba(255,250,225,.34),rgba(255,250,225,0) 88%);
+  clip-path:polygon(46% 0,54% 0,100% 100%,0 100%);animation:sweep 5.5s ease-in-out infinite alternate}
+.spot.s1{left:6%}.spot.s2{right:6%;animation-delay:-2.75s;animation-direction:alternate-reverse}
+@keyframes sweep{from{transform:rotate(-20deg)}to{transform:rotate(20deg)}}
+.neon{position:absolute;left:50%;top:76px;transform:translateX(-50%);font-family:'Press Start 2P',monospace;font-size:12px;
+  white-space:nowrap;color:#ffd1f3;text-shadow:0 0 3px #ff5fd2,0 0 10px #ff2fb8,0 0 22px #ff2fb8;animation:neonFlick 6s infinite}
+@keyframes neonFlick{0%,17%,21%,24%,61%,64%,100%{opacity:1}19%,23%,62%{opacity:.3}}
+.ropes{position:absolute;left:1%;right:1%;bottom:90px;height:56px;
+  background:linear-gradient(#ff4f6d,#ff4f6d) 0 4px/100% 3px no-repeat,
+             linear-gradient(#f4f4ff,#f4f4ff) 0 22px/100% 3px no-repeat,
+             linear-gradient(#4f7dff,#4f7dff) 0 40px/100% 3px no-repeat;opacity:.85}
+.ropes::before,.ropes::after{content:"";position:absolute;bottom:-6px;width:8px;height:62px;border-radius:3px;background:#c9c6dc}
+.ropes::before{left:0}.ropes::after{right:0}
+
+/* ---------- fighters: shadow, sharper moves ---------- */
+.fighter img{position:relative}
+.fighter .shd{position:absolute;left:50%;bottom:-2px;width:112px;height:14px;margin-left:-56px;border-radius:50%;
+  background:rgba(0,0,0,.24);animation:shd 2.6s ease-in-out infinite}
+@keyframes shd{0%,100%{transform:scaleX(1);opacity:.9}50%{transform:scaleX(.86);opacity:.65}}
+.fighter.lunge.left img{animation:lungeL .46s cubic-bezier(.3,.7,.3,1)}
+@keyframes lungeL{0%{transform:translateX(0)}18%{transform:translateX(-12px) scale(.93,1.07)}42%{transform:translateX(72px) translateY(-12px) rotate(-8deg) scale(1.08,.94)}100%{transform:translateX(0)}}
+.fighter.lunge.right img{animation:lungeR .46s cubic-bezier(.3,.7,.3,1)}
+@keyframes lungeR{0%{transform:scaleX(-1)}18%{transform:scaleX(-1) translateX(-12px) scale(.93,1.07)}42%{transform:scaleX(-1) translateX(72px) translateY(-12px) rotate(-8deg) scale(1.08,.94)}100%{transform:scaleX(-1)}}
+.fighter.left.hurt{animation:knockL .32s}.fighter.right.hurt{animation:knockR .32s}
+@keyframes knockL{0%,100%{transform:translateX(0)}30%{transform:translateX(-15px)}65%{transform:translateX(6px)}}
+@keyframes knockR{0%,100%{transform:translateX(0)}30%{transform:translateX(15px)}65%{transform:translateX(-6px)}}
+.fighter.dodge img{animation:dodgeA .42s ease-out}
+.fighter.right.dodge img{--flip:scaleX(-1)}
+@keyframes dodgeA{0%,100%{transform:var(--flip,none)}40%{transform:var(--flip,none) translateX(-30px) translateY(-14px) rotate(-10deg)}}
+.fighter.charge img{animation:chargeA .52s ease-in-out}
+.fighter.right.charge img{--flip:scaleX(-1)}
+@keyframes chargeA{0%,100%{transform:var(--flip,none)}50%{transform:var(--flip,none) scale(1.06) translateY(-4px);filter:drop-shadow(0 0 12px #c9a2ff) brightness(1.35)}}
+.fighter.cheer .shd{animation:shdJump .6s ease-in-out infinite}
+@keyframes shdJump{0%,100%{transform:scaleX(1)}50%{transform:scaleX(.7);opacity:.5}}
+
+/* ---------- hit and move effects ---------- */
+.chomp{position:absolute;width:58px;height:46px;margin:-23px 0 0 -29px;pointer-events:none;
+  filter:drop-shadow(0 0 1px #0e1726) drop-shadow(0 2px 0 rgba(0,0,0,.35));animation:chompOut .5s ease-out forwards}
+.chomp.big{transform:scale(1.35)}
+.chomp::before,.chomp::after{content:"";position:absolute;left:0;right:0;height:21px;
+  background:linear-gradient(#ff7a8a,#ff7a8a) 0 0/100% 5px no-repeat,
+             linear-gradient(to bottom right,#fff 50%,transparent 50%) 0 5px/8px 16px repeat-x,
+             linear-gradient(to bottom left,#fff 50%,transparent 50%) 8px 5px/8px 16px repeat-x}
+.chomp::before{top:0;animation:jawTop .26s ease-in forwards}
+.chomp::after{bottom:0;transform:scaleY(-1);animation:jawBot .26s ease-in forwards}
+@keyframes jawTop{from{transform:translateY(-16px)}to{transform:translateY(4px)}}
+@keyframes jawBot{from{transform:scaleY(-1) translateY(-16px)}to{transform:scaleY(-1) translateY(4px)}}
+@keyframes chompOut{0%,65%{opacity:1}100%{opacity:0}}
+.sayb{position:absolute;padding:6px 8px;background:#fff;color:#0e1726;border:2px solid #0e1726;border-radius:10px;
+  font:10px 'Press Start 2P',monospace;white-space:nowrap;pointer-events:none;animation:sayPop .95s ease-out forwards}
+.sayb::after{content:"";position:absolute;left:14px;bottom:-8px;border:6px solid transparent;border-top-color:#0e1726;border-bottom:0}
+.sayb.r::after{left:auto;right:14px}
+@keyframes sayPop{0%{opacity:0;transform:scale(.5) translateY(6px)}15%{opacity:1;transform:scale(1.12)}25%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:translateY(-10px)}}
+.wflash{position:absolute;inset:0;background:#fff;pointer-events:none;animation:wf .24s ease-out forwards}
+@keyframes wf{from{opacity:.7}to{opacity:0}}
+.stage.shake2{animation:stageShake2 .42s}
+@keyframes stageShake2{0%,100%{transform:translate(0,0)}15%{transform:translate(-10px,5px)}30%{transform:translate(9px,-6px)}50%{transform:translate(-6px,4px)}70%{transform:translate(4px,-2px)}85%{transform:translate(-2px,1px)}}
+.dizzy{position:absolute;left:50%;top:26%;width:0;height:0;pointer-events:none}
+.dizzy b{position:absolute;left:-9px;top:-9px;width:18px;height:18px;background:#ffd54a;
+  clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);
+  filter:drop-shadow(0 0 3px #fff);animation:orbit 1.3s linear infinite}
+.dizzy b:nth-child(2){animation-delay:-.433s}.dizzy b:nth-child(3){animation-delay:-.866s}
+@keyframes orbit{from{transform:rotate(0) translateX(34px) rotate(0)}to{transform:rotate(360deg) translateX(34px) rotate(-360deg)}}
+
+@media(max-width:560px){.pennants{top:84px;height:24px}.flood{top:6px;width:24px}.fighter .shd{width:84px;margin-left:-42px;height:11px}.neon{font-size:9px;top:66px}
+  .spot{width:110px}.th-club .mat{width:110px;margin-left:-55px}}
+@media(prefers-reduced-motion:reduce){
+  .stage .rays,.stage .cloud,.stage .bird,.stage .bird::before,.stage .bird::after,.stage .tuft,.stage .flower,.stage .bfly,
+  .stage .pen,.stage .crowd,.stage .flood,.stage .spot,.stage .neon,.fighter img,.fighter .shd,.stage.frenzy::after,.dizzy b{animation:none!important}
+  .stage .bird,.stage .bfly{display:none}
+}
 
 /* ---------- hud ---------- */
 .hud{position:absolute;top:8px;width:42%;padding:0 8px}
@@ -1785,8 +1922,8 @@ function scEnd(res){
     : res.why === 'left the ring' ? (won ? 'Your opponent left the ring — you win by forfeit.' : 'You left the ring.')
     : res.why === 'both players stopped answering' ? 'Both of you stopped answering.' : (draw ? 'A draw.' : null);
   CLUB.result = {won, draw, why};
-  if (P.hp <= 0) document.querySelector('.fighter.left')?.classList.add('faint');
-  if (E.hp <= 0) document.querySelector('.fighter.right')?.classList.add('faint');
+  koFx(res.winner === 'a' ? 'l' : res.winner === 'b' ? 'r' : null);
+  if (won) confetti(mine === 'a' ? 'l' : 'r');
   const b = document.querySelector('.banner'); if (b){ b.textContent = draw ? 'DRAW' : (won ? 'YOU WIN' : 'YOU LOSE'); b.classList.remove('on'); void b.offsetWidth; b.classList.add('on'); }
   won ? S.win() : (draw ? S.heal() : S.lose());
   renderControls();
@@ -2349,18 +2486,53 @@ function walletBoot(){
 }
 
 /* ============================ fx ============================ */
-let cv, ctx, parts = [], beams = [], raf = 0;
-function fxInit(c){
-  cv = c; ctx = c.getContext('2d');
-  const r = () => { const b = cv.getBoundingClientRect(), d = Math.min(2, devicePixelRatio||1);
+/* One canvas over the stage draws everything that moves fast: particles,
+   impact stars, shockwave rings, shield bubbles, bark waves, speed streaks,
+   plus a slow ambient layer per backdrop (petals, dust in the floodlights,
+   haze and camera flashes in the club). Purely visual — the engine never
+   reads any of it, so the server's Fight Club referee is unaffected. */
+const RM = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch(e){ return false; } })();
+let cv, ctx, parts = [], beams = [], marks = [], amb = [], raf = 0, fxTheme = 'meadow', fxResize = null;
+function fxInit(c, theme){
+  cv = c; ctx = c.getContext('2d'); fxTheme = theme || 'meadow';
+  parts = []; beams = []; marks = [];
+  const r = () => { if (!cv) return; const b = cv.getBoundingClientRect(), d = Math.min(2, devicePixelRatio||1);
     cv.width = b.width*d; cv.height = b.height*d; ctx.setTransform(d,0,0,d,0,0); };
-  r(); addEventListener('resize', r);
+  r();
+  if (fxResize) removeEventListener('resize', fxResize);
+  fxResize = r; addEventListener('resize', r);
+  ambSeed();
   cancelAnimationFrame(raf); loop();
+}
+function ambNew(anywhere){
+  const w = cv.clientWidth || 400, h = cv.clientHeight || 300, R = Math.random;
+  if (fxTheme === 'meadow') return {x: anywhere ? R()*w : -8, y: R()*h*.62, vx: .25+R()*.35, vy: .08+R()*.12,
+    ph: R()*6, s: 2+R()*2, c: ['#ffffff','#ffd1e8','#fff3b0'][rint(0,2)]};
+  if (fxTheme === 'arena') return {x: R()*w, y: anywhere ? R()*h*.8 : h*.78, vx: (R()-.5)*.15, vy: -.1-R()*.18,
+    ph: R()*6, s: 1.5+R()*1.5, c: '#ffe7a8'};
+  return {x: R()*w, y: anywhere ? R()*h*.85 : h*.85, vx: (R()-.5)*.2, vy: -.07-R()*.14,
+    ph: R()*6, s: 1.5+R()*2, c: ['#ff8ad1','#c9a2ff','#ffffff'][rint(0,2)]};
+}
+function ambSeed(){
+  amb = []; if (RM) return;
+  const n = fxTheme === 'meadow' ? 9 : fxTheme === 'arena' ? 14 : 12;
+  for (let i=0;i<n;i++) amb.push(ambNew(true));
 }
 function loop(){
   if (!ctx) return;
   const w = cv.clientWidth, h = cv.clientHeight;
   ctx.clearRect(0,0,w,h);
+  // ambient layer
+  for (let i=0;i<amb.length;i++){
+    const a = amb[i]; a.ph += .05; a.x += a.vx + Math.sin(a.ph)*.25; a.y += a.vy;
+    ctx.globalAlpha = fxTheme === 'meadow' ? .85 : .35 + .35*Math.sin(a.ph*1.7);
+    ctx.fillStyle = a.c; ctx.fillRect(a.x|0, a.y|0, a.s, a.s);
+    if (a.x > w+10 || a.x < -12 || a.y < -10 || a.y > h) amb[i] = ambNew(false);
+  }
+  ctx.globalAlpha = 1;
+  // camera flashes in the crowd
+  if (!RM && fxTheme !== 'meadow' && Math.random() < (fxTheme === 'club' ? .02 : .008))
+    marks.push({k:'flash', x: Math.random()*w, y: h - 100 - Math.random()*44, life: 7, max: 7});
   for (const b of beams){
     b.life--;
     ctx.globalAlpha = Math.max(0, b.life/b.max);
@@ -2372,24 +2544,145 @@ function loop(){
     ctx.globalAlpha = 1;
   }
   beams = beams.filter(b => b.life > 0);
+  for (const m of marks){ m.life--; drawMark(m); }
+  marks = marks.filter(m => m.life > 0);
+  ctx.globalAlpha = 1;
   for (const p of parts){
-    p.vy += .42; p.x += p.vx; p.y += p.vy; p.life--;
+    p.vy += (p.g ?? .42); p.x += p.vx; p.y += p.vy; p.life--;
     ctx.globalAlpha = Math.max(0, p.life/p.max);
-    ctx.fillStyle = p.c; ctx.fillRect(p.x|0, p.y|0, p.s, p.s);
+    ctx.fillStyle = p.c;
+    if (p.dia){ ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.PI/4); ctx.fillRect(-p.s/2, -p.s/2, p.s, p.s); ctx.restore(); }
+    else ctx.fillRect(p.x|0, p.y|0, p.s, p.s);
     ctx.globalAlpha = 1;
   }
   parts = parts.filter(p => p.life > 0);
   raf = requestAnimationFrame(loop);
 }
+function drawMark(m){
+  const t = m.life / m.max, k = 1 - t;               // t: 1 → 0 over its life
+  ctx.save(); ctx.globalAlpha = Math.max(0, t);
+  if (m.k === 'flash'){
+    const g = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, 14);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(m.x, m.y, 14, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath();
+    ctx.moveTo(m.x-10, m.y); ctx.lineTo(m.x+10, m.y); ctx.moveTo(m.x, m.y-10); ctx.lineTo(m.x, m.y+10); ctx.stroke();
+  } else if (m.k === 'ring'){
+    const r = m.r0 + (m.r1 - m.r0) * (1 - t*t);
+    ctx.strokeStyle = m.c; ctx.lineWidth = 2 + 4*t; ctx.beginPath(); ctx.arc(m.x, m.y, r, 0, 7); ctx.stroke();
+  } else if (m.k === 'star'){
+    const R = m.R * Math.min(1, k*3 + .4), n = 8;
+    ctx.translate(m.x, m.y); ctx.rotate(m.rot);
+    ctx.beginPath();
+    for (let i=0;i<n*2;i++){ const a = i*Math.PI/n, r = i%2 ? R*.42 : R; ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r); }
+    ctx.closePath(); ctx.fillStyle = m.fill; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = m.edge; ctx.stroke();
+  } else if (m.k === 'streak'){
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineCap = 'round';
+    for (let i=0;i<3;i++){
+      const y = m.y - 18 + i*18, len = 34 + i*10;
+      ctx.lineWidth = 3 - i*.6; ctx.beginPath();
+      ctx.moveTo(m.x - m.dir*(len + 50*k), y); ctx.lineTo(m.x - m.dir*(10 + 50*k), y); ctx.stroke();
+    }
+  } else if (m.k === 'wave'){
+    ctx.strokeStyle = m.c; ctx.lineCap = 'round';
+    const a0 = m.dir > 0 ? 0 : Math.PI;
+    for (let i=0;i<3;i++){
+      const r = 18 + i*14 + 46*k; ctx.lineWidth = 3.5 - i;
+      ctx.beginPath(); ctx.arc(m.x, m.y, r, a0 - .55, a0 + .55); ctx.stroke();
+    }
+  } else if (m.k === 'bubble'){
+    const p = anchor(m.side), el = fighterEl(m.side), base = el ? el.getBoundingClientRect().width * .44 : 70;
+    const r = base * (m.life > m.max - 5 ? .7 + .3*(m.max - m.life)/5 : 1) * (1 + .04*Math.sin(m.life*.5));
+    ctx.globalAlpha = Math.min(1, t*2.2);
+    const g = ctx.createRadialGradient(p.x, p.y, r*.55, p.x, p.y, r);
+    g.addColorStop(0, 'rgba(143,208,251,0)'); g.addColorStop(1, 'rgba(143,208,251,.35)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(190,232,255,.95)'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r*.78, Math.PI*1.1, Math.PI*1.45); ctx.stroke();
+  }
+  ctx.restore();
+}
 function burst(x, y, n, cols, spd){
   for (let i=0;i<n;i++) parts.push({x,y,vx:(Math.random()-.5)*spd,vy:(Math.random()-.9)*spd,
     s:rint(3,5),c:cols[rint(0,cols.length-1)],life:rint(24,42),max:42});
 }
+const fighterEl = side => document.querySelector('.fighter.'+(side==='l'?'left':'right'));
 function anchor(side){
-  const st = document.querySelector('.stage'), el = document.querySelector('.fighter.'+(side==='l'?'left':'right'));
+  const st = document.querySelector('.stage'), el = fighterEl(side);
   if (!st || !el) return {x:0,y:0};
   const a = st.getBoundingClientRect(), b = el.getBoundingClientRect();
   return {x: b.left-a.left + b.width/2, y: b.top-a.top + b.height*0.42};
+}
+function feet(side){
+  const st = document.querySelector('.stage'), el = fighterEl(side);
+  if (!st || !el) return {x:0,y:0};
+  const a = st.getBoundingClientRect(), b = el.getBoundingClientRect();
+  return {x: b.left-a.left + b.width/2, y: b.bottom-a.top - 4};
+}
+// where an attack lands: between the target's centre and the attacker
+function hitPoint(side){ const p = anchor(side); return {x: p.x + (side === 'l' ? 26 : -26), y: p.y - 6}; }
+function fxStreak(side){ const p = anchor(side); marks.push({k:'streak', x:p.x, y:p.y, dir: side==='l' ? 1 : -1, life:12, max:12}); }
+function fxDust(side, n){
+  const f = feet(side);
+  for (let i=0;i<(n||9);i++) parts.push({x: f.x + (Math.random()-.5)*60, y: f.y, vx:(Math.random()-.5)*2.6, vy:-Math.random()*1.4,
+    g:.03, s:rint(3,6), c:['#efe4c8','#d9c8a2','#ffffff'][rint(0,2)], life:rint(16,28), max:28});
+}
+function fxStar(side, big, counter){
+  const p = hitPoint(side);
+  marks.push({k:'star', x:p.x, y:p.y, R: big ? 40 : 26, rot: Math.random(), life: big ? 12 : 9, max: big ? 12 : 9,
+    fill: counter ? '#eaffb0' : '#fff6c2', edge: counter ? '#7fbf2e' : (big ? '#ff5a4d' : '#ffb02e')});
+}
+function fxRing(side, c, r1){ const p = anchor(side); marks.push({k:'ring', x:p.x, y:p.y, r0:12, r1: r1 || 60, c, life:16, max:16}); }
+function fxBubble(side){ marks = marks.filter(m => !(m.k === 'bubble' && m.side === side)); marks.push({k:'bubble', side, life:34, max:34}); }
+function fxWave(side){ const p = anchor(side); marks.push({k:'wave', x: p.x + (side==='l' ? 40 : -40), y: p.y - 18, dir: side==='l' ? 1 : -1, c:'rgba(255,255,255,.95)', life:20, max:20}); }
+function fxRise(side, cols, n, dia){
+  const f = feet(side), el = fighterEl(side), w = el ? el.getBoundingClientRect().width * .6 : 100;
+  for (let i=0;i<n;i++) parts.push({x: f.x + (Math.random()-.5)*w, y: f.y - Math.random()*40, vx:(Math.random()-.5)*.6,
+    vy:-1.2-Math.random()*1.6, g:-.01, s: dia ? 6 : rint(3,5), dia, c: cols[rint(0,cols.length-1)], life:rint(26,40), max:40});
+}
+function stageFx(cls, ms){ const st = document.querySelector('.stage'); if (!st || RM) return; st.classList.remove(cls); void st.offsetWidth; st.classList.add(cls); setTimeout(() => st.classList.remove(cls), ms); }
+function domFx(html, x, y, ms){
+  const st = document.querySelector('.stage'); if (!st) return null;
+  st.insertAdjacentHTML('beforeend', html); const d = st.lastElementChild;
+  if (x != null){ d.style.left = x + 'px'; d.style.top = y + 'px'; }
+  setTimeout(() => d.remove(), ms); return d;
+}
+function chomp(side, big){ const p = hitPoint(side); domFx(`<div class="chomp${big ? ' big' : ''}"></div>`, p.x, p.y, 520); }
+function whiteFlash(){ if (!RM) domFx('<div class="wflash"></div>', null, null, 260); }
+const TAUNTS = ['WOOF!', 'GRRR!', 'ARF!', 'YAP!', 'BORK!'];
+function sayBubble(side, txt){
+  const p = anchor(side), el = fighterEl(side), w = el ? el.getBoundingClientRect().width : 190;
+  const d = domFx(`<div class="sayb ${side}">${esc(txt)}</div>`, 0, Math.max(4, p.y - w*.62), 980);
+  if (d) d.style.left = (side === 'l' ? p.x - 6 : p.x - d.offsetWidth + 6) + 'px';
+}
+function crowdCheer(){ document.querySelectorAll('.stage .crowd').forEach(c => { c.classList.remove('cheer'); void c.offsetWidth; c.classList.add('cheer'); setTimeout(() => c.classList.remove('cheer'), 1300); }); }
+/* the round's mood: the light turns as the fight goes on, frenzy glows red */
+function stageMood(txt){
+  const st = document.querySelector('.stage'); if (!st) return;
+  const n = +((String(txt).match(/ROUND (\d+)/) || [])[1]) || Math.max(1, turn - 1);
+  st.style.setProperty('--dusk', Math.min(.85, (n - 1) / 9).toFixed(2));
+  st.classList.toggle('frenzy', /FRENZY/.test(txt));
+}
+/* end of a fight: whoever is down sees stars, the winner celebrates */
+function koFx(winSide){
+  const st = document.querySelector('.stage'); if (!st) return;
+  st.classList.remove('frenzy');
+  for (const [s, f] of [['l', P], ['r', E]]){
+    const el = fighterEl(s); if (!el) continue;
+    if (f.hp <= 0){
+      el.classList.add('faint'); fxDust(s, 16);
+      if (!el.querySelector('.dizzy')) el.insertAdjacentHTML('beforeend', '<span class="dizzy"><b></b><b></b><b></b></span>');
+    }
+  }
+  if (winSide){
+    const el = fighterEl(winSide);
+    if (el && !el.classList.contains('faint')){ el.classList.add('cheer'); crowdCheer(); }
+  }
+}
+async function confetti(side){
+  const p = anchor(side);
+  for (let i=0;i<3;i++){ burst(p.x, p.y-20, 18, ['#ffd54a','#7be08a','#6fc3ff','#ff8ad1'], 9); await wait(160); }
 }
 function floatTxt(side, cls, txt){
   const st = document.querySelector('.stage'); if (!st) return;
@@ -2399,8 +2692,8 @@ function floatTxt(side, cls, txt){
   st.appendChild(d); setTimeout(()=>d.remove(), 1100);
 }
 function anim(side, cls, ms){
-  const el = document.querySelector('.fighter.'+(side==='l'?'left':'right'));
-  if (!el) return; el.classList.add(cls); setTimeout(()=>el.classList.remove(cls), ms);
+  const el = fighterEl(side);
+  if (!el) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); setTimeout(()=>el.classList.remove(cls), ms);
 }
 function setBars(){
   const st = document.querySelector('.stage'); if (!st) return;
@@ -2418,42 +2711,63 @@ function setBars(){
 async function play(){
   busy = true; document.getElementById('ctrl')?.classList.add('busy');
   for (const e of ev){
-    if (e.t==='banner'){ const b=document.querySelector('.banner'); if(b){b.textContent=e.txt;b.classList.remove('on');void b.offsetWidth;b.classList.add('on');} S.round(); await wait(320); }
+    if (e.t==='banner'){
+      const b=document.querySelector('.banner'); if(b){b.textContent=e.txt;b.classList.remove('on');void b.offsetWidth;b.classList.add('on');}
+      stageMood(e.txt); S.round(); await wait(320);
+    }
     else if (e.t==='moves'){
-      if (e.l==='bite'||e.l==='ability') anim('l','lunge',430); else anim('l', e.l==='guard'?'guard':'taunt', 560);
-      if (e.r==='bite'||e.r==='ability') anim('r','lunge',430); else anim('r', e.r==='guard'?'guard':'taunt', 560);
-      if (e.l==='bite'||e.r==='bite'||e.l==='ability'||e.r==='ability') S.whoosh();
-      if (e.l==='taunt'||e.r==='taunt') S.bark();
-      await wait(260);
+      const sides = [['l', e.l], ['r', e.r]];
+      // an ability is charged up first: a glow and rising sparks
+      if (sides.some(([, m]) => m === 'ability')){
+        for (const [s, m] of sides) if (m === 'ability'){ anim(s, 'charge', 540); fxRise(s, ['#c9a2ff','#ffffff','#8fd0fb'], 14); }
+        S.energy(); await wait(300);
+      }
+      for (const [s, m] of sides){
+        if (m === 'bite' || m === 'ability'){ anim(s, 'lunge', 460); fxDust(s); setTimeout(() => fxStreak(s), 80); }
+        else if (m === 'guard') anim(s, 'guard', 560);
+        else { anim(s, 'taunt', 560); fxWave(s); sayBubble(s, TAUNTS[rint(0, TAUNTS.length-1)]); }
+      }
+      if (sides.some(([, m]) => m === 'bite' || m === 'ability')) S.whoosh();
+      if (sides.some(([, m]) => m === 'taunt')) S.bark();
+      await wait(280);
     }
-    else if (e.t==='shield'){
-      const sh=document.querySelector('.shield.'+(e.who==='l'?'left':'right'));
-      if(sh){sh.classList.remove('on');void sh.offsetWidth;sh.classList.add('on');}
-      S.guardUp();
-      await wait(120);
-    }
+    else if (e.t==='shield'){ fxBubble(e.who); S.guardUp(); await wait(120); }
     else if (e.t==='laser' || e.t==='bolt'){
       const a=anchor(e.from), b=anchor(e.to);
       const laser = e.t==='laser';
       beams.push({x1:a.x,y1:a.y,x2:b.x,y2:b.y,life:16,max:16,
         glow: laser?'rgba(255,60,60,.55)':'rgba(255,225,120,.55)', core: laser?'#fff0f0':'#fffbe6'});
       burst(b.x,b.y,16, laser?['#ff4d4d','#ffb3b3','#fff']:['#ffe066','#fff6c2','#fff'], 7);
+      if (!laser) whiteFlash();
       laser ? S.laser() : S.bolt();
       await wait(260);
     }
-    else if (e.t==='burn'){ const p=anchor(e.who); burst(p.x,p.y+14,10,['#ff8a3d','#ffc14d','#ff5a2b'],4); S.burn(); await wait(140); }
+    else if (e.t==='burn'){
+      fxRise(e.who, ['#ff8a3d','#ffc14d','#ff5a2b','#fff1a8'], 16); fxRing(e.who, 'rgba(255,138,61,.9)', 54);
+      S.burn(); await wait(160);
+    }
     else if (e.t==='hit'){
       anim(e.who,'hurt',320);
       const p = anchor(e.who);
-      const big = e.kind==='big'||e.n>=7;
-      e.kind==='counter' ? S.counter() : S.hit(big);
-      burst(p.x,p.y,big?22:12, e.kind==='counter'?['#bfe86a','#eaffb0','#fff']:['#ffd9d9','#ff6b6b','#fff'], big?8:5.5);
+      const big = e.kind==='big'||e.n>=7, counter = e.kind==='counter';
+      counter ? S.counter() : S.hit(big);
+      if (e.kind === 'bite' || e.kind === 'big') chomp(e.who, big);
+      fxStar(e.who, big, counter);
+      fxRing(e.who, counter ? 'rgba(191,232,106,.95)' : 'rgba(255,255,255,.95)', big ? 92 : 62);
+      burst(p.x,p.y,big?24:12, counter?['#bfe86a','#eaffb0','#fff']:['#ffd9d9','#ff6b6b','#fff'], big?9:5.5);
       floatTxt(e.who,'dmgN','-'+e.n);
-      if (big){ const st=document.querySelector('.stage'); st?.classList.add('shake'); setTimeout(()=>st?.classList.remove('shake'),300); }
+      if (big){ stageFx('shake2', 430); whiteFlash(); crowdCheer(); }
+      else stageFx('shake', 290);
       setBars();
-      await wait(430);
+      await wait(big ? 520 : 430);
     }
     else if (e.t==='float'){
+      const t = String(e.txt);
+      if (t === 'MISS' || t === 'DODGE'){ anim(e.who, 'dodge', 440); fxRing(e.who, 'rgba(255,255,255,.7)', 48); }
+      else if (t === 'BLOCK' || t === 'PARRIED' || t === 'HELD' || /SHIELD/.test(t)){ fxBubble(e.who); fxRing(e.who, 'rgba(143,208,251,.95)', 74); }
+      else if (/HEX|VOID/.test(t)){ fxRing(e.who, 'rgba(185,139,255,.95)', 84); fxRise(e.who, ['#b98bff','#6d3fd0','#fff'], 14); }
+      else if (e.cls === 'healN') fxRise(e.who, ['#7be08a','#c8ffcf','#ffffff'], 16);
+      else if (e.cls === 'enN') fxRise(e.who, ['#ffd95e','#fff1a8'], 7, true);
       floatTxt(e.who,e.cls,e.txt); setBars();
       if (e.cls==='healN') S.heal(); else if (e.cls==='enN') S.energy(); else S.miss();
       await wait(300);
@@ -2462,18 +2776,15 @@ async function play(){
   setBars();
   const lg = document.getElementById('log'); if (lg){ lg.innerHTML = log.join('<br>'); lg.scrollTop = lg.scrollHeight; }
   if (clubMode){
-    if (P.hp<=0) document.querySelector('.fighter.left')?.classList.add('faint');
-    if (E.hp<=0) document.querySelector('.fighter.right')?.classList.add('faint');
+    if (P.hp<=0 || E.hp<=0) koFx(null);
     busy = false; document.getElementById('ctrl')?.classList.remove('busy');
     clubAfterTurn();
     return;
   }
   if (over){
     const v = verdict();
-    if (P.hp<=0) document.querySelector('.fighter.left')?.classList.add('faint');
-    if (E.hp<=0) document.querySelector('.fighter.right')?.classList.add('faint');
-    if (v==='YOU WIN'){ document.querySelector('.fighter.left')?.classList.add('cheer');
-      const p=anchor('l'); S.win(); for(let i=0;i<3;i++){ burst(p.x,p.y-20,18,['#ffd54a','#7be08a','#6fc3ff','#ff8ad1'],9); await wait(160); } }
+    koFx(v === 'YOU WIN' ? 'l' : v === 'YOU LOSE' ? 'r' : null);
+    if (v==='YOU WIN'){ S.win(); await confetti('l'); }
     else S.lose();
     const b=document.querySelector('.banner'); if(b){b.textContent=v;b.classList.remove('on');void b.offsetWidth;b.classList.add('on');}
     const win = v==='YOU WIN';
@@ -2505,18 +2816,47 @@ function hud(f, s){
 function flowers(){
   let s = '';
   const cols = ['#fff','#ff8ad1','#ffd54a','#b79cf0','#ff7b6b'];
-  for (let i=0;i<22;i++) s += `<span class="flower" style="left:${(i*4.6+2)%98}%;bottom:${rint(6,74)}px;background:${cols[i%5]}"></span>`;
+  for (let i=0;i<22;i++) s += `<span class="flower" style="left:${(i*4.6+2)%98}%;bottom:${rint(6,74)}px;background:${cols[i%5]};animation-delay:-${(i*.41%3.2).toFixed(2)}s"></span>`;
   return s;
 }
-function stage(){
-  return `<div class="stage">
-    <span class="sun"></span><span class="cloud c1"></span><span class="cloud c2"></span><span class="cloud c3"></span>
+function tufts(n){
+  let s = '';
+  for (let i=0;i<n;i++) s += `<span class="tuft" style="left:${((i*6.3+rint(0,3))%98).toFixed(1)}%;--s:${(.8+(i*7%5)/10).toFixed(1)};animation-delay:-${(i*.37%2.6).toFixed(2)}s"></span>`;
+  return s;
+}
+function pennants(){
+  const n = 14, cols = ['#ffd54a','#ff6b6b','#6fc3ff','#7be08a','#ff8ad1'];
+  let tri = '';
+  for (let i=0;i<n;i++){
+    const t = (i+.5)/n, x = 400*t, y = 6 + 56*t*(1-t);
+    tri += `<path class="pen" style="animation-delay:-${(i*.23).toFixed(2)}s" d="M${(x-9).toFixed(1)} ${y.toFixed(1)}L${(x+9).toFixed(1)} ${y.toFixed(1)}L${x.toFixed(1)} ${(y+15).toFixed(1)}Z" fill="${cols[i%5]}"/>`;
+  }
+  return `<svg class="pennants" viewBox="0 0 400 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0 6Q200 34 400 6" stroke="#2b1d3a" stroke-width="1.5" fill="none"/>${tri}</svg>`;
+}
+/* Three backdrops: the meadow for ranked fights, a stadium at dusk for the
+   arena tournaments, and a night ring under spotlights for the Fight Club. */
+function stageTheme(){ return clubMode ? 'club' : (arenaRun ? 'arena' : 'meadow'); }
+function scenery(th){
+  if (th === 'club') return `<span class="spot s1"></span><span class="spot s2"></span>
+    <span class="crowd back"></span><span class="crowd front"></span><span class="neon">FIGHT CLUB</span>
+    <span class="ropes"></span><span class="ground"><i class="mat"></i></span>`;
+  if (th === 'arena') return `<span class="flood f1"></span><span class="flood f2"></span>${pennants()}
+    <span class="crowd back"></span><span class="crowd front"></span><span class="fence"></span>
+    <span class="ground"><i class="ring"></i></span>`;
+  return `<span class="rays"></span><span class="sun"></span>
+    <span class="cloud c1"></span><span class="cloud c2"></span><span class="cloud c3"></span>
+    <span class="bird b1"></span><span class="bird b2"></span>
     <span class="hills"></span><span class="fence"></span>
-    <span class="ground">${flowers()}</span>
-    <div class="fighter left"><img src="${P.def.img}" alt=""></div>
-    <div class="fighter right"><img src="${E.def.img}" alt=""></div>
-    <div class="shield left" style="left:0;width:50%">🛡️</div>
-    <div class="shield right" style="right:0;width:50%">🛡️</div>
+    <span class="ground">${flowers()}${tufts(16)}</span>
+    <span class="bfly f1"></span><span class="bfly f2"></span>`;
+}
+function stage(){
+  const th = stageTheme();
+  return `<div class="stage th-${th}">
+    ${scenery(th)}
+    <div class="tint"></div>
+    <div class="fighter left"><i class="shd"></i><img src="${P.def.img}" alt=""></div>
+    <div class="fighter right"><i class="shd"></i><img src="${E.def.img}" alt=""></div>
     <canvas class="fx"></canvas>
     ${hud(P,'l')}${hud(E,'r')}
     <div class="banner"></div>
@@ -2589,7 +2929,7 @@ function renderControls(){
 function shell(){
   app.innerHTML = stage() + `<div id="ctrl"></div>
     <div class="card"><div class="log" id="log">${log.join('<br>')}</div></div>`;
-  fxInit(document.querySelector('canvas.fx'));
+  fxInit(document.querySelector('canvas.fx'), stageTheme());
   const sb = document.getElementById('snd');
   if (sb){ sb.textContent = S.on ? '🔊' : '🔇';
            sb.onclick = () => { sb.textContent = S.toggle() ? '🔊' : '🔇'; }; }

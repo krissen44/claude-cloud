@@ -37,6 +37,14 @@ Last version confirmed live: **game v19** (cloud saves + `/admin`) + **website l
 - **v26 — no tickets into a new week**: unused ranked fights still bank into the next day (max 15), but not across
   the week roll — Monday starts with just the daily grant. Keeps the weekly ladder fair (no hoarding on Sunday).
   Website guide updated ("Banked: up to 15, into the next day — not into a new week").
+- **v27 — fight animations**: three living backdrops — the **meadow** for ranked fights (turning sun, birds,
+  butterflies, swaying grass, drifting petals), a **stadium at dusk** for arena tournaments (floodlights, waving pennants,
+  a bobbing crowd that jumps on big hits, camera flashes) and a **night ring** for the Fight Club (sweeping spotlights,
+  neon sign, ropes, haze). The light shifts as the rounds go on; frenzy rounds glow red. New moves on screen: bites
+  wind up and snap jaws shut on impact with an impact star and shockwave, guards raise a shield bubble, taunts bark
+  ("WOOF!") with sound waves, misses are dodged, abilities charge up with a glow, heals and energy rise as sparkles,
+  big hits flash and shake the stage, a knocked-out dog sees stars while the winner celebrates. Visual only — rules,
+  engine and the server's Fight Club referee are unchanged. Respects "reduce motion" on the device.
 
 ### Planned (Season 2)
 - Fight Club: matchmaking queue, Elo, own ladder.

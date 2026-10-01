@@ -140,6 +140,12 @@ hand over one combined package for the week start; don't tell the owner to uploa
   owner (cap 150/day), queued in `db.lendq`, collected on the owner's next kennel load (`loadLending`). Borrowed dogs
   can fight ranked + arena, not the Club, and don't register for arena defence. Prize share: a prize won with ≥ 50 % of
   the week's XP on one borrowed dog adds a line `L<place>` for the lender in week close (admin decides to send it).
+- **Stage visuals (v27)**: `stage()` picks a backdrop by `stageTheme()` — `meadow` (ranked/casual), `arena` (`arenaRun`),
+  `club` (`clubMode`) — built in `scenery()` (CSS-animated DOM: birds, tufts, pennants SVG, crowd, spotlights, neon).
+  The fx canvas (`fxInit(canvas, theme)`, `loop`, `drawMark`) draws particles, `marks` (ring, star, streak, wave,
+  bubble, flash) and an ambient layer per theme. `play()` maps engine events to effects (`chomp`, `fxBubble`, `fxWave`
+  + `sayBubble`, `anim(..,'dodge'|'charge')`, `stageMood` for dusk/frenzy, `koFx` + `confetti` at the end). Never put
+  visuals inside the `//@engine` sections. `RM` = prefers-reduced-motion → no ambient, no shake.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 
@@ -152,7 +158,7 @@ v12 playtest fixes ("Fight again" re-used the same rival; demo dogs leaked in; r
 v13 exploit fix (always-bite won 77%) → pattern-reading AI + guard snap-back; recap counted abandoned tournaments ·
 v14 one-pack-a-week rule, losses tracked, full pack stats table · v15 `ACCESS_KEY` gate · v16 `/api/public/board` · v17 wallet chooser + Joey extension sign-in · v18 Joey app over WalletConnect (confirmed working live by the owner) ·
 v19 cloud saves + `/admin` · v20 real arena rivals + player names · v21 arena defence XP · v22 "buy this rival" link ·
-v23 server fight engine + Fight Club beta · v24 week close: results hash on the XRPL + treasury prizes · v25 lending.
+v23 server fight engine + Fight Club beta · v24 week close: results hash on the XRPL + treasury prizes · v25 lending · v26 no tickets into a new week · v27 animated backdrops + fight effects.
 
 ### Testing locally
 ```bash
