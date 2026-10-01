@@ -146,6 +146,12 @@ hand over one combined package for the week start; don't tell the owner to uploa
   bubble, flash) and an ambient layer per theme. `play()` maps engine events to effects (`chomp`, `fxBubble`, `fxWave`
   + `sayBubble`, `anim(..,'dodge'|'charge')`, `stageMood` for dusk/frenzy, `koFx` + `confetti` at the end). Never put
   visuals inside the `//@engine` sections. `RM` = prefers-reduced-motion → no ambient, no shake.
+  v28: bites use `lungeTo` (WAAPI, real distance, holds at the rival) + `lungeBack` on impact/miss/round end; jaws =
+  SVG `chomp()`, `biteMarks()`, `comic()`. Abilities: `abStyle(ab)` maps ability id/effect to a style; `abCast` (on the
+  caster at the moves event), `abShot` (replaces the laser/bolt event), `abImpact` (instead of jaws), `wardFx` (shield
+  event). A fighter has at most one active, so `abOf(side)` = `actives[0]`. Effects aim at `dogBox()` (the sprite's
+  current box, so they follow a jumping dog). Mythic/Legendary: `auraInit` (classes `aura-leg`/`aura-myth`, `.lrays`,
+  `.mring`), `introFx` (drop-in, pillar, banner `.leg`/`.myth`, `S.fanfare`, blocks input ~1.3 s), `auraTick` sparkles.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 
@@ -158,7 +164,7 @@ v12 playtest fixes ("Fight again" re-used the same rival; demo dogs leaked in; r
 v13 exploit fix (always-bite won 77%) → pattern-reading AI + guard snap-back; recap counted abandoned tournaments ·
 v14 one-pack-a-week rule, losses tracked, full pack stats table · v15 `ACCESS_KEY` gate · v16 `/api/public/board` · v17 wallet chooser + Joey extension sign-in · v18 Joey app over WalletConnect (confirmed working live by the owner) ·
 v19 cloud saves + `/admin` · v20 real arena rivals + player names · v21 arena defence XP · v22 "buy this rival" link ·
-v23 server fight engine + Fight Club beta · v24 week close: results hash on the XRPL + treasury prizes · v25 lending · v26 no tickets into a new week · v27 animated backdrops + fight effects.
+v23 server fight engine + Fight Club beta · v24 week close: results hash on the XRPL + treasury prizes · v25 lending · v26 no tickets into a new week · v27 animated backdrops + fight effects · v28 bites, signature-move effects, Mythic/Legendary entrances.
 
 ### Testing locally
 ```bash

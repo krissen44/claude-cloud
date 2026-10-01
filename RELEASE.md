@@ -45,6 +45,17 @@ Last version confirmed live: **game v19** (cloud saves + `/admin`) + **website l
   ("WOOF!") with sound waves, misses are dodged, abilities charge up with a glow, heals and energy rise as sparkles,
   big hits flash and shake the stage, a knocked-out dog sees stars while the winner celebrates. Visual only — rules,
   engine and the server's Fight Club referee are unchanged. Respects "reduce motion" on the device.
+- **v28 — bites, signature moves, Mythic/Legendary entrances**: the biting dog now leaps all the way to its rival,
+  stays in its face while the round plays and springs back once the bite lands: cartoon jaws snap shut, a bite imprint
+  and "CHOMP!/SNAP!/CRUNCH!!" pop up (misses: "WHIFF!"). Every ability has its own effect — laser eyes in their colour,
+  lightning from the sky (Lightning), a pillar of light (Genesis), a stampede across the field (Bull Run), a moon on
+  a high arc (To The Moon), a crashing chart (Buy the Dip), a red crash arrow (Bear Market), a tidal wave (The Whale),
+  rainbow beams (Spectrum), a twin that jumps along (Double Team), food popping up for heals (cake, banana, bowl …),
+  green code rain (Matrix), rune circles (Open Brain), a black hole (Event Horizon), a gold alchemy circle
+  (Transmute), shields with emblems (Validate ✓, Oath ✚, Gilded), a diamond crystal (Diamond Hand). **Mythic and
+  Legendary** dogs drop in from the sky with a light pillar, a "★ LEGENDARY ★" / "✦ MYTHIC ✦" banner and a fanfare,
+  and keep an aura for the whole fight (gold rays and sparkles / a violet ring) — in every fight, arena included.
+  Visual only; Fight Club still replays identically on both screens (tested).
 
 ### Planned (Season 2)
 - Fight Club: matchmaking queue, Elo, own ladder.

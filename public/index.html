@@ -206,18 +206,6 @@ canvas.fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 @keyframes shdJump{0%,100%{transform:scaleX(1)}50%{transform:scaleX(.7);opacity:.5}}
 
 /* ---------- hit and move effects ---------- */
-.chomp{position:absolute;width:58px;height:46px;margin:-23px 0 0 -29px;pointer-events:none;
-  filter:drop-shadow(0 0 1px #0e1726) drop-shadow(0 2px 0 rgba(0,0,0,.35));animation:chompOut .5s ease-out forwards}
-.chomp.big{transform:scale(1.35)}
-.chomp::before,.chomp::after{content:"";position:absolute;left:0;right:0;height:21px;
-  background:linear-gradient(#ff7a8a,#ff7a8a) 0 0/100% 5px no-repeat,
-             linear-gradient(to bottom right,#fff 50%,transparent 50%) 0 5px/8px 16px repeat-x,
-             linear-gradient(to bottom left,#fff 50%,transparent 50%) 8px 5px/8px 16px repeat-x}
-.chomp::before{top:0;animation:jawTop .26s ease-in forwards}
-.chomp::after{bottom:0;transform:scaleY(-1);animation:jawBot .26s ease-in forwards}
-@keyframes jawTop{from{transform:translateY(-16px)}to{transform:translateY(4px)}}
-@keyframes jawBot{from{transform:scaleY(-1) translateY(-16px)}to{transform:scaleY(-1) translateY(4px)}}
-@keyframes chompOut{0%,65%{opacity:1}100%{opacity:0}}
 .sayb{position:absolute;padding:6px 8px;background:#fff;color:#0e1726;border:2px solid #0e1726;border-radius:10px;
   font:10px 'Press Start 2P',monospace;white-space:nowrap;pointer-events:none;animation:sayPop .95s ease-out forwards}
 .sayb::after{content:"";position:absolute;left:14px;bottom:-8px;border:6px solid transparent;border-top-color:#0e1726;border-bottom:0}
@@ -241,6 +229,42 @@ canvas.fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
   .stage .pen,.stage .crowd,.stage .flood,.stage .spot,.stage .neon,.fighter img,.fighter .shd,.stage.frenzy::after,.dizzy b{animation:none!important}
   .stage .bird,.stage .bfly{display:none}
 }
+
+/* ---------- bite, signature moves, Mythic/Legendary auras ---------- */
+.chomp{position:absolute;width:96px;height:76px;margin:-38px 0 0 -48px;pointer-events:none;overflow:visible;
+  filter:drop-shadow(0 3px 0 rgba(0,0,0,.3));animation:chompOut .66s ease-out forwards}
+.chomp.big{transform:scale(1.15)}
+.chomp .up{animation:jawUp .26s cubic-bezier(.6,0,.9,.4) forwards}
+.chomp .lo{animation:jawLo .26s cubic-bezier(.6,0,.9,.4) forwards}
+@keyframes jawUp{0%{transform:translateY(-24px) rotate(-5deg)}80%{transform:translateY(3px)}100%{transform:translateY(0)}}
+@keyframes jawLo{0%{transform:translateY(24px) rotate(5deg)}80%{transform:translateY(-3px)}100%{transform:translateY(0)}}
+@keyframes chompOut{0%{opacity:0}8%{opacity:1}40%{transform:scale(1)}48%{transform:translate(2px,-1px) scale(1.04)}56%{transform:translate(-2px,1px)}70%{opacity:1}100%{opacity:0;transform:scale(1.1)}}
+.chomp.big{animation-name:chompOutBig}
+@keyframes chompOutBig{0%{opacity:0;transform:scale(1.15)}8%{opacity:1}48%{transform:translate(3px,-2px) scale(1.2)}56%{transform:translate(-3px,2px) scale(1.15)}70%{opacity:1}100%{opacity:0;transform:scale(1.28)}}
+.bitemark{position:absolute;width:60px;height:40px;margin:-20px 0 0 -30px;pointer-events:none;animation:bmFade 1s ease-out forwards}
+.bitemark.big{transform:scale(1.3)}
+@keyframes bmFade{0%,30%{opacity:0}45%{opacity:.85}75%{opacity:.6}100%{opacity:0}}
+.comic{position:absolute;font:13px 'Press Start 2P',monospace;color:#fff;white-space:nowrap;pointer-events:none;
+  text-shadow:2px 2px 0 #0e1726,-2px 2px 0 #0e1726,2px -2px 0 #0e1726,-2px -2px 0 #0e1726,4px 4px 0 rgba(0,0,0,.3);
+  animation:comicPop .76s ease-out forwards}
+.comic.red{color:#ff5a4d}.comic.gold{color:#ffd54a}.comic.blue{color:#8fd0fb}.comic.big{font-size:17px}
+@keyframes comicPop{0%{opacity:0;transform:scale(.3) rotate(-14deg)}22%{opacity:1;transform:scale(1.25) rotate(-6deg)}38%{transform:scale(1) rotate(-6deg)}80%{opacity:1}100%{opacity:0;transform:translateY(-14px) rotate(-6deg)}}
+.itempop{position:absolute;font-size:36px;line-height:1;pointer-events:none;filter:drop-shadow(0 3px 0 rgba(0,0,0,.3));animation:itemPop 1.05s ease-out forwards}
+@keyframes itemPop{0%{opacity:0;transform:scale(.3) translateY(14px)}25%{opacity:1;transform:scale(1.3)}40%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:translateY(-36px)}}
+.fighter .twin{position:absolute;left:0;bottom:0;opacity:0;filter:drop-shadow(0 0 8px #ffd54a) brightness(1.4);animation:none!important}
+.fighter .lrays{position:absolute;left:50%;top:46%;width:280px;height:280px;margin:-140px 0 0 -140px;border-radius:50%;pointer-events:none;
+  background:repeating-conic-gradient(rgba(255,214,90,.36) 0 7deg,rgba(255,214,90,0) 7deg 22deg);
+  -webkit-mask:radial-gradient(circle,#000 16%,transparent 66%);mask:radial-gradient(circle,#000 16%,transparent 66%);animation:spin 16s linear infinite}
+.fighter .mring{position:absolute;left:50%;bottom:-10px;width:150px;height:32px;margin-left:-75px;border-radius:50%;pointer-events:none;
+  border:3px solid rgba(185,139,255,.85);box-shadow:0 0 18px rgba(185,139,255,.85),inset 0 0 14px rgba(111,195,255,.6);animation:mpulse 1.6s ease-in-out infinite}
+@keyframes mpulse{0%,100%{transform:scale(1);opacity:.75}50%{transform:scale(1.14);opacity:1}}
+.fighter.aura-leg:not(.hurt):not(.faint) img{filter:drop-shadow(0 0 9px rgba(255,200,60,.95)) drop-shadow(0 6px 0 rgba(0,0,0,.14))}
+.fighter.aura-myth:not(.hurt):not(.faint) img{filter:drop-shadow(0 0 9px rgba(185,139,255,.95)) drop-shadow(0 6px 0 rgba(0,0,0,.14))}
+.fighter.faint .lrays,.fighter.faint .mring{display:none}
+.banner.leg{color:#ffd54a;font-size:clamp(14px,3.6vw,22px);text-shadow:0 0 14px #ff9d00,3px 3px 0 #7a4a00}
+.banner.myth{color:#ead8ff;font-size:clamp(14px,3.6vw,22px);text-shadow:0 0 14px #b98bff,3px 3px 0 #3b1d6e}
+@media(max-width:560px){.fighter .lrays{width:210px;height:210px;margin:-105px 0 0 -105px}.fighter .mring{width:112px;margin-left:-56px}}
+@media(prefers-reduced-motion:reduce){.fighter .lrays,.fighter .mring{animation:none!important}}
 
 /* ---------- hud ---------- */
 .hud{position:absolute;top:8px;width:42%;padding:0 8px}
@@ -1111,6 +1135,7 @@ const S = (() => {
     energy(){ tone(880, 1180, .09, 'triangle', .18); },
     miss(){ noise(.12,'bandpass',2200,.16,0,2); },
     round(){ tone(760,760,.06,'square',.16); tone(1010,1010,.08,'square',.16,.08); },
+    fanfare(leg){ (leg ? [523,659,784,1047,1319] : [440,554,659,880]).forEach((f,i)=>tone(f,f,.16,'square',.2,i*.09)); tone(leg?1568:1109, leg?1568:1109, .4, 'triangle', .18, leg ? .5 : .4); },
     win(){ [523,659,784,1047].forEach((f,i)=>tone(f,f,.2,'square',.24,i*.11)); },
     lose(){ [392,330,262].forEach((f,i)=>tone(f,f,.24,'triangle',.22,i*.14)); }
   };
@@ -2496,6 +2521,7 @@ let cv, ctx, parts = [], beams = [], marks = [], amb = [], raf = 0, fxTheme = 'm
 function fxInit(c, theme){
   cv = c; ctx = c.getContext('2d'); fxTheme = theme || 'meadow';
   parts = []; beams = []; marks = [];
+  for (const k in LUNGE) delete LUNGE[k];          // a new stage: nobody is mid-jump
   const r = () => { if (!cv) return; const b = cv.getBoundingClientRect(), d = Math.min(2, devicePixelRatio||1);
     cv.width = b.width*d; cv.height = b.height*d; ctx.setTransform(d,0,0,d,0,0); };
   r();
@@ -2537,13 +2563,14 @@ function loop(){
     b.life--;
     ctx.globalAlpha = Math.max(0, b.life/b.max);
     ctx.lineCap = 'round';
-    ctx.strokeStyle = b.glow; ctx.lineWidth = 11;
+    ctx.strokeStyle = b.glow; ctx.lineWidth = b.w || 11;
     ctx.beginPath(); ctx.moveTo(b.x1,b.y1); ctx.lineTo(b.x2,b.y2); ctx.stroke();
-    ctx.strokeStyle = b.core; ctx.lineWidth = 4;
+    ctx.strokeStyle = b.core; ctx.lineWidth = b.w ? Math.max(2, b.w*.35) : 4;
     ctx.beginPath(); ctx.moveTo(b.x1,b.y1); ctx.lineTo(b.x2,b.y2); ctx.stroke();
     ctx.globalAlpha = 1;
   }
   beams = beams.filter(b => b.life > 0);
+  auraTick();
   for (const m of marks){ m.life--; drawMark(m); }
   marks = marks.filter(m => m.life > 0);
   ctx.globalAlpha = 1;
@@ -2590,14 +2617,104 @@ function drawMark(m){
       const r = 18 + i*14 + 46*k; ctx.lineWidth = 3.5 - i;
       ctx.beginPath(); ctx.arc(m.x, m.y, r, a0 - .55, a0 + .55); ctx.stroke();
     }
+  } else if (m.k === 'zap'){
+    // a fresh jagged bolt every frame, from the sky (or y0) down to the target
+    const seg = 9, y0 = m.y0 || 0;
+    const pts = [[m.x + (Math.random()-.5)*40, y0]];
+    for (let i=1;i<seg;i++) pts.push([m.x + (Math.random()-.5)*46, y0 + (m.y - y0)*i/seg]);
+    pts.push([m.x, m.y]);
+    for (const [w, c] of [[11, m.c], [3.5, '#ffffff']]){
+      ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineJoin = 'round'; ctx.globalAlpha = w > 5 ? .55*t + .2 : 1;
+      ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke();
+    }
+  } else if (m.k === 'pillar'){
+    const w = 30 + 70*t, g = ctx.createLinearGradient(m.x - w/2, 0, m.x + w/2, 0);
+    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.5, m.c); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(m.x - w/2, 0, w, m.y + 70);
+    ctx.globalAlpha = t; ctx.fillStyle = '#ffffff'; ctx.fillRect(m.x - w*.12, 0, w*.24, m.y + 70);
+  } else if (m.k === 'moon'){
+    // a little moon on a high arc, with a sparkling tail
+    const q = k, x = m.x1 + (m.x2 - m.x1)*q, y = m.y1 + (m.y2 - m.y1)*q - Math.sin(q*Math.PI)*120;
+    parts.push({x, y, vx:(Math.random()-.5), vy:0, g:.05, s:3, c:['#fff3b0','#ffd54a','#ffffff'][rint(0,2)], life:18, max:18});
+    ctx.globalAlpha = 1; ctx.fillStyle = '#fff6c9'; ctx.shadowColor = '#ffe27a'; ctx.shadowBlur = 18;
+    ctx.beginPath(); ctx.arc(x, y, 14, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(200,180,110,.7)'; ctx.beginPath(); ctx.arc(x - 4, y - 3, 3.5, 0, 7); ctx.arc(x + 5, y + 4, 2.5, 0, 7); ctx.fill();
+  } else if (m.k === 'dip'){
+    // a stock chart diving into the target, then a green bounce
+    const n = 7, upto = Math.max(1, Math.round(n * Math.min(1, k*1.6)));
+    ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.globalAlpha = Math.min(1, t*2);
+    ctx.beginPath();
+    for (let i=0;i<=upto;i++){ const q = i/n, x = m.x1 + (m.x2 - m.x1)*q, y = m.y1 + (m.y2 - m.y1)*q*q + (i % 2 ? -14 : 10);
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.stroke();
+    if (k > .6){ ctx.strokeStyle = '#5dff7a'; ctx.beginPath(); ctx.moveTo(m.x2, m.y2); ctx.lineTo(m.x2 + (m.x1 > m.x2 ? 30 : -30), m.y2 - 60*(k - .6)/.4); ctx.stroke(); }
+  } else if (m.k === 'crash'){
+    // a red arrow slamming down
+    const y = -60 + (m.y + 10) * Math.min(1, k*1.8);
+    ctx.globalAlpha = 1; ctx.fillStyle = '#ff3b3b'; ctx.strokeStyle = '#3a0a0a'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(m.x - 12, y - 70); ctx.lineTo(m.x + 12, y - 70); ctx.lineTo(m.x + 12, y - 20); ctx.lineTo(m.x + 30, y - 20);
+    ctx.lineTo(m.x, y + 14); ctx.lineTo(m.x - 30, y - 20); ctx.lineTo(m.x - 12, y - 20); ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else if (m.k === 'splash'){
+    // a wave rolling from the whale to the target
+    const q = Math.min(1, k*1.4), x = m.x1 + (m.x2 - m.x1)*q, dir = m.x2 > m.x1 ? 1 : -1;
+    ctx.fillStyle = 'rgba(79,179,245,.75)'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x - dir*90, m.y1);
+    ctx.quadraticCurveTo(x - dir*30, m.y1 - 90, x + dir*10, m.y1 - 60); ctx.quadraticCurveTo(x - dir*10, m.y1 - 40, x + dir*20, m.y1);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else if (m.k === 'circle'){
+    // alchemy: a rotating gold circle with a hexagram, flat on the ground
+    ctx.translate(m.x, m.y); ctx.scale(1, .32); ctx.rotate(k*4);
+    ctx.strokeStyle = m.c; ctx.lineWidth = 3; ctx.shadowColor = m.c; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.arc(0, 0, 80, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 0, 64, 0, 7); ctx.stroke();
+    for (const o of [0, Math.PI]){ ctx.beginPath(); for (let i=0;i<3;i++){ const a = o + i*2*Math.PI/3 - Math.PI/2; ctx.lineTo(Math.cos(a)*64, Math.sin(a)*64); } ctx.closePath(); ctx.stroke(); }
+  } else if (m.k === 'matrix'){
+    // green code rain over the target while its energy is pulled away
+    const p = anchor(m.side), el = fighterEl(m.side), w = el ? el.getBoundingClientRect().width*.8 : 150;
+    ctx.font = 'bold 13px monospace'; ctx.fillStyle = m.c; ctx.shadowColor = m.c; ctx.shadowBlur = 6;
+    m.cols.forEach((o, i) => { const x = p.x - w/2 + i*w/(m.cols.length - 1);
+      for (let j=0;j<6;j++){ const y = p.y - 90 + ((o + k*260 + j*16) % 190); ctx.globalAlpha = t * (1 - j/7);
+        ctx.fillText(Math.random() < .5 ? '1' : '0', x, y); } });
+  } else if (m.k === 'runes'){
+    const p = anchor(m.side);
+    ctx.translate(p.x, p.y); ctx.rotate(k*5); ctx.strokeStyle = m.c; ctx.lineWidth = 3; ctx.shadowColor = m.c; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(0, 0, 66, 0, 7); ctx.stroke();
+    for (let i=0;i<6;i++){ const a = i*Math.PI/3; ctx.save(); ctx.translate(Math.cos(a)*66, Math.sin(a)*66); ctx.rotate(a);
+      ctx.beginPath(); ctx.moveTo(-7, 6); ctx.lineTo(0, -8); ctx.lineTo(7, 6); ctx.moveTo(-5, 0); ctx.lineTo(5, 0); ctx.stroke(); ctx.restore(); }
+  } else if (m.k === 'void'){
+    // a black hole that swallows the light around the target
+    const p = anchor(m.side), r = 26 + 34*Math.min(1, k*2.5) * (t < .2 ? t*5 : 1);
+    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r*1.8);
+    g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(.5, 'rgba(20,0,40,.9)'); g.addColorStop(1, 'rgba(60,20,120,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, r*1.8, 0, 7); ctx.fill();
+    ctx.strokeStyle = m.c; ctx.lineWidth = 3; ctx.shadowColor = m.c; ctx.shadowBlur = 14;
+    for (let i=0;i<3;i++){ ctx.beginPath(); ctx.arc(p.x, p.y, r + i*9, k*9 + i*2, k*9 + i*2 + 2.2); ctx.stroke(); }
+    if (Math.random() < .6){ const a = Math.random()*7, d = r*2.4;
+      parts.push({x: p.x + Math.cos(a)*d, y: p.y + Math.sin(a)*d, vx: -Math.cos(a)*d/14, vy: -Math.sin(a)*d/14, g:0, s:3, c:'#d9c2ff', life:13, max:13}); }
+  } else if (m.k === 'diamond'){
+    // Diamond Hand: the dog is set in crystal
+    const p = anchor(m.side), el = fighterEl(m.side), w = el ? el.getBoundingClientRect().width*.5 : 95;
+    const s = m.life > m.max - 6 ? (m.max - m.life)/6 : 1;
+    ctx.translate(p.x, p.y + 10); ctx.scale(s, s);
+    ctx.fillStyle = 'rgba(191,243,255,.22)'; ctx.strokeStyle = m.c; ctx.lineWidth = 3; ctx.shadowColor = '#8fe8ff'; ctx.shadowBlur = 16;
+    ctx.beginPath(); ctx.moveTo(0, -w*1.15); ctx.lineTo(w, -w*.3); ctx.lineTo(w*.7, w*.9); ctx.lineTo(-w*.7, w*.9); ctx.lineTo(-w, -w*.3); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-w, -w*.3); ctx.lineTo(w, -w*.3); ctx.moveTo(0, -w*1.15); ctx.lineTo(-w*.35, -w*.3); ctx.lineTo(0, w*.9); ctx.lineTo(w*.35, -w*.3); ctx.lineTo(0, -w*1.15); ctx.stroke();
   } else if (m.k === 'bubble'){
     const p = anchor(m.side), el = fighterEl(m.side), base = el ? el.getBoundingClientRect().width * .44 : 70;
     const r = base * (m.life > m.max - 5 ? .7 + .3*(m.max - m.life)/5 : 1) * (1 + .04*Math.sin(m.life*.5));
     ctx.globalAlpha = Math.min(1, t*2.2);
     const g = ctx.createRadialGradient(p.x, p.y, r*.55, p.x, p.y, r);
-    g.addColorStop(0, 'rgba(143,208,251,0)'); g.addColorStop(1, 'rgba(143,208,251,.35)');
+    const col = m.col || '#8fd0fb';
+    g.addColorStop(0, col + '00'); g.addColorStop(1, col + '5a');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fill();
-    ctx.strokeStyle = 'rgba(190,232,255,.95)'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = m.col || 'rgba(190,232,255,.95)'; ctx.lineWidth = m.col ? 4 : 3; ctx.stroke();
+    if (m.mark){
+      ctx.save(); ctx.translate(p.x, p.y - r*.62); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.shadowColor = col; ctx.shadowBlur = 10; ctx.beginPath();
+      if (m.mark === 'check'){ ctx.moveTo(-9, 0); ctx.lineTo(-2, 7); ctx.lineTo(10, -8); ctx.stroke(); }
+      else if (m.mark === 'cross'){ ctx.moveTo(0, -10); ctx.lineTo(0, 10); ctx.moveTo(-8, -3); ctx.lineTo(8, -3); ctx.stroke(); }
+      else { ctx.arc(0, 0, 8, 0, 7); ctx.fill(); }
+      ctx.restore();
+    }
     ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(p.x, p.y, r*.78, Math.PI*1.1, Math.PI*1.45); ctx.stroke();
   }
@@ -2608,18 +2725,15 @@ function burst(x, y, n, cols, spd){
     s:rint(3,5),c:cols[rint(0,cols.length-1)],life:rint(24,42),max:42});
 }
 const fighterEl = side => document.querySelector('.fighter.'+(side==='l'?'left':'right'));
-function anchor(side){
+// where the dog is right now: the sprite's box, so effects follow it mid-jump
+function dogBox(side){
   const st = document.querySelector('.stage'), el = fighterEl(side);
-  if (!st || !el) return {x:0,y:0};
-  const a = st.getBoundingClientRect(), b = el.getBoundingClientRect();
-  return {x: b.left-a.left + b.width/2, y: b.top-a.top + b.height*0.42};
+  if (!st || !el) return null;
+  const a = st.getBoundingClientRect(), d = el.getBoundingClientRect(), i = el.querySelector('img'), b = i ? i.getBoundingClientRect() : d;
+  return {x: b.left - a.left + b.width/2, top: d.top - a.top + (b.top - d.top), bottom: d.bottom - a.top + (b.bottom - d.bottom) - 14 * (b.height/192), h: d.height};
 }
-function feet(side){
-  const st = document.querySelector('.stage'), el = fighterEl(side);
-  if (!st || !el) return {x:0,y:0};
-  const a = st.getBoundingClientRect(), b = el.getBoundingClientRect();
-  return {x: b.left-a.left + b.width/2, y: b.bottom-a.top - 4};
-}
+function anchor(side){ const b = dogBox(side); return b ? {x: b.x, y: b.top + b.h*0.42} : {x:0, y:0}; }
+function feet(side){ const b = dogBox(side); return b ? {x: b.x, y: b.bottom - 4} : {x:0, y:0}; }
 // where an attack lands: between the target's centre and the attacker
 function hitPoint(side){ const p = anchor(side); return {x: p.x + (side === 'l' ? 26 : -26), y: p.y - 6}; }
 function fxStreak(side){ const p = anchor(side); marks.push({k:'streak', x:p.x, y:p.y, dir: side==='l' ? 1 : -1, life:12, max:12}); }
@@ -2648,7 +2762,19 @@ function domFx(html, x, y, ms){
   if (x != null){ d.style.left = x + 'px'; d.style.top = y + 'px'; }
   setTimeout(() => d.remove(), ms); return d;
 }
-function chomp(side, big){ const p = hitPoint(side); domFx(`<div class="chomp${big ? ' big' : ''}"></div>`, p.x, p.y, 520); }
+/* jaws: a gum arc with interlocking fangs, top and bottom snapping shut */
+const JAW = (() => {
+  let t = '';
+  for (let x = 8; x < 88; x += 13) t += `M${x} 22L${x+6.5} ${x % 2 ? 40 : 37}L${x+13} 22Z`;
+  return `<path d="M2 24Q48 -2 94 24L94 28Q48 8 2 28Z" fill="#e2475b" stroke="#0e1726" stroke-width="2.5" stroke-linejoin="round"/>` +
+         `<path d="${t}" fill="#ffffff" stroke="#0e1726" stroke-width="2" stroke-linejoin="round"/>`;
+})();
+function chomp(side, big){
+  const p = hitPoint(side), flip = side === 'l' ? ' transform="translate(96 0) scale(-1 1)"' : '';
+  domFx(`<svg class="chomp${big ? ' big' : ''}" viewBox="0 0 96 76" aria-hidden="true"><g${flip}>` +
+    `<g class="up"><g transform="translate(0 -2)">${JAW}</g></g>` +
+    `<g class="lo"><g transform="translate(0 78) scale(1 -1)">${JAW}</g></g></g></svg>`, p.x, p.y, 700);
+}
 function whiteFlash(){ if (!RM) domFx('<div class="wflash"></div>', null, null, 260); }
 const TAUNTS = ['WOOF!', 'GRRR!', 'ARF!', 'YAP!', 'BORK!'];
 function sayBubble(side, txt){
@@ -2691,6 +2817,201 @@ function floatTxt(side, cls, txt){
   d.style.left = (p.x-24)+'px'; d.style.top = (p.y-30)+'px';
   st.appendChild(d); setTimeout(()=>d.remove(), 1100);
 }
+/* ---- signature moves: every ability gets its own look ----
+   A fighter carries at most one active ability, so the one it just used is
+   f.actives[0]. Styles are keyed by ability id / effect; the engine is not
+   touched — play() only reads the events it already emits. */
+const HEAL_ICON = {'muzzle-joint':'🌿', 'ground-item-cake':'🍰', 'ground-item-banana':'🍌', 'ground-item-food-bowl':'🥣', 'headwear-chef-hat':'🍳', 'rekindle':'🔥'};
+function abStyle(ab){
+  const id = (ab && ab.id) || '', e = ab && ab.effect;
+  if (/laser-green/.test(id))  return {k:'laser', c:'#7dff8e', glow:'rgba(80,255,120,.55)'};
+  if (/laser-yellow/.test(id)) return {k:'laser', c:'#fff27a', glow:'rgba(255,225,70,.6)'};
+  if (/laser/.test(id))        return {k:'laser', c:'#ff6b6b', glow:'rgba(255,50,50,.6)'};
+  if (/lightning/.test(id))    return {k:'zap', c:'#8fd0fb'};
+  if (id === 'first-light')    return {k:'pillar', c:'#ffe9a0'};
+  if (id === 'charge')         return {k:'charge', c:'#ff8a3d'};
+  if (id === 'moonshot')       return {k:'moon', c:'#fff3b0'};
+  if (e === 'dip')             return {k:'dip', c:'#ff5a4d'};
+  if (e === 'crash')           return {k:'crash', c:'#ff3b3b'};
+  if (e === 'splash')          return {k:'splash', c:'#4fb3f5'};
+  if (e === 'rays')            return {k:'prism', c:'#ffffff'};
+  if (e === 'double')          return {k:'double', c:'#ffd54a'};
+  if (e === 'heal')            return {k:'heal', c:'#7be08a', icon: HEAL_ICON[id] || '💚'};
+  if (e === 'drain')           return {k:'matrix', c:'#3dff6e'};
+  if (e === 'hex')             return {k:'runes', c:'#b98bff'};
+  if (e === 'horizon')         return {k:'void', c:'#9d6bff'};
+  if (e === 'transmute')       return {k:'alchemy', c:'#ffd54a'};
+  if (e === 'hold')            return {k:'diamond', c:'#bff3ff'};
+  if (e === 'shield')          return {k:'ward', c: id === 'gilded' ? '#ffd54a' : id === 'oath' ? '#f4f4ff' : '#6fc3ff', mark: id === 'validate' ? 'check' : id === 'oath' ? 'cross' : 'coin'};
+  if (e === 'energize')        return {k:'energy', c:'#ffd95e'};
+  return {k:'generic', c:'#c9a2ff'};
+}
+const abOf = side => { const f = side === 'l' ? P : E; return f && f.actives && f.actives[0]; };
+function eyes(side){ const p = anchor(side), el = fighterEl(side), w = el ? el.getBoundingClientRect().width : 190;
+  return {x: p.x + (side === 'l' ? 1 : -1) * w * .2, y: p.y - w * .12}; }
+
+/* The dog really jumps at its rival: out to the rival on the moves, it stays
+   in its face while the round plays, and only springs back once its bite has
+   landed (or missed). Web Animations, with the real distance on screen. */
+const LUNGE = {};
+function lungeDist(side, both){
+  const el = fighterEl(side), o = fighterEl(side === 'l' ? 'r' : 'l'); if (!el || !o) return 0;
+  const a = el.getBoundingClientRect(), b = o.getBoundingClientRect();
+  const gap = Math.abs((b.left + b.width/2) - (a.left + a.width/2)) - a.width * .52;
+  return Math.max(30, both ? gap / 2 + a.width * .08 : gap);
+}
+function lungeTo(side, reach, ms, both){
+  const el = fighterEl(side), img = el && el.querySelector('img');
+  if (!img || RM || !img.animate) return anim(side, 'lunge', 460);
+  const d = reach ? lungeDist(side) * reach : lungeDist(side, both), f = side === 'r' ? 'scaleX(-1) ' : '';
+  lungeBack(side, true);
+  LUNGE[side] = {d, a: img.animate([
+    {transform: f + 'translate(0,0)'},
+    {transform: f + 'translate(-16px,4px) scale(.9,1.1)', offset: .25},
+    {transform: f + `translate(${d*.55}px,-34px) rotate(-8deg) scale(1.04,.96)`, offset: .6},
+    {transform: f + `translate(${d}px,0) rotate(3deg) scale(1.08,.92)`, offset: .85},
+    {transform: f + `translate(${d}px,0) rotate(0deg)`}
+  ], {duration: ms || 380, easing: 'ease-out', fill: 'forwards'})};
+}
+function lungeBack(side, now){
+  const L = LUNGE[side]; if (!L) return; delete LUNGE[side];
+  const img = fighterEl(side)?.querySelector('img'), f = side === 'r' ? 'scaleX(-1) ' : '';
+  if (now || !img){ L.a.cancel(); return; }
+  const back = img.animate([{transform: f + `translate(${L.d}px,0)`}, {transform: f + `translate(${L.d*.5}px,-16px) rotate(4deg)`, offset: .45},
+    {transform: f + 'translate(0,0)'}], {duration: 300, easing: 'ease-in-out'});
+  L.a.cancel();
+  return back;
+}
+/* Double Team: a see-through twin jumps a beat later */
+function ghostTwin(side){
+  const el = fighterEl(side), img = el && el.querySelector('img'); if (!img || RM) return;
+  const g = img.cloneNode(); g.className = 'twin'; el.appendChild(g);
+  setTimeout(() => { const f = side === 'r' ? 'scaleX(-1) ' : '';
+    const o = fighterEl(side === 'l' ? 'r' : 'l'), a = el.getBoundingClientRect(), b = o.getBoundingClientRect();
+    const d = Math.abs((b.left + b.width/2) - (a.left + a.width/2)) * .5;
+    g.animate([{transform: f + 'translate(0,0)', opacity: .55}, {transform: f + `translate(${d}px,-40px)`, opacity: .7, offset: .45},
+      {transform: f + `translate(${d}px,0)`, opacity: .5, offset: .6}, {transform: f + 'translate(0,0)', opacity: 0}], {duration: 640, easing: 'ease-out'});
+  }, 140);
+  setTimeout(() => g.remove(), 900);
+}
+function itemPop(side, icon){ const p = anchor(side), el = fighterEl(side), w = el ? el.getBoundingClientRect().width : 190;
+  domFx(`<div class="itempop">${icon}</div>`, p.x - 18, p.y - w*.55, 1050); }
+function comic(side, txt, cls){ const p = hitPoint(side); domFx(`<div class="comic ${cls || ''}">${esc(txt)}</div>`, p.x + (side === 'l' ? -40 : -20), p.y - 64, 760); }
+function biteMarks(side, big){
+  const p = hitPoint(side); let d = '';
+  for (let i = 0; i < 5; i++){ const a = Math.PI*(.15 + i*.175), x = 30 - Math.cos(a)*24;
+    d += `<ellipse cx="${x.toFixed(1)}" cy="${(14 - Math.sin(a)*8).toFixed(1)}" rx="2.6" ry="3.6"/><ellipse cx="${x.toFixed(1)}" cy="${(26 + Math.sin(a)*8).toFixed(1)}" rx="2.6" ry="3.6"/>`; }
+  domFx(`<svg class="bitemark${big ? ' big' : ''}" viewBox="0 0 60 40" aria-hidden="true"><g fill="#8a0f22" stroke="#ffffff" stroke-width="1">${d}</g></svg>`, p.x, p.y + 4, 1000);
+}
+
+/* cast: the part that plays on the caster as the round's moves are shown */
+function abCast(side, st){
+  const p = anchor(side), f = feet(side), o = side === 'l' ? 'r' : 'l';
+  anim(side, 'charge', 560);
+  fxRise(side, [st.c, '#ffffff'], 12);
+  if (st.k === 'heal'){ itemPop(side, st.icon); marks.push({k:'ring', x:p.x, y:p.y, r0:20, r1:90, c:'rgba(123,224,138,.9)', life:20, max:20}); }
+  else if (st.k === 'ward' || st.k === 'diamond'){ /* drawn on the shield event */ }
+  else if (st.k === 'alchemy') marks.push({k:'circle', x:f.x, y:f.y, c:st.c, life:46, max:46});
+  else if (st.k === 'energy'){ for (let i=0;i<3;i++) setTimeout(() => marks.push({k:'zap', x:p.x + (Math.random()-.5)*80, y0:p.y-70, y:p.y+30, c:st.c, life:6, max:6}), i*90); }
+  else if (st.k === 'matrix') marks.push({k:'matrix', side:o, c:st.c, life:44, max:44, cols: Array.from({length:9}, () => Math.random()*40)});
+  else if (st.k === 'runes'){ marks.push({k:'runes', side:o, c:st.c, life:44, max:44}); }
+  else if (st.k === 'void'){ marks.push({k:'void', side:o, c:st.c, life:52, max:52}); }
+  else if (st.k === 'charge'){ fxDust(side, 18); }
+  else if (st.k === 'double') ghostTwin(side);
+  else if (st.k === 'laser'){ const e = eyes(side); marks.push({k:'ring', x:e.x, y:e.y, r0:2, r1:22, c:st.c, life:12, max:12}); }
+}
+/* shot: replaces the plain beam/bolt event for an ability */
+function abShot(from, to, st){
+  const a = eyes(from), b = hitPoint(to), tp = anchor(to);
+  if (st.k === 'laser'){
+    beams.push({x1:a.x, y1:a.y, x2:b.x, y2:b.y, life:20, max:20, glow:st.glow, core:'#ffffff', w:16});
+    beams.push({x1:a.x, y1:a.y+4, x2:b.x, y2:b.y+4, life:20, max:20, glow:'rgba(0,0,0,0)', core:st.c, w:7});
+    burst(b.x, b.y, 18, [st.c, '#ffffff'], 7); S.laser(); return;
+  }
+  if (st.k === 'zap'){ for (let i=0;i<3;i++) setTimeout(() => marks.push({k:'zap', x:tp.x + (Math.random()-.5)*30, y0:0, y:tp.y, c:st.c, life:7, max:7}), i*70);
+    whiteFlash(); S.bolt(); return; }
+  if (st.k === 'pillar'){ marks.push({k:'pillar', x:tp.x, y:tp.y, c:st.c, life:24, max:24}); whiteFlash(); S.bolt(); return; }
+  if (st.k === 'moon'){ marks.push({k:'moon', x1:a.x, y1:a.y, x2:b.x, y2:b.y, life:16, max:16}); S.whoosh(); return; }
+  if (st.k === 'charge'){ lungeTo(from, 1, 300); for (let i=0;i<4;i++) setTimeout(() => { fxDust(from, 6); fxStreak(from); }, i*70); S.whoosh(); return; }
+  if (st.k === 'dip'){ marks.push({k:'dip', x1:a.x, y1:a.y - 30, x2:b.x, y2:b.y, life:22, max:22}); S.bolt(); return; }
+  if (st.k === 'crash'){ marks.push({k:'crash', x:tp.x, y:tp.y, life:16, max:16}); stageFx('shake2', 430); S.bolt(); return; }
+  if (st.k === 'splash'){ marks.push({k:'splash', x1:a.x, y1:feet(from).y, x2:b.x, y2:b.y, life:20, max:20});
+    for (let i=0;i<26;i++) parts.push({x:b.x, y:b.y, vx:(Math.random()-.5)*9, vy:-Math.random()*8, s:rint(3,6), c:['#4fb3f5','#bfe6ff','#ffffff'][rint(0,2)], life:rint(26,40), max:40});
+    S.whoosh(); return; }
+  if (st.k === 'prism'){ ['#ff4d4d','#ffb02e','#ffe066','#5dff7a','#4fb3f5','#b98bff'].forEach((c, i) =>
+      beams.push({x1:a.x, y1:a.y, x2:b.x, y2:b.y - 30 + i*12, life:18 + i, max:24, glow:c + '66', core:c, w:6}));
+    S.laser(); return; }
+  // anything else: a beam in its colour
+  beams.push({x1:a.x, y1:a.y, x2:b.x, y2:b.y, life:16, max:16, glow:st.c + '88', core:'#ffffff', w:11});
+  burst(b.x, b.y, 14, [st.c, '#ffffff'], 7); S.bolt();
+}
+/* impact: what a hit from an ability looks like (instead of jaws) */
+function abImpact(side, st, big){
+  const p = hitPoint(side);
+  marks.push({k:'ring', x:p.x, y:p.y, r0:10, r1: big ? 110 : 80, c: st.c, life:18, max:18});
+  marks.push({k:'star', x:p.x, y:p.y, R:44, rot:Math.random(), life:12, max:12, fill:'#ffffff', edge: st.c});
+  if (st.k === 'moon'){ burst(p.x, p.y, 22, ['#fff3b0','#ffd54a','#ffffff'], 9); comic(side, 'MOON!', 'gold'); }
+  else if (st.k === 'charge'){ comic(side, 'STAMPEDE!', 'red'); stageFx('shake2', 430); }
+  else if (st.k === 'crash'){ comic(side, 'CRASH!', 'red'); }
+  else if (st.k === 'dip'){ comic(side, 'DIP!', 'red'); }
+  else if (st.k === 'pillar'){ comic(side, 'GENESIS!', 'gold'); }
+  else if (st.k === 'splash'){ comic(side, 'SPLASH!', 'blue'); }
+  else if (st.k === 'zap'){ comic(side, 'ZAP!', 'blue'); }
+  else if (st.k === 'laser'){ fxRise(side, ['#555','#888','#ffb02e'], 8); }
+}
+/* the shield event, dressed for Validate, Oath, Gilded and Diamond Hand */
+function wardFx(side, st){
+  if (st.k === 'diamond'){ marks.push({k:'diamond', side, c:st.c, life:46, max:46}); comic(side, 'HODL!', 'blue'); S.guardUp(); return; }
+  marks = marks.filter(m => !(m.k === 'bubble' && m.side === side));
+  marks.push({k:'bubble', side, life:46, max:46, col: st.c, mark: st.mark});
+  S.guardUp();
+}
+
+/* ---- Mythic and Legendary: an entrance and an aura for the whole fight ---- */
+let AURA = {l: null, r: null};
+const tierOf = f => f && f.def ? (f.def.legendary || f.def.rarity === 'Legendary' ? 'leg' : f.def.rarity === 'Mythic' ? 'myth' : null) : null;
+function auraInit(){
+  AURA = {l: tierOf(P), r: tierOf(E)};
+  for (const s of ['l', 'r']){
+    const el = fighterEl(s); if (!el || !AURA[s]) continue;
+    el.classList.add(AURA[s] === 'leg' ? 'aura-leg' : 'aura-myth');
+    el.insertAdjacentHTML('afterbegin', AURA[s] === 'leg' ? '<i class="lrays"></i>' : '<i class="mring"></i>');
+  }
+}
+async function introFx(){
+  const who = ['l', 'r'].filter(s => AURA[s]); if (!who.length) return;
+  busy = true; document.getElementById('ctrl')?.classList.add('busy');
+  try {
+    for (const s of who){
+      const el = fighterEl(s), img = el && el.querySelector('img'), leg = AURA[s] === 'leg', f = s === 'r' ? 'scaleX(-1) ' : '';
+      const p = anchor(s);
+      if (!RM && img && img.animate) img.animate([{transform: f + 'translateY(-280px)', opacity: 0}, {transform: f + 'translateY(-280px)', opacity: 1, offset: .05},
+        {transform: f + 'translateY(0) scale(1.08,.9)', offset: .6}, {transform: f + 'translateY(-14px)', offset: .78}, {transform: f + 'translateY(0)'}], {duration: 760, easing: 'ease-in'});
+      marks.push({k:'pillar', x:p.x, y:p.y, c: leg ? '#ffe9a0' : '#d9c2ff', life:34, max:34});
+      const b = document.querySelector('.banner');
+      if (b){ b.textContent = leg ? '★ LEGENDARY ★' : '✦ MYTHIC ✦'; b.className = 'banner ' + (leg ? 'leg' : 'myth'); void b.offsetWidth; b.classList.add('on'); }
+      S.fanfare(leg);
+      await wait(460);
+      fxDust(s, 20); stageFx('shake2', 430); crowdCheer();
+      marks.push({k:'ring', x:p.x, y:feet(s).y - 10, r0:20, r1:160, c: leg ? 'rgba(255,214,90,.95)' : 'rgba(185,139,255,.95)', life:22, max:22});
+      fxRise(s, leg ? ['#ffd54a','#fff6c2','#ffffff'] : ['#b98bff','#6fc3ff','#ffffff'], 30, true);
+      await wait(820);
+      if (b) b.className = 'banner';
+    }
+  } finally { busy = false; document.getElementById('ctrl')?.classList.remove('busy'); }
+}
+/* the aura keeps glittering while it fights */
+function auraTick(){
+  if (RM) return;
+  for (const s of ['l', 'r']){
+    if (!AURA[s] || Math.random() > .22) continue;
+    const el = fighterEl(s); if (!el || el.classList.contains('faint')) continue;
+    const f = feet(s), w = el.getBoundingClientRect().width * .55, leg = AURA[s] === 'leg';
+    parts.push({x: f.x + (Math.random()-.5)*w, y: f.y - Math.random()*w*.9, vx:(Math.random()-.5)*.3, vy:-.5-Math.random()*.8, g:-.004,
+      s: rint(2,4), dia: Math.random() < .5, c: leg ? ['#ffd54a','#fff6c2','#ffffff'][rint(0,2)] : ['#b98bff','#6fc3ff','#ffffff'][rint(0,2)], life: rint(30,50), max: 50});
+  }
+}
+
 function anim(side, cls, ms){
   const el = fighterEl(side);
   if (!el) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); setTimeout(()=>el.classList.remove(cls), ms);
@@ -2710,37 +3031,53 @@ function setBars(){
 
 async function play(){
   busy = true; document.getElementById('ctrl')?.classList.add('busy');
+  // what each side did this round, and which signature move it used
+  const MV = {l: null, r: null}, AB = {l: null, r: null};
   for (const e of ev){
     if (e.t==='banner'){
-      const b=document.querySelector('.banner'); if(b){b.textContent=e.txt;b.classList.remove('on');void b.offsetWidth;b.classList.add('on');}
+      const b=document.querySelector('.banner'); if(b){b.className='banner';b.textContent=e.txt;void b.offsetWidth;b.classList.add('on');}
       stageMood(e.txt); S.round(); await wait(320);
     }
     else if (e.t==='moves'){
       const sides = [['l', e.l], ['r', e.r]];
-      // an ability is charged up first: a glow and rising sparks
-      if (sides.some(([, m]) => m === 'ability')){
-        for (const [s, m] of sides) if (m === 'ability'){ anim(s, 'charge', 540); fxRise(s, ['#c9a2ff','#ffffff','#8fd0fb'], 14); }
-        S.energy(); await wait(300);
+      MV.l = e.l; MV.r = e.r;
+      for (const [s, m] of sides) AB[s] = m === 'ability' ? abStyle(abOf(s)) : null;
+      // a signature move is charged up first, in its own colours
+      if (AB.l || AB.r){
+        for (const s of ['l', 'r']) if (AB[s]) abCast(s, AB[s]);
+        S.energy(); await wait(340);
       }
       for (const [s, m] of sides){
-        if (m === 'bite' || m === 'ability'){ anim(s, 'lunge', 460); fxDust(s); setTimeout(() => fxStreak(s), 80); }
+        if (m === 'bite' || (AB[s] && AB[s].k === 'double')){
+          const both = [e.l, e.r].filter(x => x === 'bite').length === 2;
+          lungeTo(s, 0, 380, both); fxDust(s); setTimeout(() => fxStreak(s), 110);
+        }
+        else if (m === 'ability'){ if (!['heal','ward','diamond','alchemy','energy','charge'].includes(AB[s].k)) anim(s, 'lunge', 460); }
         else if (m === 'guard') anim(s, 'guard', 560);
         else { anim(s, 'taunt', 560); fxWave(s); sayBubble(s, TAUNTS[rint(0, TAUNTS.length-1)]); }
       }
-      if (sides.some(([, m]) => m === 'bite' || m === 'ability')) S.whoosh();
+      if (sides.some(([s, m]) => m === 'bite' || (AB[s] && AB[s].k === 'double'))) S.whoosh();
       if (sides.some(([, m]) => m === 'taunt')) S.bark();
-      await wait(280);
+      await wait(300);
     }
-    else if (e.t==='shield'){ fxBubble(e.who); S.guardUp(); await wait(120); }
+    else if (e.t==='shield'){
+      const st = AB[e.who];
+      if (st && (st.k === 'ward' || st.k === 'diamond')) wardFx(e.who, st);
+      else { fxBubble(e.who); S.guardUp(); }
+      await wait(120);
+    }
     else if (e.t==='laser' || e.t==='bolt'){
-      const a=anchor(e.from), b=anchor(e.to);
-      const laser = e.t==='laser';
-      beams.push({x1:a.x,y1:a.y,x2:b.x,y2:b.y,life:16,max:16,
-        glow: laser?'rgba(255,60,60,.55)':'rgba(255,225,120,.55)', core: laser?'#fff0f0':'#fffbe6'});
-      burst(b.x,b.y,16, laser?['#ff4d4d','#ffb3b3','#fff']:['#ffe066','#fff6c2','#fff'], 7);
-      if (!laser) whiteFlash();
-      laser ? S.laser() : S.bolt();
-      await wait(260);
+      const st = AB[e.from];
+      if (st && st.k !== 'double') abShot(e.from, e.to, st);
+      else {
+        const a=anchor(e.from), b=anchor(e.to), laser = e.t==='laser';
+        beams.push({x1:a.x,y1:a.y,x2:b.x,y2:b.y,life:16,max:16,
+          glow: laser?'rgba(255,60,60,.55)':'rgba(255,225,120,.55)', core: laser?'#fff0f0':'#fffbe6'});
+        burst(b.x,b.y,16, laser?['#ff4d4d','#ffb3b3','#fff']:['#ffe066','#fff6c2','#fff'], 7);
+        if (!laser) whiteFlash();
+        laser ? S.laser() : S.bolt();
+      }
+      await wait(st && (st.k === 'moon' || st.k === 'charge' || st.k === 'dip') ? 300 : 260);
     }
     else if (e.t==='burn'){
       fxRise(e.who, ['#ff8a3d','#ffc14d','#ff5a2b','#fff1a8'], 16); fxRing(e.who, 'rgba(255,138,61,.9)', 54);
@@ -2748,22 +3085,30 @@ async function play(){
     }
     else if (e.t==='hit'){
       anim(e.who,'hurt',320);
-      const p = anchor(e.who);
+      const p = anchor(e.who), from = e.who === 'l' ? 'r' : 'l';
       const big = e.kind==='big'||e.n>=7, counter = e.kind==='counter';
+      const st = !counter && AB[from];
+      const bitten = !counter && e.kind !== 'burn' && (MV[from] === 'bite' || (st && st.k === 'double'));
       counter ? S.counter() : S.hit(big);
-      if (e.kind === 'bite' || e.kind === 'big') chomp(e.who, big);
-      fxStar(e.who, big, counter);
+      if (bitten){
+        setTimeout(() => lungeBack(from), 260);
+        chomp(e.who, big); biteMarks(e.who, big);
+        comic(e.who, big ? (e.n >= 9 ? 'CRUNCH!!' : 'CRUNCH!') : ['CHOMP!','NOM!','SNAP!'][rint(0,2)], big ? 'big red' : '');
+        fxStar(e.who, big, false);
+      } else if (st && e.kind === 'big'){ abImpact(e.who, st, e.n >= 7); setTimeout(() => lungeBack(from), 260); }
+      else fxStar(e.who, big, counter);
       fxRing(e.who, counter ? 'rgba(191,232,106,.95)' : 'rgba(255,255,255,.95)', big ? 92 : 62);
       burst(p.x,p.y,big?24:12, counter?['#bfe86a','#eaffb0','#fff']:['#ffd9d9','#ff6b6b','#fff'], big?9:5.5);
       floatTxt(e.who,'dmgN','-'+e.n);
       if (big){ stageFx('shake2', 430); whiteFlash(); crowdCheer(); }
       else stageFx('shake', 290);
       setBars();
-      await wait(big ? 520 : 430);
+      await wait(big ? 540 : 440);
     }
     else if (e.t==='float'){
       const t = String(e.txt);
-      if (t === 'MISS' || t === 'DODGE'){ anim(e.who, 'dodge', 440); fxRing(e.who, 'rgba(255,255,255,.7)', 48); }
+      if (['MISS','DODGE','BLOCK','PARRIED','HELD','REFRACT'].includes(t)) setTimeout(() => lungeBack(e.who === 'l' ? 'r' : 'l'), 200);
+      if (t === 'MISS' || t === 'DODGE'){ anim(e.who, 'dodge', 440); fxRing(e.who, 'rgba(255,255,255,.7)', 48); comic(e.who, t === 'MISS' ? 'WHIFF!' : 'DODGE!', 'blue'); }
       else if (t === 'BLOCK' || t === 'PARRIED' || t === 'HELD' || /SHIELD/.test(t)){ fxBubble(e.who); fxRing(e.who, 'rgba(143,208,251,.95)', 74); }
       else if (/HEX|VOID/.test(t)){ fxRing(e.who, 'rgba(185,139,255,.95)', 84); fxRise(e.who, ['#b98bff','#6d3fd0','#fff'], 14); }
       else if (e.cls === 'healN') fxRise(e.who, ['#7be08a','#c8ffcf','#ffffff'], 16);
@@ -2773,6 +3118,7 @@ async function play(){
       await wait(300);
     }
   }
+  if (LUNGE.l || LUNGE.r){ lungeBack('l'); lungeBack('r'); await wait(300); }
   setBars();
   const lg = document.getElementById('log'); if (lg){ lg.innerHTML = log.join('<br>'); lg.scrollTop = lg.scrollHeight; }
   if (clubMode){
@@ -2930,10 +3276,12 @@ function shell(){
   app.innerHTML = stage() + `<div id="ctrl"></div>
     <div class="card"><div class="log" id="log">${log.join('<br>')}</div></div>`;
   fxInit(document.querySelector('canvas.fx'), stageTheme());
+  auraInit();
   const sb = document.getElementById('snd');
   if (sb){ sb.textContent = S.on ? '🔊' : '🔇';
            sb.onclick = () => { sb.textContent = S.toggle() ? '🔊' : '🔇'; }; }
   setBars(); renderControls();
+  introFx();
 }
 function startFight(a,b,ranked,oppLvl){
   SAVE.checkDay();
