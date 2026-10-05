@@ -594,6 +594,9 @@ function clubResolve(env, d, auto, from) {
 function clubFinish(env, d, winner, why) {
   d.status = "done"; d.ended = Date.now(); d.result = {winner, why};
   const st = storeOf(env);
+  if (d.rounds.length >= 3) replayKeep(env, {kind: "club", by: d.a.acct, vs: d.b.acct,
+    P: {def: slimDef(d.a.def), lvl: d.a.lvl, who: d.a.name}, E: {def: slimDef(d.b.def), lvl: d.b.lvl, who: d.b.name},
+    rounds: d.rounds.map(r => ({a: r.a, b: r.b, seed: r.seed})), result: winner === "a" ? "W" : winner === "b" ? "L" : "D"}).catch(() => {});
   if (winner) { st.clubAdd(d[winner].acct, "w"); st.clubAdd(d[winner === "a" ? "b" : "a"].acct, "l"); }
   else { st.clubAdd(d.a.acct, "d"); st.clubAdd(d.b.acct, "d"); }
 }
@@ -715,6 +718,82 @@ async function lendSeek(env, account, b) {
   for (const [a, at] of Object.entries(list)) if (Date.now() - at > SEEK_TTL) delete list[a];
   await st.blobSet("lendseek", list);
   return json({ok: true, ...(await lendInfo(env, account))});
+}
+
+/* ------------------------------------------------------------------ Bark Arena TV: fight replays */
+/* Finished fights come back as replays: the two dogs (kit data, no images), bond levels and per round the two
+   moves plus the dice the engine rolled (ranked/arena: the page's Math.random draws; Club: the server's seed).
+   /tv replays them through the same engine and the same effects, so the YouTube stream shows real fights.
+   Players can opt out (POST /tv {off}); team wallets are shown with their tag. Bodies are kept as files
+   (FILES) with a small index blob; without FILES (D1) the index carries the bodies, fewer of them. */
+const REPLAY_KEEP = 600, REPLAY_KEEP_NOFILES = 80, REPLAY_DAY_MAX = 80;
+const slimDef = d => ({id: String(d.id || "").slice(0, 80), token: +d.token || null, name: String(d.name || "").slice(0, 60),
+  rarity: String(d.rarity || "Common").slice(0, 20), set: d.set ? String(d.set).slice(0, 40) : null, setMatch: +d.setMatch || 0,
+  legendary: d.legendary ? String(d.legendary).slice(0, 4) : null, traits: (Array.isArray(d.traits) ? d.traits : []).slice(0, 12).map(t => String(t).slice(0, 60)),
+  bg: String(d.bg || "").slice(0, 40)});
+function replayScore(r) {
+  const rk = {Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Mythic: 5, Legendary: 5};
+  let s = Math.max(rk[r.P.def.rarity] || 0, rk[r.E.def.rarity] || 0) + (r.P.def.legendary || r.E.def.legendary ? 3 : 0);
+  if (r.kind === "club") s += 4; if (r.kind === "arena") s += 2 + (r.stage === 2 ? 3 : 0);
+  if (r.close) s += 2; if (r.rounds.length >= 10) s += 1;
+  return s;
+}
+async function replayKeep(env, r) {
+  const st = storeOf(env), off = (await st.blobGet("tvoff")) || {};
+  if (off[r.by] || (r.vs && off[r.vs])) return null;
+  const names = await st.profiles();
+  if (isTeam(env, r.by)) r.P.team = true;
+  if (r.vs && isTeam(env, r.vs)) r.E.team = true;
+  if (r.vs) r.E.who = displayName(names, r.vs);
+  r.P.who = displayName(names, r.by);
+  r.id = rid(); r.at = Date.now();
+  delete r.by; delete r.vs;
+  const idx = (await st.blobGet("replays")) || [];
+  const head = {id: r.id, at: r.at, kind: r.kind, score: replayScore(r), a: r.P.who, b: r.E.who || null};
+  if (env.FILES) await env.FILES.putJson("replay:" + r.id, r); else head.body = r;
+  idx.push(head);
+  const keep = env.FILES ? REPLAY_KEEP : REPLAY_KEEP_NOFILES;
+  for (const old of idx.splice(0, Math.max(0, idx.length - keep))) if (env.FILES && env.FILES.delJson) await env.FILES.delJson("replay:" + old.id);
+  await st.blobSet("replays", idx);
+  return r.id;
+}
+const MOVE_RE = /^(bite|guard|taunt|ab[0-2])$/;
+async function replayPost(env, account, b) {
+  if (!b || typeof b !== "object" || !b.P || !b.E || !Array.isArray(b.rounds)) return json({error: "bad_replay"}, 400);
+  if (JSON.stringify(b).length > 40000) return json({error: "too_large"}, 413);
+  if (!["ranked", "arena", "casual"].includes(b.kind) || b.rounds.length < 1 || b.rounds.length > 12) return json({error: "bad_replay"}, 400);
+  for (const r of b.rounds) if (!MOVE_RE.test(r.a) || !MOVE_RE.test(r.b) || !Array.isArray(r.r) || r.r.length > 120 || !r.r.every(x => Number.isInteger(x) && x >= 0 && x < 1e6))
+    return json({error: "bad_replay"}, 400);
+  if (env.KV) {
+    const k = `replays:${account}:${today()}`, n = +(await env.KV.get(k) || 0);
+    if (n >= REPLAY_DAY_MAX) return json({ok: true, kept: false});
+    await env.KV.put(k, String(n + 1), {expirationTtl: 2 * 86400});
+  }
+  // the rival's owner (arena) must be a real player: name or short wallet, nothing invented
+  const names = await storeOf(env).profiles(), w = String(b.E.who || "");
+  const vs = w ? Object.keys(names).find(a => names[a].name === w) || null : null;
+  const lvl = x => Math.max(1, Math.min(10, x | 0 || 1));
+  const id = await replayKeep(env, {kind: b.kind, stage: b.kind === "arena" ? Math.max(0, Math.min(2, b.stage | 0)) : null,
+    by: account, vs: vs && vs !== account ? vs : null, close: !!b.close,
+    P: {def: slimDef(b.P.def || {}), lvl: lvl(b.P.lvl), bonus: ["fang", "hide", "spirit"].includes(b.P.bonus) ? b.P.bonus : null},
+    E: {def: slimDef(b.E.def || {}), lvl: lvl(b.E.lvl), who: null},
+    rounds: b.rounds.map(r => ({a: r.a, b: r.b, r: r.r})), result: ["W", "L", "D"].includes(b.result) ? b.result : null});
+  return json({ok: true, kept: !!id});
+}
+/* The TV's playlist: the best of the last day first, then the newest. */
+async function publicReplays(env, url) {
+  const st = storeOf(env), idx = (await st.blobGet("replays")) || [], now = Date.now();
+  const n = Math.max(1, Math.min(40, +url.searchParams.get("n") || 20)), skip = new Set(String(url.searchParams.get("skip") || "").split(",").filter(Boolean));
+  const pick = idx.filter(h => !skip.has(h.id)).map(h => ({h, v: h.score + (now - h.at < 864e5 ? 4 : 0) + Math.random() * 3 - (now - h.at) / 864e5 / 3}))
+    .sort((x, y) => y.v - x.v).slice(0, n).map(x => x.h);
+  const out = [];
+  for (const h of pick) { const r = h.body || (env.FILES ? await env.FILES.getJson("replay:" + h.id) : null); if (r) out.push(r); }
+  return json({replays: out, total: idx.length});
+}
+async function tvOpt(env, account, b) {
+  const st = storeOf(env), off = (await st.blobGet("tvoff")) || {};
+  if (b && "off" in b) { if (b.off) off[account] = Date.now(); else delete off[account]; await st.blobSet("tvoff", off); }
+  return json({off: !!off[account]});
 }
 
 /* ------------------------------------------------------------------ chat */
@@ -1250,6 +1329,24 @@ async function check(env, account) {
   return json(rep);
 }
 
+/* An NFT image through the gateways, kept on disk for good (images never change). */
+const COLLECTION_BASE = "ipfs://bafybeid7e5yfl4x2mr5hlhs2z574ohmmcx4eewarnwbv7a3euln7sgz3de/";
+async function serveImg(env, u) {
+  u = resolveUrl(u, env) || u;
+  if (!/^https:\/\//i.test(u) || !hostAllowed(u, env)) return json({error:"img_not_allowed"}, 400);
+  const hit = env.FILES ? await env.FILES.getBin("img:" + u) : null;
+  if (hit) return new Response(hit.body, {status:200, headers:{"content-type": hit.type, "cache-control":"public, max-age=86400"}});
+  let r;
+  try { r = await fetchAny(ipfsAlternatives(u, env), {cf: {cacheTtl: META_TTL, cacheEverything: true}}); }
+  catch (e) { return json({error:"img_" + e.message}, 502); }
+  const type = r.headers.get("content-type") || "image/png";
+  const h = new Headers({"content-type": type, "cache-control":"public, max-age=86400"});
+  if (!env.FILES) return new Response(r.body, {status:200, headers:h});
+  const buf = await r.arrayBuffer();
+  await env.FILES.putBin("img:" + u, buf, type);
+  return new Response(buf, {status:200, headers:h});
+}
+
 /* ------------------------------------------------------------------ plumbing */
 const json = (o, s = 200) => new Response(JSON.stringify(o, null, 1), {status:s, headers:{"content-type":"application/json; charset=utf-8"}});
 function firstOrigin(env) { return (env.ORIGIN || "").split(",")[0].trim(); }
@@ -1307,6 +1404,21 @@ export default {
         r.headers.set("cache-control", "no-store");
         return r;
       }
+      if (p === "/public/replays") {
+        const r = await publicReplays(env, url);
+        r.headers.set("access-control-allow-origin", "*"); r.headers.set("cache-control", "no-store");
+        return r;
+      }
+      if (p === "/public/dogimg") {                                  // the TV's dog pictures: collection tokens only
+        const t = +url.searchParams.get("t");
+        if (!(t >= 1 && t <= 5000)) return json({error: "bad_token"}, 400);
+        try {
+          const m = await metaFor(env, (env.COLLECTION_BASE || COLLECTION_BASE) + t + ".json");
+          const r = await serveImg(env, m.image || "");
+          r.headers.set("access-control-allow-origin", "*");
+          return r;
+        } catch (e) { return json({error: String(e.message)}, 502); }
+      }
       if (p === "/public/nft") return withCors(await nftLookup(env, url.searchParams.get("t")), cors);
       if (p === "/check") return withCors(await check(env, url.searchParams.get("account")), cors);
       if (p === "/auth/start" && req.method === "POST") return withCors(await authStart(env), cors);
@@ -1326,6 +1438,8 @@ export default {
       if (p === "/lend" && req.method === "POST") return withCors(await lendStart(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/lend/end" && req.method === "POST") return withCors(await lendEnd(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/lend/report" && req.method === "POST") return withCors(await lendReport(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/replay" && req.method === "POST") return withCors(await replayPost(env, account, await req.json().catch(() => null)), cors);
+      if (p === "/tv") return withCors(await tvOpt(env, account, req.method === "POST" ? await req.json().catch(() => ({})) : null), cors);
       if (p === "/lend/seek" && req.method === "POST") return withCors(await lendSeek(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/chat" && req.method === "GET") return withCors(await chatGet(env, account, url.searchParams.get("since")), cors);
       if (p === "/chat" && req.method === "POST") return withCors(await chatPost(env, account, await req.json().catch(() => ({}))), cors);
@@ -1351,21 +1465,7 @@ export default {
       if (p === "/save" && req.method === "POST") return withCors(await savePut(env, account, await req.json().catch(() => null)), cors);
       if (p === "/taken") return withCors(json({tokens: await storeOf(env).taken()}), cors);
       if (p === "/meta") return withCors(json(await metaFor(env, url.searchParams.get("uri") || "")), cors);
-      if (p === "/img") {
-        const u = url.searchParams.get("u") || "";
-        if (!/^https:\/\//i.test(u) || !hostAllowed(u, env)) return withCors(json({error:"img_not_allowed"}, 400), cors);
-        const hit = env.FILES ? await env.FILES.getBin("img:" + u) : null;
-        if (hit) return withCors(new Response(hit.body, {status:200, headers:{"content-type": hit.type, "cache-control":"public, max-age=86400"}}), cors);
-        let r;
-        try { r = await fetchAny(ipfsAlternatives(u, env), {cf: {cacheTtl: META_TTL, cacheEverything: true}}); }
-        catch (e) { return withCors(json({error:"img_" + e.message}, 502), cors); }
-        const type = r.headers.get("content-type") || "image/png";
-        const h = new Headers({"content-type": type, "cache-control":"public, max-age=86400"});
-        if (!env.FILES) return withCors(new Response(r.body, {status:200, headers:h}), cors);
-        const buf = await r.arrayBuffer();
-        await env.FILES.putBin("img:" + u, buf, type);
-        return withCors(new Response(buf, {status:200, headers:h}), cors);
-      }
+      if (p === "/img") return withCors(await serveImg(env, url.searchParams.get("u") || ""), cors);
       if (p === "/stats" && req.method === "POST") return withCors(await postStats(env, account, await req.json()), cors);
       return withCors(json({error:"not_found"}, 404), cors);
     } catch (e) {

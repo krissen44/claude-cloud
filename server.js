@@ -150,6 +150,7 @@ const cachePath = (k) => path.join(CACHE_DIR, crypto.createHash("sha256").update
 const FILES = {
   async getJson(k) { try { return JSON.parse(fs.readFileSync(cachePath(k) + ".json", "utf8")); } catch { return null; } },
   async putJson(k, v) { try { fs.writeFileSync(cachePath(k) + ".json", JSON.stringify(v)); } catch {} },
+  async delJson(k) { try { fs.unlinkSync(cachePath(k) + ".json"); } catch {} },
   async getBin(k) {
     try { return { body: fs.readFileSync(cachePath(k) + ".bin"), type: fs.readFileSync(cachePath(k) + ".type", "utf8") }; }
     catch { return null; }

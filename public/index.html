@@ -397,6 +397,30 @@ a.btn.shop{display:inline-block;text-decoration:none;font-size:12px;padding:8px 
 #chatFab{position:fixed;right:16px;bottom:16px;z-index:40;width:52px;height:52px;border-radius:50%;border:2px solid var(--panelB);
   background:var(--panel);color:var(--ink);font-size:22px;cursor:pointer;box-shadow:0 4px 14px rgba(10,16,28,.25)}
 body.chat-on #app{padding-bottom:72px}
+/* Bark Arena TV (/tv): 800×450 CSS px, rendered at 1280×720 */
+body.tv{overflow:hidden;background:#0e1726;color:#fff}
+body.tv .wrap{max-width:none;padding:0;margin:0}body.tv h1{display:none}
+body.tv #app{position:fixed;inset:0;display:flex;flex-direction:column}
+body.tv .stage{flex:1;height:auto;border:0;border-radius:0}body.tv .snd{display:none}
+.tvtop{display:flex;justify-content:space-between;align-items:center;padding:7px 14px;background:#0e1726;font:11px 'Press Start 2P',monospace;letter-spacing:.5px}
+.tvtop span{font-family:system-ui,sans-serif;font-size:13px;font-weight:700;color:#bcd3ec}
+.tvdot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#e0483e;margin-right:8px;animation:tvb 1.2s infinite}
+@keyframes tvb{50%{opacity:.3}}
+.tvlow{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;padding:7px 14px 3px;background:#0e1726}
+.tvwho b{display:block;font-size:16px}.tvwho span{font-size:11.5px;color:#bcd3ec}.tvwho.r{text-align:right}
+.tvwho .tag{font-size:8px;vertical-align:2px}
+.tvvs{font:14px 'Press Start 2P',monospace;color:#ffd95e}
+.tvcta{background:#0e1726;text-align:center;font-size:11.5px;color:#9fc3e8;padding:0 0 7px}.tvcta b{color:#fff}
+.tvres{position:fixed;left:50%;top:44%;transform:translate(-50%,-50%);background:rgba(14,23,38,.92);border:3px solid #ffd95e;border-radius:14px;
+  padding:14px 26px;font-size:20px;color:#fff;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.5);animation:tvin .4s ease-out}
+.tvres b{color:#ffd95e}@keyframes tvin{from{transform:translate(-50%,-50%) scale(.6);opacity:0}}
+.tvboard{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 30%,#1d3b63,#0e1726);padding:10px}
+.tvboard h2{font:15px 'Press Start 2P',monospace;color:#ffd95e;margin:0 0 14px}
+.tvboard ol{list-style:none;margin:0;padding:0;width:440px}
+.tvboard li{display:grid;grid-template-columns:36px 1fr auto;align-items:center;padding:7px 12px;margin:4px 0;border-radius:10px;background:rgba(255,255,255,.07);font-size:17px}
+.tvboard li em{font-style:normal;color:#bcd3ec;font-size:14px}.tvboard .tag{font-size:8px}
+.tvsub{font-size:12.5px;color:#bcd3ec;text-align:center;margin:14px 0 4px;line-height:1.6}.tvsub b{color:#fff}
+.tvurl{font:13px 'Press Start 2P',monospace;color:#fff;margin:6px 0 0}
 #chatFab:hover{border-color:var(--accent)}
 #chatFab i{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;border-radius:10px;background:#e0483e;color:#fff;
   font:700 11px/20px system-ui,sans-serif;font-style:normal;padding:0 5px}
@@ -2579,6 +2603,7 @@ async function loadKennel(fresh){
   WALLET.loading = false; if (SC.linkId) tab = 'club'; menu();
   if (SC.linkId) scRefresh();
   oppTopUp(); loadPacks(); claimDefense(); arenaRegister(); loadPrizes(); loadLending();
+  if (SAVE.data.tvOff) api('/tv', {method:'POST', body:{off: true}}).catch(() => {});   // also covers Club duels (recorded on the server)
 }
 
 /* ---- the real weekly ladder ---- */
@@ -3309,8 +3334,14 @@ async function play(){
     clubAfterTurn();
     return;
   }
+  if (tvMode){
+    if (over){ const v = verdict(); koFx(v === 'YOU WIN' ? 'l' : v === 'YOU LOSE' ? 'r' : null);
+      if (v !== 'DRAW'){ S.win(); await confetti(v === 'YOU WIN' ? 'l' : 'r'); } }
+    busy = false; return;
+  }
   if (over){
     const v = verdict();
+    recSend(v);
     koFx(v === 'YOU WIN' ? 'l' : v === 'YOU LOSE' ? 'r' : null);
     if (v==='YOU WIN'){ S.win(); await confetti('l'); }
     else S.lose();
@@ -3363,7 +3394,7 @@ function pennants(){
 }
 /* Three backdrops: the meadow for ranked fights, a stadium at dusk for the
    arena tournaments, and a night ring under spotlights for the Fight Club. */
-function stageTheme(){ return clubMode ? 'club' : (arenaRun ? 'arena' : 'meadow'); }
+function stageTheme(){ return tvMode ? TV.theme : clubMode ? 'club' : (arenaRun ? 'arena' : 'meadow'); }
 function scenery(th){
   if (th === 'club') return `<span class="spot s1"></span><span class="spot s2"></span>
     <span class="crowd back"></span><span class="crowd front"></span><span class="neon">FIGHT CLUB</span>
@@ -3493,6 +3524,10 @@ function startFight(a,b,ranked,oppLvl){
   hist = {bite:0, guard:0, taunt:0}; plannedE = null;
   // the opponent remembers this trainer's style across fights (kept in the save, synced)
   const ad = SAVE.data; if (!ad.ai || ad.ai.v !== 1) ad.ai = aimNew(); AIM = ad.ai;
+  // Bark Arena TV: the fight is recorded (moves + dice) and replayed on the stream unless the player opted out
+  REC.cur = LIVE() && WALLET.token && !WALLET.demo && !ad.tvOff ? {kind: arenaRun ? 'arena' : (isRanked ? 'ranked' : 'casual'),
+    stage: arenaRun ? arenaRun.round : null, P: {def: slimDefC(a), lvl: el, bonus: mb ? mb.key : null},
+    E: {def: slimDefC(b), lvl: eo, who: arenaRun && arenaRun.opp ? arenaRun.opp.who || null : null}, rounds: []} : null;
   if (mb) say(`<span class="turn">${mb.emoji} Pack bonus active — <b>${mb.name}</b>: ${mb.txt}.</span>`);
   if (!isRanked && !arenaRun) say(`<span class="turn">Casual fight — no XP, nothing counts towards the ladder.</span>`);
   say(`<span class="turn">The bell rings — ${esc(a.name)} (Bond ${el}) vs ${esc(b.name)} (Bond ${eo}).</span>`);
@@ -3503,8 +3538,33 @@ function go(pa){
   S.unlock(); S.click();
   if (pa.type==='ability' && pa.a.cost > P.energy) return;
   const ea = plannedE || ai(E, P, pa);
-  resolve(pa, ea);
+  const rolls = recRolls(() => resolve(pa, ea));
+  if (REC.cur) REC.cur.rounds.push({a: mvKey(P, pa), b: mvKey(E, ea), r: rolls});
   play();
+}
+/* ---- Bark Arena TV recording: the dice the engine rolled this round, rounded to 1e-6 and used as rounded,
+   so a replay through the same engine lands on exactly the same fight. ---- */
+const REC = {cur: null};
+function recRolls(fn){
+  const orig = Math.random, out = [];
+  Math.random = () => { const q = Math.floor(orig() * 1e6); out.push(q); return q / 1e6; };
+  try { fn(); } finally { Math.random = orig; }
+  return out;
+}
+function rollsReplay(arr, fn){
+  const orig = Math.random; let i = 0;
+  Math.random = () => (i < arr.length ? arr[i++] : Math.floor(orig() * 1e6)) / 1e6;
+  try { fn(); } finally { Math.random = orig; }
+}
+const mvKey = (f, m) => m.type === 'ability' ? 'ab' + Math.max(0, f.actives.indexOf(m.a)) : m.type;
+const slimDefC = d => ({id: d.id, token: tokenOf(d), name: d.name, rarity: d.rarity, set: d.set || null, setMatch: d.setMatch || 0,
+  legendary: d.legendary || null, traits: d.traits || [], bg: d.bg || ''});
+function recSend(v){
+  const r = REC.cur; REC.cur = null;
+  if (!r || !r.rounds.length) return;
+  r.result = v === 'YOU WIN' ? 'W' : v === 'YOU LOSE' ? 'L' : 'D';
+  r.close = Math.abs(P.hp / P.maxHp - E.hp / E.maxHp) < .15;
+  api('/replay', {method:'POST', body: r}).catch(() => {});
 }
 let tab = SC.linkId ? 'club' : 'kennel';   // a ?duel= invite link opens the Club
 
@@ -3592,6 +3652,8 @@ function kennelView(){
     <div class="pick">${dogs}</div>
     <p class="mini" style="margin:11px 0 0"><b>Kit rule.</b> Each Scrappy carries eight traits, one per layer — only the <b>three rarest</b> fight, and at most one of them is an active ability. That keeps a fight readable and makes the individual traits matter, not just the rarity tier. </p>
     <p class="mini" style="margin:7px 0 0"><b>Bond unlocks:</b> ${Object.entries(BOND.perks).map(([l,p])=>`<b>L${l}</b> ${esc(p.txt)}`).join(' · ')}</p>
+    ${LIVE() && !WALLET.demo ? `<p class="mini" style="margin:7px 0 0">📺 <b>Bark Arena TV:</b> ${D.tvOff ? 'your fights are not shown on the stream.' : 'your fights can be replayed on our YouTube stream, with your player name.'}
+      <button class="sm" id="tvOpt" style="margin:0 0 0 6px">${D.tvOff ? 'Show them again' : "Don't show my fights"}</button></p>` : ''}
   </div>` + (LIVE() && !WALLET.demo ? lendCard() : '');
 }
 
@@ -3989,6 +4051,8 @@ function menu(){
   app.querySelectorAll('[data-weekrecap]').forEach(b => b.onclick = () => { S.click(); showWeekRecap(); });
   if (weekRecapDue()) showWeekRecap();            // a new week: last week's results come first
   else if (SAVE.dayComplete() && !SAVE.data.today.shown && !WALLET.loading && !needLogin()) showRecap();
+  const tvo = document.getElementById('tvOpt');
+  if (tvo) tvo.onclick = () => { S.click(); SAVE.data.tvOff = !SAVE.data.tvOff; SAVE.save(); api('/tv', {method:'POST', body:{off: !!SAVE.data.tvOff}}).catch(() => {}); menu(); };
   app.querySelectorAll('[data-ksort]').forEach(b => b.onclick = () => { S.click(); kSort = b.dataset.ksort; lsSet('ba_ksort', kSort); menu(); });
   app.querySelectorAll('[data-f]').forEach(b => b.onclick = () => {
     S.unlock(); S.click();
@@ -4040,8 +4104,117 @@ function menu(){
     if (confirm('Wipe all progress?')){ SAVE.reset(); menu(); }
   };
 }
-walletBoot();
-menu();
+/* ============================ Bark Arena TV (/tv) ============================
+   A page for the 24/7 YouTube stream: plays real fights back to back — replays of ranked, arena and
+   Fight Club fights from /api/public/replays, through the same engine, effects and sounds — with an
+   overlay, and every few fights the weekly ladder. Nothing to click. Ghost fights fill in when there
+   are no replays. Laid out for an 800×450 viewport (the streamer renders it at 1280×720, scale 1.6). */
+let tvMode = false;
+const TV = {theme: 'meadow', queue: [], seen: [], imgs: {}, n: 0, beat: Date.now()};   // beat: the streamer's watchdog reads it
+const TV_KIND = {ranked: '⚔️ Ranked fight', arena: '🏟️ Arena', casual: '🐾 Friendly fight', club: '🥊 Fight Club duel', ghost: '👻 Exhibition'};
+async function tvImg(d){
+  const k = d.legendary ? 'L' + d.legendary : String(d.token || d.id);
+  if (TV.imgs[k]) return TV.imgs[k];
+  if (d.img) return TV.imgs[k] = d.img;                          // demo dogs (exhibitions) bring their picture
+  let img = null;
+  if (d.legendary){ const L = DATA.fighters.find(f => f.id === 'L' + d.legendary); if (L) img = L.img; }
+  if (!img && d.token){
+    try {
+      const r = await fetch('/api/public/dogimg?t=' + d.token); if (!r.ok) throw new Error(r.status);
+      img = cutout(await createImageBitmap(await r.blob()), PATTERNED.has(d.bg));
+    } catch(e){
+      try { const m = await directMeta('ipfs://bafybeid7e5yfl4x2mr5hlhs2z574ohmmcx4eewarnwbv7a3euln7sgz3de/' + d.token + '.json');
+            img = await imageFor(d, m.image); } catch(e2){}
+    }
+  }
+  if (!img){ const f = DATA.fighters.find(x => x.rarity === d.rarity) || DATA.fighters[0]; img = f.img; }
+  return TV.imgs[k] = img;
+}
+function tvTop(rep){
+  const ago = rep.at ? Math.max(1, Math.round((Date.now() - rep.at) / 60000)) : 0;
+  const when = !ago ? 'right now' : ago < 60 ? ago + ' min ago' : ago < 1440 ? Math.round(ago / 60) + ' h ago' : Math.round(ago / 1440) + ' d ago';
+  const stage = rep.kind === 'arena' && rep.stage != null ? ' · ' + ['Quarter-final', 'Semi-final', 'FINAL'][rep.stage] : '';
+  return `<div class="tvtop"><b><i class="tvdot"></i>LIVE · BARK ARENA TV</b><span>${TV_KIND[rep.kind] || ''}${stage}${rep.kind !== 'ghost' ? ' · played ' + when : ''}</span></div>`;
+}
+const tvWho = (cls, x) => `<div class="tvwho ${cls}"><b>${x.who ? esc(x.who) + (x.team ? ' <span class="tag">TEAM</span>' : '') : (cls === 'r' ? 'a wild Scrappy' : 'Bark Arena')}</b>
+  <span>${esc(x.def.name)} · ${esc(x.def.rarity)} · Bond ${x.lvl}</span></div>`;
+function tvLow(rep){
+  return `<div class="tvlow">${tvWho('l', rep.P)}<div class="tvvs">VS</div>${tvWho('r', rep.E)}</div>
+    <div class="tvcta">🐾 Play free with your Pixel Scrappy · <b>game.scrappyxrp.fun</b> · weekly NFT prizes</div>`;
+}
+async function tvPlay(rep){
+  TV.theme = rep.kind === 'club' ? 'club' : rep.kind === 'arena' ? 'arena' : 'meadow';
+  const [ia, ib] = await Promise.all([tvImg(rep.P.def), tvImg(rep.E.def)]);
+  const a = Object.assign({}, rep.P.def, {img: ia}), b = Object.assign({}, rep.E.def, {img: ib});
+  P = build(a, rep.P.lvl, rep.P.bonus ? {key: rep.P.bonus} : null); E = build(b, rep.E.lvl, null);
+  turn = 1; log = []; ev = []; over = false; AIM = null;
+  app.innerHTML = tvTop(rep) + stage() + tvLow(rep);
+  fxInit(document.querySelector('canvas.fx'), TV.theme); auraInit(); setBars();
+  await wait(700); await introFx(); await wait(500);
+  simulating = true;
+  try {
+    for (let i = 0; i < 12 && !over; i++){
+      const r = rep.rounds ? rep.rounds[i] : null;
+      if (rep.rounds && !r) break;
+      if (!r){ const ea = ai(E, P, null); resolve(ai(P, E, ea), ea); }          // exhibition: both sides on the AI
+      else if (rep.kind === 'club') resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
+      else { const pa = moveOf(P, r.a), ea = moveOf(E, r.b); rollsReplay(r.r, () => resolve(pa, ea)); }
+      simulating = false; await play(); simulating = true; TV.beat = Date.now();
+      await wait(450);
+    }
+  } finally { simulating = false; }
+  const v = verdict(), win = v === 'YOU WIN' ? rep.P : v === 'YOU LOSE' ? rep.E : null;
+  const wd = v === 'YOU WIN' ? rep.P.def : rep.E.def;
+  const card = document.createElement('div'); card.className = 'tvres';
+  card.innerHTML = win ? `<b>${esc(win.who || 'The wild Scrappy')}</b> wins with ${esc(wd.name)}` : '<b>A draw!</b>';
+  document.getElementById('app').appendChild(card);
+  await wait(3200);
+}
+async function tvBoard(){
+  let j = null;
+  try { j = await (await fetch('/api/public/board')).json(); } catch(e){}
+  const rows = j && j.xp ? j.xp.slice(0, 5) : [];
+  app.innerHTML = `<div class="tvtop"><b><i class="tvdot"></i>LIVE · BARK ARENA TV</b><span>This week's ladder</span></div>
+    <div class="tvboard"><h2>🏆 TOP TRAINERS THIS WEEK</h2>
+    ${rows.length ? '<ol>' + rows.map((r, i) => `<li><span>${['🥇','🥈','🥉'][i] || (i + 1) + '.'}</span><b>${esc(r.who)}${r.team ? ' <span class="tag">TEAM</span>' : ''}</b><em>${r.v} XP</em></li>`).join('') + '</ol>'
+      : '<p>A fresh week — the ladder is wide open.</p>'}
+    <p class="tvsub">Top 3 and the most active member of the best pack win a <b>Pixel Scrappy NFT</b> every Monday.<br>
+      Results sealed on the XRP Ledger. ${j && j.players ? j.players + ' trainer' + (j.players === 1 ? '' : 's') + ' this week.' : ''}</p>
+    <p class="tvurl">game.scrappyxrp.fun</p></div>`;
+  TV.beat = Date.now(); await wait(9000);
+}
+async function tvFetch(){
+  try {
+    const r = await fetch('/api/public/replays?n=10&skip=' + TV.seen.slice(-150).join(','));
+    const j = await r.json(); TV.queue.push(...(j.replays || []));
+    if (!(j.replays || []).length && TV.seen.length){ TV.seen = []; }      // everything shown: start over
+  } catch(e){}
+}
+async function tvGhost(){
+  const pool = DATA.fighters.filter(f => !f.legendary || Math.random() < .3);
+  const pick = () => pool[Math.floor(Math.random() * pool.length)], a = pick(); let b = pick(); while (b === a) b = pick();
+  const lvl = 1 + Math.floor(Math.random() * 8);
+  return {kind: 'ghost', P: {def: a, lvl}, E: {def: b, lvl: Math.max(1, lvl + rint(-1, 1))}, rounds: null};
+}
+async function tvLoop(){
+  for (;;){
+    try {
+      if (!TV.queue.length) await tvFetch();
+      const rep = TV.queue.shift() || await tvGhost();
+      if (rep.id) TV.seen.push(rep.id);
+      await tvPlay(rep);
+      if (++TV.n % 4 === 0) await tvBoard();
+    } catch(e){ console.warn('tv', e); await wait(3000); }
+  }
+}
+function tvBoot(){
+  tvMode = true; document.body.classList.add('tv');
+  if (!S.on) S.toggle();
+  S.unlock();
+  tvLoop();
+}
+if (/^\/tv\/?$/.test(location.pathname)) tvBoot();
+else { walletBoot(); menu(); }
 </script>
 </body>
 </html>

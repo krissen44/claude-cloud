@@ -33,6 +33,12 @@ offers done Mon 5 Oct for the week of 28 Sep).
   - Tested offline: 36 checks (team prizes/packs/boards, chat filters/rate limit/mute/delete, open challenge, borrow list,
     kennel order, nudge, no page errors) + the Fight Club, week-close and lending regression tests.
 
+- **v31 (in progress) — Bark Arena TV**: finished fights (ranked, arena, casual; Club duels on the server) are kept as
+  small replays (moves + dice, no video); `game.scrappyxrp.fun/tv` replays them back to back with all effects, an
+  overlay (names, dogs, bond) and every 4 fights the weekly ladder — for a 24/7 YouTube live stream from a VPS
+  (`tools/stream/setup.sh`). Players can switch it off in the kennel ("Don't show my fights"). Tested: a live ranked
+  fight and a Club duel replay on /tv to exactly the same end. Still to do: local test of the stream chain, docs.
+
 ### Website (scrappyxrp.fun)
 - `barkarena/index.html`: TEAM tag on the board, guide text for the learning opponent, open challenges, chat FAQ,
   borrow list, team wallets.
