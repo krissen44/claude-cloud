@@ -939,10 +939,30 @@ async function adminSeason(env) {
       if (rec) for (const x of Object.values(rec.prizes || {})) if (x.nftId) used.add(x.nftId);
     }
     treasury = (await accountNfts(env, env.ISSUER)).filter(n => !used.has(n.nft_id))
-      .map(n => ({nftId: n.nft_id, token: +(n.uri.match(/(\d+)\.json$/) || [])[1] || null}))
+      .map(n => ({nftId: n.nft_id, uri: n.uri, token: +(n.uri.match(/(\d+)\.json$/) || [])[1] || null}))
       .sort((a, b) => (a.token || 0) - (b.token || 0));
+    await treasuryRarity(env, treasury);
   } catch (e) { treasuryError = String(e.message); }
   return json({issuer: env.ISSUER, xaman: !!env.XUMM_API_KEY, weeks, treasury, treasuryError});
+}
+/* Rarity of each treasury Scrappy from its metadata (disk-cached), so the admin
+   page can hand the rarest pieces to the top places. rank: higher = rarer. */
+const RARITY_RANK = {common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5, mythic: 6};
+async function treasuryRarity(env, list) {
+  let i = 0;
+  const work = async () => { while (i < list.length) {
+    const n = list[i++];
+    try {
+      const m = await metaFor(env, n.uri), get = k => (m.attributes.find(a => a.t.toLowerCase() === k) || {}).v || "";
+      const handmade = n.token >= 1 && n.token <= 20;              // #1–#20: the hand-built Legendaries
+      n.rarity = handmade ? "Legendary" : (get("rarity") || "Common");
+      n.handmade = handmade;
+      n.set = get("set") || null; n.setMatch = +get("set match") || 0;
+      n.rank = handmade ? 7 : (RARITY_RANK[n.rarity.toLowerCase()] || 1);
+    } catch { n.rarity = null; n.rank = 0; }
+    delete n.uri;
+  } };
+  await Promise.all(Array.from({length: 6}, work));
 }
 async function adminAnchor(env, b) {
   const rec = await weekResult(env, String(b.week || ""));

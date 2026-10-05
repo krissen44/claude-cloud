@@ -276,11 +276,30 @@ const api = (p, body) => fetch("/api/admin/" + p + (p.includes("?") ? "&" : "?")
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const txLink = id => "<a class='mono' target='_blank' rel='noopener' href='https://livenet.xrpl.org/transactions/" + id + "'>" + id.slice(0, 10) + "…</a>";
 const PLACE = {"1":"🥇 1st XP","2":"🥈 2nd XP","3":"🥉 3rd XP","pack":"🐾 Winning pack, most active"};
+/* Auto-pick: unsent prizes get treasury Scrappys by rarity — the rarest for 1st, then 2nd, 3rd, pack, lender
+   shares. The hand-built Legendaries #1–20 only join when the box is ticked. Every pick can be changed. */
+const ORDER = p => p === "pack" ? 4 : /^L/.test(p) ? 5 + (+p.slice(1) || 0) / 10 : +p || 9;
+const RLAB = n => n.handmade ? "★ Legendary (hand-built)" : (n.rarity || "rarity unknown");
+let LEG = sessionStorage.getItem("ba_admin_leg") === "1";
+function suggest(){
+  const byRare = (a, b) => (b.rank || 0) - (a.rank || 0) || (b.setMatch || 0) - (a.setMatch || 0) || (a.token || 0) - (b.token || 0);
+  const pool = (SEASON.treasury || []).filter(n => LEG || !n.handmade).sort(byRare), out = {};
+  for (const w of SEASON.weeks) if (!w.open) for (const p of (w.prizes || []).slice().sort((a, b) => ORDER(a.place) - ORDER(b.place)))
+    if (p.status !== "offered" && p.status !== "claimed" && pool.length) out[w.week + "|" + p.place] = pool.shift().nftId;
+  return out;
+}
 async function season(){
   SEASON = await api("season");
-  const opts = (SEASON.treasury || []).map(n => "<option value='" + n.nftId + "'>#" + (n.token || "?") + "</option>").join("");
-  $("season").innerHTML = "<p class='muted'>Treasury (issuer " + esc(SEASON.issuer) + "): <b>" + (SEASON.treasury || []).length + "</b> Pixel Scrappys free" +
+  const T = (SEASON.treasury || []).slice().sort((a, b) => (b.rank || 0) - (a.rank || 0) || (a.token || 0) - (b.token || 0));
+  const SUG = suggest();
+  const opts = key => T.map(n => "<option value='" + n.nftId + "'" + (SUG[key] === n.nftId ? " selected" : "") + ">#" + (n.token || "?") + " · " + esc(RLAB(n)) +
+    (n.set ? " · set " + esc(n.set) + " " + n.setMatch : "") + "</option>").join("");
+  const tiers = {}; for (const n of T) tiers[RLAB(n)] = (tiers[RLAB(n)] || 0) + 1;
+  $("season").innerHTML = "<p class='muted'>Treasury (issuer " + esc(SEASON.issuer) + "): <b>" + T.length + "</b> Pixel Scrappys free" +
+    (T.length ? " — " + Object.entries(tiers).map(([k, v]) => v + " " + esc(k)).join(" · ") : "") +
     (SEASON.treasuryError ? " — ledger error: " + esc(SEASON.treasuryError) : "") + (SEASON.xaman ? "" : " · <b>XUMM keys missing</b>") + "</p>" +
+    "<p class='muted'>🎲 Prizes are pre-picked by rarity: the rarest free Scrappy for 1st, the next for 2nd, 3rd and the pack prize. Change any pick in its list. " +
+    "<label><input type='checkbox' id='legOk'" + (LEG ? " checked" : "") + " style='min-width:0'> include the hand-built Legendaries #1–20</label></p>" +
     (SEASON.weeks.some(w => !w.open && w.players) ? "" : "<p class='muted'>No finished week with players yet.</p>") +
     SEASON.weeks.filter(w => w.open || w.players).map(w => w.open ? "<div class='wk'><h3>Week of " + w.week + "</h3><p class='muted'>Still running — closes 15 min after it ends.</p></div>" :
       "<div class='wk'><h3>Week of " + w.week + " · " + w.players + " players</h3>" +
@@ -290,8 +309,25 @@ async function season(){
       (w.prizes.length ? "<table><tr><th>Prize</th><th>Winner</th><th>Status</th><th></th></tr>" + w.prizes.map(p =>
         "<tr><td>" + (PLACE[p.place] || "🤝 Lender share (" + PLACE[p.lenderOf] + (p.dog ? ", dog #" + p.dog : "") + ")") + (p.pack ? " (" + esc(p.pack) + ")" : "") + "</td><td>" + esc(p.name) + "<br><span class='mono'>" + esc(p.account) + "</span></td><td>" +
         (p.status === "claimed" ? "<span class='ok'>✅ claimed #" + p.token + "</span>" : p.status === "offered" ? "🎁 offered #" + p.token + " " + (p.offerTx ? txLink(p.offerTx) : "") + "<br><span class='muted'>waiting for the winner</span>" : "—") +
-        "</td><td>" + (p.status === "offered" || p.status === "claimed" ? "" : opts ? "<select data-nft='" + w.week + "|" + p.place + "'>" + opts + "</select> <button class='btn' data-prize='" + w.week + "|" + p.place + "'>🎁 Send (Xaman)</button>" : "<span class='muted'>treasury empty</span>") +
-        "</td></tr>").join("") + "</table>" : "<p class='muted'>No prize winners (nobody earned XP).</p>") + "</div>").join("");
+        "</td><td>" + (p.status === "offered" || p.status === "claimed" ? "" : T.length ? "<select data-nft='" + w.week + "|" + p.place + "'>" + opts(w.week + "|" + p.place) + "</select> <button class='btn' data-prize='" + w.week + "|" + p.place + "'>🎁 Send (Xaman)</button>" : "<span class='muted'>treasury empty</span>") +
+        "</td></tr>").join("") + "</table>" +
+        (T.length && w.prizes.filter(p => p.status !== "offered" && p.status !== "claimed").length > 1 ? "<p><button class='btn' data-sendall='" + w.week + "'>🎁 Send all, one QR after another</button></p>" : "")
+        : "<p class='muted'>No prize winners (nobody earned XP).</p>") + "</div>").join("");
+  const lg = $("legOk"); if (lg) lg.onchange = () => { LEG = lg.checked; sessionStorage.setItem("ba_admin_leg", LEG ? "1" : "0"); season(); };
+  $("season").querySelectorAll("[data-sendall]").forEach(b => b.onclick = () => {
+    const week = b.dataset.sendall, rows = [...$("season").querySelectorAll("select[data-nft^='" + week + "|']")]
+      .map(sel => ({place: sel.dataset.nft.split("|")[1], nftId: sel.value, tok: sel.options[sel.selectedIndex].text}))
+      .sort((a, b) => ORDER(a.place) - ORDER(b.place));
+    if (new Set(rows.map(r => r.nftId)).size !== rows.length) { alert("Two prizes have the same Scrappy picked — change one first."); return; }
+    if (!confirm("Send " + rows.length + " prizes for the week of " + week + "?\\n\\n" + rows.map(r => (PLACE[r.place] || r.place) + ": " + r.tok).join("\\n") + "\\n\\nYou sign each one in Xaman, one after another.")) return;
+    const next = i => { if (i >= rows.length) return season();
+      const r = rows[i];
+      sign(api("prize", {week, place: r.place, nftId: r.nftId}), "Prize " + (i + 1) + " of " + rows.length + ": " + r.tok,
+        "Sign the free sell offer (Amount 0) for " + (PLACE[r.place] || r.place) + " — only the winner can accept it.",
+        st => { if (st === "signed") setTimeout(() => next(i + 1), 1200); });
+    };
+    next(0);
+  });
   $("season").querySelectorAll("[data-anchor]").forEach(b => b.onclick = () => sign(api("anchor", {week: b.dataset.anchor}), "Anchor week " + b.dataset.anchor, "Sign the AccountSet with the memo — no XRP is sent."));
   $("season").querySelectorAll("[data-prize]").forEach(b => b.onclick = () => {
     const [week, place] = b.dataset.prize.split("|"), sel = $("season").querySelector("[data-nft='" + b.dataset.prize + "']");
@@ -300,9 +336,11 @@ async function season(){
     sign(api("prize", {week, place, nftId: sel.value}), "Prize " + tok, "Sign the free sell offer (Amount 0) — only the winner can accept it.");
   });
 }
-async function sign(req, title, text){
+let ONDONE = null;
+async function sign(req, title, text, onDone){
   const j = await req;
   if (!j.uuid){ alert("Could not create the Xaman request: " + (j.error || "error")); season(); return; }
+  ONDONE = onDone || null;
   $("mTitle").textContent = title; $("mText").textContent = text; $("mQr").src = j.qr; $("mLink").href = j.deeplink;
   $("mState").textContent = "Waiting for the signature…"; $("modal").hidden = false;
   clearInterval(MPOLL);
@@ -311,10 +349,11 @@ async function sign(req, title, text){
     if (s.state === "pending" || !s.state) return;
     clearInterval(MPOLL);
     $("mState").innerHTML = s.state === "signed" ? "<span class='ok'>✅ Signed and submitted</span> " + (s.txid ? txLink(s.txid) : "") : "❌ " + s.state + (s.result ? " (" + s.result + ")" : "");
-    season();
+    const cb = ONDONE; ONDONE = null;
+    if (cb) cb(s.state); else season();
   }, 2500);
 }
-$("mClose").onclick = () => { clearInterval(MPOLL); $("modal").hidden = true; season(); };
+$("mClose").onclick = () => { clearInterval(MPOLL); ONDONE = null; $("modal").hidden = true; season(); };
 $("go").onclick = () => { KEY = $("key").value.trim(); load(); };
 $("key").onkeydown = e => { if (e.key === "Enter") $("go").click(); };
 $("reload").onclick = load; $("chatReload").onclick = () => chat(); $("filter").oninput = () => DATA && draw();

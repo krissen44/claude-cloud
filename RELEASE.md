@@ -26,6 +26,10 @@ offers done Mon 5 Oct for the week of 28 Sep).
     in their lend card and fill it in with one tap; the chat announces it.
   - **Kennel ranking**: dogs sorted by bond with 🥇🥈🥉 and #places, plus "Top dog"; switch to Rarity or Number.
   - **Name nudge**: after a win, players without a name get a "✏️ Set a name" button.
+  - **Prizes by rarity in `/admin`**: the treasury list shows each Scrappy's rarity (and a count per tier); every
+    unsent prize is pre-picked — the rarest free Scrappy for 1st, the next for 2nd, 3rd, then the pack prize. Any pick
+    can be changed. The hand-built Legendaries #1–20 are only used when you tick the box. New "🎁 Send all" button:
+    the QR codes come one after another, you just scan each in Xaman (issuer wallet).
   - Tested offline: 36 checks (team prizes/packs/boards, chat filters/rate limit/mute/delete, open challenge, borrow list,
     kennel order, nudge, no page errors) + the Fight Club, week-close and lending regression tests.
 
@@ -46,5 +50,6 @@ offers done Mon 5 Oct for the week of 28 Sep).
 2. Upload `barkarena/index.html` to `public_html/barkarena/`.
 3. Check: sign in → 💬 opens the chat, send "hi"; Club tab → "📣 Post an open challenge", a second wallet sees it under
    "OPEN CHALLENGES"; kennel shows 🥇 on the best-bonded dog; `/admin` shows the "💬 Chat" card.
-4. From 00:15 UTC: week close in `/admin` as last week (⚓ Anchor, then 🎁 Send per winner, issuer wallet in Xaman).
+4. From 00:15 UTC: week close in `/admin` (⚓ Anchor, then check the pre-picked prizes and "🎁 Send all"; scan each QR
+   with the issuer wallet in Xaman). The first load of the treasury reads each piece's metadata once — may take a moment.
    The issuer is no longer a prize winner even if it ranks.

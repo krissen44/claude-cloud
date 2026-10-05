@@ -148,7 +148,10 @@ hand over one combined package for the week start; don't tell the owner to uploa
   (`weekResult` → `db.results[week]` = canonical JSON of players, packs, prize winners + SHA-256). `/admin` shows it:
   "⚓ Anchor" = Xaman QR for an AccountSet from the issuer with memo `barkarena/results` `{week, sha256, results URL}`;
   "🎁 Send" = Xaman QR for NFTokenCreateOffer (Flags 1 sell, Amount "0", Destination = winner) with an NFT from the
-  **treasury = Pixel Scrappys held by the issuer wallet**. Prizes: top 3 of the XP ladder + the most active member
+  **treasury = Pixel Scrappys held by the issuer wallet**. `/admin/season` returns each treasury piece with its rarity
+  (`treasuryRarity`: metadata `Rarity`, #1–20 = hand-built Legendary, `rank` 7…1); the admin page pre-picks unsent prizes
+  rarest-first (1st, 2nd, 3rd, pack, lender lines; hand-built Legendaries only with the checkbox) and has
+  "🎁 Send all" (one Xaman QR after another, `sign(…, onDone)`). Prizes: top 3 of the XP ladder + the most active member
   (wins+losses) of the winning pack who isn't already top 3. Winners see a card in the kennel (`PRIZE`, `prizeCards`,
   `prizeClaim`) → Xaman NFTokenAcceptOffer, or accept in any wallet (claim then detects ownership). The website shows
   prizes + tx + hash under "Last week — final". No key on the server — every ledger write is a Xaman signature.

@@ -18,7 +18,8 @@ Branch: `claude/upbeat-hypatia-cht3ou` on `krissen44/claude-cloud` (v29 and earl
   players won 76 % vs the AI (top 88–95 %, rK9Ua 125–6); packs Moon 9 / Ledger 7 / Bone 2 / Static 0 (owner keeps max 10);
   0 Club duels, 0 loans, 7 of 34 with a name; the issuer wallet ("Scrappy", owner's test wallet) ranked #1 in week 1, #5 in week 2.
 - **Ready for Mon 12 Oct:** v30 (see RELEASE.md) — learning AI scaled by bond, team wallets out of prizes/packs, chat,
-  open Club challenges, borrow requests, kennel bond ranking, name nudge. Same ZIP layout as before:
+  open Club challenges, borrow requests, kennel bond ranking, name nudge, prizes pre-picked by rarity + "Send all" in /admin.
+  Same ZIP layout as before:
   `zip -r bark-arena-game-2026-10-12.zip package.json package-lock.json server.js worker.js fight-engine.js public node_modules`
   and `cd website && zip ../scrappyxrp-website-2026-10-12.zip barkarena/index.html`.
 

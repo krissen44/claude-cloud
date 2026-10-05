@@ -22,7 +22,7 @@ globalThis.fetch = async (u, o = {}) => {
     if (u.endsWith(".png")) return new Response(PNG, {headers:{"content-type":"image/png"}});
     const t = +u.match(/(\d+)\.json/)[1];
     if (t > 4990) return new Response("nf", {status:404});
-    return Response.json({name:`Pixel Scrappy #${t}`, image:`ipfs://bafyX/${t}.png`, attributes:[{trait_type:"Fur", value:"White"}]});
+    return Response.json({name:`Pixel Scrappy #${t}`, image:`ipfs://bafyX/${t}.png`, attributes:[{trait_type:"Fur", value:"White"}, {trait_type:"Rarity", value:["Common","Uncommon","Rare","Epic","Mythic"][t % 5]}]});
   }
   return real(u, o);
 };

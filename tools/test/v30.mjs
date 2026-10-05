@@ -112,5 +112,21 @@ await pq.click("#nameNudge"); ok(await pq.locator("#nameIn").count() === 1, "nud
 const pn = await player("rNoHolderMMMMMMMMMMMMMMMMMM2");
 ok((await pn.locator("body").innerText()).includes("BORROW A SCRAPPY"), "non-holder sees the borrow card");
 await pn.screenshot({path: S + "/v30-borrow.png", fullPage: true});
+// admin: treasury by rarity, prizes pre-picked rarest first, send all in a row
+const tre = (await (await fetch(U + "/api/admin/season?key=adm")).json()).treasury;
+console.log("treasury:", tre.map(n => "#" + n.token + " " + n.rarity).join(", "));
+ok(tre.find(n => n.token === 104).rarity === "Mythic" && tre.every(n => n.rank > 0), "treasury carries rarity");
+const pad = await br.newPage({viewport:{width:1200,height:1000}}); pad.on("pageerror", e => errs.push("admin: " + e.message)); pad.on("dialog", d => d.accept());
+await pad.goto(U + "/admin?key=adm"); await pad.waitForSelector("[data-sendall]", {timeout:15000});
+const picks = await pad.$$eval("select[data-nft]", ss => ss.map(s => s.dataset.nft.split("|")[1] + "=" + s.options[s.selectedIndex].text));
+console.log("picks:", JSON.stringify(picks));
+ok(/^1=#104 · Mythic/.test(picks[0]) && /^2=#103 · Epic/.test(picks[1]) && /^3=#102 · Rare/.test(picks[2]), "rarest to 1st, then 2nd, 3rd");
+await pad.screenshot({path: S + "/v30-admin-prizes.png", fullPage: true});
+await pad.click("[data-sendall]");
+await pad.waitForFunction(() => document.querySelectorAll("#season [data-prize]").length === 0, null, {timeout:30000});
+const rowsTxt = await pad.locator("#season table").first().innerText();
+ok((rowsTxt.match(/offered #10[234]/g) || []).length === 3, "send all: three offers signed one after another");
+await pad.locator("#modal #mClose").click().catch(() => {});
+await pad.screenshot({path: S + "/v30-admin-sent.png", fullPage: true});
 console.log("page errors:", errs.length ? errs : "none");
 await br.close(); srv.kill(); process.exit(0);
