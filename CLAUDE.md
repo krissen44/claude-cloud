@@ -195,8 +195,9 @@ hand over one combined package for the week start; don't tell the owner to uploa
   (recorded at 720×1280, encoded 1080×1920), hook line on top (from the fight: upset, comeback, Legendary, Club, final,
   big hit, KO), end card "Mint your fighter · scrappyxrp.fun/barkarena · link in bio". `?id=<replay>` or exhibitions
   (best of 40 drawn ghost fights by `clipDrama`). `WAIT_K = .8` speeds it up. Apps' UI zones (top 8 %, bottom 20 %) kept free.
-- **Shorts factory** (`public/kit/factory.mjs`, installer `public/kit/shorts.sh`, served at `/kit/*`): systemd timer on
-  the owner's Hostinger VPS (Ubuntu 24.04, KVM 2) at 05:10 UTC: picks the best replays of the last 36 h (else
+- **Shorts factory** (`public/kit/factory.mjs`): runs daily at 05:10 UTC on **GitHub Actions**
+  (`.github/workflows/shorts.yml`, secret `ADMIN_KEY`, state of used fights in an actions cache; schedules only run from
+  the default branch). VPS alternative: installer `public/kit/shorts.sh` (served at `/kit/*`, systemd timer). It picks the best replays of the last 36 h (else
   exhibitions), records via CDP screencast + WebAudio tap (headless, no X/Pulse), quiet chiptune bed (`MUSIC=0` off),
   ffmpeg loudnorm −14 LUFS, uploads mp4/jpg/json to `/api/admin/clips/upload`. Captions per clip: YouTube title/text
   (`?src=yt` link), TikTok + Instagram text ("link in bio"), a question as pinned comment. The owner posts by hand.

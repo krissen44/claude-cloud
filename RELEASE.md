@@ -64,9 +64,10 @@ offers done Mon 5 Oct for the week of 28 Sep).
 2. Upload `barkarena/index.html` to `public_html/barkarena/`.
 3. Check: sign in → 💬 opens the chat, send "hi"; Club tab → "📣 Post an open challenge", a second wallet sees it under
    "OPEN CHALLENGES"; kennel shows 🥇 on the best-bonded dog; `/admin` shows the "💬 Chat" card.
-4. **Shorts factory (once, after steps 1–3):** on the VPS (Hostinger → VPS → Browser terminal, as root):
-   `curl -fsSL https://game.scrappyxrp.fun/kit/shorts.sh -o shorts.sh && bash shorts.sh` — it asks for the ADMIN_KEY,
-   installs everything and makes the first clips right away. Set the bio links: TikTok
+4. **Shorts factory (once, after steps 1–3):** runs on **GitHub Actions** (free, no VPS): `.github/workflows/shorts.yml`,
+   daily 05:10 UTC. Needs: the repo's default branch = `claude/upbeat-hypatia-cht3ou` (scheduled workflows only run
+   from the default branch) and the repository secret `ADMIN_KEY`. First run by hand: Actions → "Shorts factory" →
+   Run workflow. (Alternative on a VPS: `curl -fsSL https://game.scrappyxrp.fun/kit/shorts.sh -o shorts.sh && bash shorts.sh`.) Set the bio links: TikTok
    `scrappyxrp.fun/barkarena/?src=tt`, Instagram `…?src=ig`, YouTube channel link `…?src=yt`.
 5. From 00:15 UTC: week close in `/admin` (⚓ Anchor, then check the pre-picked prizes and "🎁 Send all"; scan each QR
    with the issuer wallet in Xaman). The first load of the treasury reads each piece's metadata once — may take a moment.

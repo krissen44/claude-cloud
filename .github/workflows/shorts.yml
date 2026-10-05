@@ -1,0 +1,49 @@
+# Bark Arena Shorts factory on GitHub's free runners (instead of a VPS).
+# Every morning it records the best fights of the last day from the live game as 9:16 clips with sound
+# and uploads them, with captions, to https://game.scrappyxrp.fun/admin → "📱 Clips".
+# Needs the repository secret ADMIN_KEY. Start by hand: Actions → "Shorts factory" → Run workflow.
+name: Shorts factory
+
+on:
+  schedule:
+    - cron: "10 5 * * *"          # 05:10 UTC every day (GitHub may start it a few minutes late)
+  workflow_dispatch:
+    inputs:
+      clips:
+        description: "How many clips"
+        default: "3"
+
+concurrency: shorts-factory
+
+jobs:
+  clips:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install ffmpeg, emoji font, Chromium
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-noto-color-emoji >/dev/null
+          npm install --no-save --no-audit --no-fund playwright@1.48.2 >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+      - name: Remember which fights were already used
+        uses: actions/cache@v4
+        with:
+          path: .shorts-state
+          key: shorts-state-${{ github.run_id }}
+          restore-keys: shorts-state-
+      - name: Make and upload today's clips
+        env:
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+          GAME_URL: https://game.scrappyxrp.fun
+          CLIPS: ${{ github.event.inputs.clips || '3' }}
+          WORK_DIR: ${{ runner.temp }}/shorts-work
+          STATE_FILE: .shorts-state/state.json
+        run: |
+          mkdir -p .shorts-state
+          if [ -z "$ADMIN_KEY" ]; then echo "::error::Repository secret ADMIN_KEY is missing (Settings → Secrets and variables → Actions)"; exit 1; fi
+          node public/kit/factory.mjs
