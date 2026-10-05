@@ -208,6 +208,10 @@ td:first-child,th:first-child{text-align:left;font-family:ui-monospace,monospace
 .wk td,.wk th{text-align:left;white-space:normal}
 .mono{font-family:ui-monospace,monospace;font-size:12px;word-break:break-all}.ok{color:#177a3c;font-weight:700}
 select{border:2px solid var(--ink);border-radius:999px;padding:6px 10px;font:inherit}
+.clip{display:grid;grid-template-columns:150px 1fr;gap:14px;align-items:start;padding:12px 0;border-top:1px solid var(--line)}
+.clip video{width:150px;aspect-ratio:9/16;border-radius:10px;background:#000}.clip .ci b{font-size:16px}
+.clip .btn{font-size:12.5px;padding:6px 10px;box-shadow:0 2px 0 var(--ink)}
+@media(max-width:600px){.clip{grid-template-columns:110px 1fr}.clip video{width:110px}}
 #modal{position:fixed;inset:0;background:#0e172699;display:grid;place-items:center;padding:16px}
 #modal .card{max-width:360px;text-align:center}#modal img{width:240px;height:240px;image-rendering:pixelated}
 </style></head><body>
@@ -222,6 +226,15 @@ select{border:2px solid var(--ink);border-radius:999px;padding:6px 10px;font:inh
     <p class="muted" style="margin:4px 0 0">A finished week is frozen 15 minutes after Monday 00:00 UTC. Anchor its SHA-256 on the XRPL and send the prizes
       (top 3 XP + most active member of the winning pack) from the treasury — every step is a Xaman QR you sign with the issuer wallet.</p>
     <div id="season"><p class="muted">Loading…</p></div></div>
+  <div class="card"><h2 style="margin:0;font-size:18px">📱 Clips for Shorts, TikTok &amp; Reels</h2>
+    <p class="muted" style="margin:4px 0 0">Made every morning by the Shorts factory on the VPS. Download a clip, copy its text, post it — then tick where it went.
+      Bio / channel links: TikTok <b>scrappyxrp.fun/barkarena/?src=tt</b> · Instagram <b>…?src=ig</b> · YouTube <b>…?src=yt</b>. Pin the "comment" as the first comment.</p>
+    <div class="row" style="margin-top:8px"><button class="btn ghost" id="clipsReload">↻ Refresh clips</button></div>
+    <div id="clips"><p class="muted">Loading…</p></div></div>
+  <div class="card"><h2 style="margin:0;font-size:18px">📈 Reach — where new people come from</h2>
+    <p class="muted" style="margin:4px 0 0">Visits of scrappyxrp.fun/barkarena by source (tt TikTok, yt YouTube, ig Instagram, direct = no tag), how many saw the mint section,
+      clicked mint, or went into the game — and the players who signed in after coming from a source.</p>
+    <div id="funnel"><p class="muted">Loading…</p></div></div>
   <div class="card"><h2 style="margin:0;font-size:18px">💬 Chat</h2>
     <p class="muted" style="margin:4px 0 0">The last 80 messages of the in-game chat. Delete a message, or mute a wallet (it can still read, not write).</p>
     <div class="row" style="margin-top:8px"><button class="btn ghost" id="chatReload">↻ Refresh chat</button></div>
@@ -257,7 +270,44 @@ async function load(){
     .map(([l,v]) => "<div class='card stat'><span>"+l+"</span><b>"+v+"</b></div>").join("");
   $("dlJson").href = "/api/admin/export?download=1&key=" + encodeURIComponent(KEY);
   $("dlCsv").href = "/api/admin/csv?key=" + encodeURIComponent(KEY);
-  draw(); season(); chat();
+  draw(); season(); chat(); clips(); funnel();
+}
+const CK = p => fetch("/api/admin/clips" + p + (p.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(KEY), {cache: "no-store"});
+async function clips(){
+  const j = await CK("").then(r => r.json()).catch(() => ({clips: []}));
+  const L = j.clips || [], f = n => "/api/admin/clips/file?key=" + encodeURIComponent(KEY) + "&name=" + n;
+  window.CLIPS = L;
+  $("clips").innerHTML = L.length ? L.map((c, i) => "<div class='clip'><video controls preload='none' playsinline poster='" + f(c.name + ".jpg") + "' src='" + f(c.name + ".mp4") + "'></video>" +
+    "<div class='ci'><b>" + esc(c.hook) + "</b><div class='muted'>" + esc(c.name) + " · " + esc(c.kind) + " · " + c.seconds + " s · " + c.mb + " MB<br>" + esc(c.line || "") + "</div>" +
+    "<div class='row' style='margin-top:6px'><a class='btn' href='" + f(c.name + ".mp4") + "&download=1'>⬇ Video</a>" +
+    ["yt-title:YouTube title", "yt-desc:YouTube text", "tiktok:TikTok text", "instagram:Instagram text", "comment:Comment"].map(x => { const [k, l] = x.split(":");
+      return "<button class='btn ghost' data-copy='" + i + ":" + k + "'>📋 " + l + "</button>"; }).join("") + "</div>" +
+    "<div class='row' style='margin-top:6px'>" + ["youtube", "tiktok", "instagram"].map(pl => "<label class='muted'><input type='checkbox' style='min-width:0' data-posted='" + c.name + ":" + pl + "'" +
+      (c.posted && c.posted[pl] ? " checked" : "") + "> " + pl + "</label>").join(" ") +
+    " <button class='btn ghost' data-cdelete='" + c.name + "'>🗑</button></div></div></div>").join("")
+    : "<p class='muted'>No clips yet — the factory makes the first ones after it is set up on the VPS.</p>";
+  $("clips").querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => {
+    const [i, k] = b.dataset.copy.split(":"), c = CLIPS[+i];
+    const t = k === "yt-title" ? c.youtube.title : k === "yt-desc" ? c.youtube.description : k === "tiktok" ? c.tiktok : k === "instagram" ? c.instagram : c.comment;
+    try { await navigator.clipboard.writeText(t); b.textContent = "✅ Copied"; } catch(e){ prompt("Copy:", t); }
+  });
+  $("clips").querySelectorAll("[data-posted]").forEach(x => x.onchange = () => { const [name, platform] = x.dataset.posted.split(":");
+    fetch("/api/admin/clips/posted?key=" + encodeURIComponent(KEY), {method: "POST", body: JSON.stringify({name, platform, on: x.checked})}); });
+  $("clips").querySelectorAll("[data-cdelete]").forEach(b => b.onclick = async () => { if (!confirm("Delete clip " + b.dataset.cdelete + "?")) return;
+    await fetch("/api/admin/clips/delete?key=" + encodeURIComponent(KEY), {method: "POST", body: JSON.stringify({name: b.dataset.cdelete})}); clips(); });
+}
+async function funnel(){
+  const j = await api("funnel").catch(() => null);
+  if (!j || !j.days){ $("funnel").innerHTML = "<p class='muted'>No data.</p>"; return; }
+  const EV = [["view", "Visits"], ["mintview", "Saw mint"], ["mint", "Mint clicks"], ["play", "Into the game"], ["demo", "Demo"]];
+  const tot = {}; for (const d of j.days.slice(0, 7)) for (const [src, r] of Object.entries(d.src)) { tot[src] = tot[src] || {}; for (const [k] of EV) tot[src][k] = (tot[src][k] || 0) + (r[k] || 0); }
+  const srcs = Object.keys(tot).sort((a, b) => (tot[b].view || 0) - (tot[a].view || 0));
+  const pl = j.players || {};
+  $("funnel").innerHTML = "<h3 style='margin:10px 0 4px;font-size:15px'>Last 7 days</h3>" + (srcs.length ? "<table><tr><th>Source</th>" + EV.map(e => "<th>" + e[1] + "</th>").join("") + "<th>New players</th><th>…holding a Scrappy</th></tr>" +
+    srcs.map(s => "<tr><td>" + esc(s) + "</td>" + EV.map(e => "<td>" + (tot[s][e[0]] || 0) + "</td>").join("") + "<td>" + ((pl[s] || {}).players || 0) + "</td><td>" + ((pl[s] || {}).holders || 0) + "</td></tr>").join("") + "</table>"
+    : "<p class='muted'>No visits counted yet.</p>") +
+    "<h3 style='margin:14px 0 4px;font-size:15px'>Per day</h3><table><tr><th>Day</th><th>Visits by source</th></tr>" +
+    j.days.slice(0, 14).map(d => "<tr><td>" + d.day + "</td><td style='text-align:left'>" + Object.entries(d.src).map(([s, r]) => esc(s) + " " + (r.view || 0) + (r.mint ? " (mint " + r.mint + ")" : "")).join(" · ") + "</td></tr>").join("") + "</table>";
 }
 async function chat(body, path){
   const j = await api(path || "chat", body);
@@ -357,7 +407,7 @@ async function sign(req, title, text, onDone){
 $("mClose").onclick = () => { clearInterval(MPOLL); ONDONE = null; $("modal").hidden = true; season(); };
 $("go").onclick = () => { KEY = $("key").value.trim(); load(); };
 $("key").onkeydown = e => { if (e.key === "Enter") $("go").click(); };
-$("reload").onclick = load; $("chatReload").onclick = () => chat(); $("filter").oninput = () => DATA && draw();
+$("reload").onclick = load; $("chatReload").onclick = () => chat(); $("clipsReload").onclick = () => clips(); $("filter").oninput = () => DATA && draw();
 if (KEY) load();
 </script></body></html>`;
 
@@ -379,6 +429,77 @@ h1{font:900 clamp(32px,8vw,64px)/1 system-ui,sans-serif;color:#1b8ce3;letter-spa
 a{color:#0f76c6;font-weight:700}</style></head>
 <body><div><h1>BARK ARENA</h1><p>The Pixel Scrappy game is in private beta.<br>It opens to everyone soon.</p>
 <p><a href="https://scrappyxrp.fun/pixelscrappy/">← Pixel Scrappy</a></p></div></body></html>`;
+
+/* ---- Shorts clips: the factory on the VPS (public/kit/factory.mjs) uploads each finished MP4 with its
+   captions; /admin lists them to watch, download and copy the texts. Kept 30 days. ADMIN_KEY only. ---- */
+const CLIPS_DIR = path.join(DATA_DIR, "clips");
+fs.mkdirSync(CLIPS_DIR, { recursive: true });
+const CLIP_NAME = /^\d{4}-\d{2}-\d{2}-[a-z0-9-]{1,40}\.(mp4|json|jpg)$/;
+const CLIP_TYPE = { mp4: "video/mp4", json: "application/json", jpg: "image/jpeg" };
+function adminKeyOk(k) {
+  const a = process.env.ADMIN_KEY || "";
+  return !!a && typeof k === "string" && k.length === a.length && crypto.timingSafeEqual(Buffer.from(k), Buffer.from(a));
+}
+function clipsList() {
+  const cut = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10), out = [];
+  for (const f of fs.readdirSync(CLIPS_DIR)) {
+    if (!CLIP_NAME.test(f)) continue;
+    if (f.slice(0, 10) < cut) { try { fs.unlinkSync(path.join(CLIPS_DIR, f)); } catch {} continue; }
+    if (!f.endsWith(".json")) continue;
+    try {
+      const j = JSON.parse(fs.readFileSync(path.join(CLIPS_DIR, f), "utf8")), base = f.slice(0, -5);
+      if (fs.existsSync(path.join(CLIPS_DIR, base + ".mp4"))) out.push({ ...j, name: base, mb: +(fs.statSync(path.join(CLIPS_DIR, base + ".mp4")).size / 1048576).toFixed(1) });
+    } catch {}
+  }
+  return out.sort((a, b) => (a.name < b.name ? 1 : -1));
+}
+async function clipsRoute(req, res, url) {
+  const send = (code, obj) => { res.writeHead(code, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(obj)); };
+  if (!adminKeyOk(url.searchParams.get("key"))) return send(403, { error: "forbidden" });
+  const p = url.pathname.slice("/api/admin/clips".length), name = url.searchParams.get("name") || "";
+  if (p === "" && req.method === "GET") return send(200, { clips: clipsList() });
+  if (p === "/upload" && (req.method === "PUT" || req.method === "POST")) {
+    if (!CLIP_NAME.test(name)) return send(400, { error: "bad_name" });
+    const tmp = path.join(CLIPS_DIR, "." + name + ".part"), out = fs.createWriteStream(tmp);
+    let n = 0, tooBig = false;
+    out.on("error", () => {});
+    await new Promise(ok => {
+      let done = false; const fin = () => { if (!done) { done = true; out.end(ok); } };
+      req.on("data", c => { n += c.length; if (n > 150 * 1048576) { tooBig = true; req.destroy(); } else out.write(c); });
+      req.on("end", fin); req.on("error", fin); req.on("close", fin);
+    });
+    if (tooBig || !n) { try { fs.unlinkSync(tmp); } catch {} return send(413, { error: "too_large_or_empty" }); }
+    fs.renameSync(tmp, path.join(CLIPS_DIR, name));
+    return send(200, { ok: true, bytes: n });
+  }
+  if (p === "/file" && req.method === "GET") {
+    if (!CLIP_NAME.test(name) || !fs.existsSync(path.join(CLIPS_DIR, name))) return send(404, { error: "not_found" });
+    const f = path.join(CLIPS_DIR, name), size = fs.statSync(f).size, type = CLIP_TYPE[name.split(".").pop()];
+    const head = { "content-type": type, "accept-ranges": "bytes", "cache-control": "private, max-age=3600" };
+    if (url.searchParams.has("download")) head["content-disposition"] = `attachment; filename="bark-arena-${name}"`;
+    const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range || "");
+    if (m) {
+      const a = m[1] ? +m[1] : size - +m[2], b = m[1] && m[2] ? Math.min(+m[2], size - 1) : size - 1;
+      if (!(a >= 0 && a <= b)) { res.writeHead(416, { "content-range": `bytes */${size}` }); return res.end(); }
+      res.writeHead(206, { ...head, "content-range": `bytes ${a}-${b}/${size}`, "content-length": b - a + 1 });
+      return fs.createReadStream(f, { start: a, end: b }).pipe(res);
+    }
+    res.writeHead(200, { ...head, "content-length": size });
+    return fs.createReadStream(f).pipe(res);
+  }
+  if ((p === "/posted" || p === "/delete") && req.method === "POST") {
+    let b = {}; try { b = JSON.parse(String(await readBody(req))); } catch {}
+    const base = String(b.name || ""), jf = path.join(CLIPS_DIR, base + ".json");
+    if (!CLIP_NAME.test(base + ".json") || !fs.existsSync(jf)) return send(404, { error: "not_found" });
+    if (p === "/delete") { for (const x of ["mp4", "json", "jpg"]) { try { fs.unlinkSync(path.join(CLIPS_DIR, base + "." + x)); } catch {} } return send(200, { ok: true }); }
+    const j = JSON.parse(fs.readFileSync(jf, "utf8")); j.posted = j.posted || {};
+    if (["youtube", "tiktok", "instagram"].includes(b.platform)) j.posted[b.platform] = b.on ? Date.now() : null;
+    fs.writeFileSync(jf, JSON.stringify(j, null, 1));
+    return send(200, { ok: true, posted: j.posted });
+  }
+  return send(404, { error: "not_found" });
+}
+const KIT = { "/kit/shorts.sh": "text/plain; charset=utf-8", "/kit/factory.mjs": "text/plain; charset=utf-8" };
 
 function readBody(req) {
   return new Promise((ok, fail) => {
@@ -404,6 +525,12 @@ http.createServer(async (req, res) => {
       const api = url.pathname === "/api" || url.pathname.startsWith("/api/");
       res.writeHead(api ? 403 : 200, {"content-type": api ? "application/json" : "text/html; charset=utf-8", "cache-control": "no-store"});
       res.end(api ? JSON.stringify({error: "private_beta"}) : SOON); return;
+    }
+    if (url.pathname.startsWith("/api/admin/clips")) { await clipsRoute(req, res, url); return; }
+    if (KIT[url.pathname]) {                                       // the Shorts factory installer for the VPS
+      try { const b = fs.readFileSync(path.join(ROOT, "public", url.pathname)); res.writeHead(200, { "content-type": KIT[url.pathname], "cache-control": "no-cache" }); res.end(b); }
+      catch { res.writeHead(404); res.end(); }
+      return;
     }
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
       const headers = {};

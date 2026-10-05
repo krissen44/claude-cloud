@@ -90,6 +90,10 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/prizes`, `/prizes/claim` (POST `{week,place}`), `/prizes/status?uuid=` | ✔ | The player's prize offers; claim → Xaman NFTokenAcceptOffer payload for the ledger sell offer |
 | `/admin/season`, `/admin/anchor` (POST `{week}`), `/admin/prize` (POST `{week,place,nftId}`), `/admin/xaman?uuid=` | `?key=ADMIN_KEY` | Week close: results, treasury, Xaman payloads signed by the issuer wallet, payload status |
 | `/admin/chat`, `/admin/chat/del` (POST `{id}`), `/admin/chat/mute` (POST `{account,on}`) | `?key=ADMIN_KEY` | Chat moderation (also on the `/admin` page) |
+| `/replay` (POST), `/tv` (GET; POST `{off}`), `/src` (POST `{src,at}`) | ✔ | Upload a finished fight as replay (moves + dice) / Bark Arena TV opt-out / first-touch source of a new player |
+| `/public/replays[?n=&skip=]`, `/public/replay?id=`, `/public/dogimg?t=`, `/public/hit` (POST `{src,ev}`) | – | TV + Shorts playlist, one replay, collection image (disk cache), website funnel ping (`view/mintview/mint/play/demo`) |
+| `/admin/funnel` | `?key=ADMIN_KEY` | Website visits per source/day + players per source (`srcs` blob) |
+| `/admin/clips` (GET list), `/admin/clips/upload?name=` (PUT), `/admin/clips/file?name=[&download]`, `/admin/clips/posted` / `delete` (POST) | `?key=ADMIN_KEY` | Shorts clips — **handled in `server.js`** (Node only, files in `DATA_DIR/clips`, kept 30 days) |
 | `/admin/export[?download=1]`, `/admin/csv` | `?key=ADMIN_KEY` | Everything as JSON backup (summary, per-player rows, raw store + saves) / players as CSV. Dashboard page: **`/admin`** |
 
 ### Game rules (as implemented — keep the website guide in sync)
@@ -178,6 +182,28 @@ hand over one combined package for the week start; don't tell the owner to uploa
   v29 sounds (all WebAudio synth in `S`): `chomp`, `leap`, `land`, `crowd` (arena/club only), `ko`, and one per
   signature move (`thunder`, `choir`, `stampede`, `rocket`, `dip`, `crash`, `splash`, `prism`, `twin`, `munch`, `matrix`,
   `runes`, `voidHum`, `alchemy`, `ward`, `crystal`, `charge`).
+- **Replays (v31)**: every finished non-demo fight is recorded unless the player opted out (`SAVE.data.tvOff`, kennel
+  button, server blob `tvoff`): `REC.cur` in `startFight`, `recRolls` wraps `resolve` in `go()` and keeps the engine's
+  `Math.random` draws (rounded to 1e-6 and *used* rounded, so `rollsReplay` reproduces the fight exactly), `recSend` in
+  `play()` → `/api/replay`. Club duels are recorded by the server in `clubFinish` (seeds). Stored as `FILES` json
+  `replay:<id>` + index blob `replays` (600; 80 in the blob without FILES). Names come from the server, never the client.
+- **Bark Arena TV `/tv`** (`tvBoot`, `tvLoop`, `tvPlay`, `tvBoard`; `tvMode`, `TV.theme` overrides `stageTheme`; `play()`
+  returns early in tvMode): replays back to back with overlay, ladder card every 4 fights, exhibitions when empty.
+  800×450 CSS px. `tools/stream/setup.sh` = optional 24/7 YouTube stream from a VPS (Xvfb + PulseAudio + ffmpeg RTMP);
+  not in use — the owner chose Shorts.
+- **Shorts clips `/clip`** (`clipBoot`, `clipDry`, `clipDrama`, `clipHook`, `CLIP`): one fight in portrait 450×800 CSS px
+  (recorded at 720×1280, encoded 1080×1920), hook line on top (from the fight: upset, comeback, Legendary, Club, final,
+  big hit, KO), end card "Mint your fighter · scrappyxrp.fun/barkarena · link in bio". `?id=<replay>` or exhibitions
+  (best of 40 drawn ghost fights by `clipDrama`). `WAIT_K = .8` speeds it up. Apps' UI zones (top 8 %, bottom 20 %) kept free.
+- **Shorts factory** (`public/kit/factory.mjs`, installer `public/kit/shorts.sh`, served at `/kit/*`): systemd timer on
+  the owner's Hostinger VPS (Ubuntu 24.04, KVM 2) at 05:10 UTC: picks the best replays of the last 36 h (else
+  exhibitions), records via CDP screencast + WebAudio tap (headless, no X/Pulse), quiet chiptune bed (`MUSIC=0` off),
+  ffmpeg loudnorm −14 LUFS, uploads mp4/jpg/json to `/api/admin/clips/upload`. Captions per clip: YouTube title/text
+  (`?src=yt` link), TikTok + Instagram text ("link in bio"), a question as pinned comment. The owner posts by hand.
+- **Funnel**: website `barkarena/index.html` reads `?src=`, shows a welcome banner, a "Get your fighter" section with
+  the xrp.cafe mint embed (public mint is live), pings `/api/public/hit` (sendBeacon, text/plain = no preflight),
+  appends `src` to game links; the game stores the first `?src=` (`ba_src`) and posts it once per wallet (`/api/src`).
+  `?demo=1` opens the game in demo mode. `/admin` → "📈 Reach".
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 
@@ -192,7 +218,8 @@ v14 one-pack-a-week rule, losses tracked, full pack stats table · v15 `ACCESS_K
 v19 cloud saves + `/admin` · v20 real arena rivals + player names · v21 arena defence XP · v22 "buy this rival" link ·
 v23 server fight engine + Fight Club beta · v24 week close: results hash on the XRPL + treasury prizes · v25 lending · v26 no tickets into a new week · v27 animated backdrops + fight effects · v28 bites, signature-move effects, Mythic/Legendary entrances · v29 sounds for all of it ·
 v30 (after week-2 data: players won 76 %, top players 95 %) learning opponent AI scaled by bond, team wallets out of prizes/packs,
-in-game chat, open Club challenges, borrow requests, kennel bond ranking, name nudge.
+in-game chat, open Club challenges, borrow requests, kennel bond ranking, name nudge, prizes pre-picked by rarity ·
+v31 fight replays, Bark Arena TV page, Shorts clips + daily factory on a VPS, website funnel (welcome, mint section, source tracking).
 
 ### Testing locally
 Offline harness with mocked XRPL/IPFS/Xaman + Playwright lives in **`tools/test/`** (see `HANDOFF.md` for usage). ```bash
@@ -208,6 +235,8 @@ Always syntax-check the inline game script after editing `public/index.html`.
 - Stats, XP and streaks are computed in the browser and trusted by the server (clamped only) — a determined user can fake them.
 - The AI memory lives in the player's save: clearing it (Reset progress / new device without cloud save) resets what the opponent learned.
 - Chat is polling, not push (4 s); no private messages; moderation = admin delete/mute only.
+- Replays are uploaded by the client: dice could be faked to make a fake fight appear on TV/Shorts (only cosmetic).
+- YouTube/TikTok uploads are manual: automatic posting needs Google's API audit / TikTok app review (owner decided: post by hand).
 - First day gives 10 tickets (5 starting + 5 daily grant).
 - Fight Club duels live in server memory (`DUELS`): a server restart drops open/running duels (records are kept).
   The D1/Cloudflare path has no shared memory across isolates, so the Club is Node-only for now.

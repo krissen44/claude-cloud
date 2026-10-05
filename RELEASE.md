@@ -33,15 +33,23 @@ offers done Mon 5 Oct for the week of 28 Sep).
   - Tested offline: 36 checks (team prizes/packs/boards, chat filters/rate limit/mute/delete, open challenge, borrow list,
     kennel order, nudge, no page errors) + the Fight Club, week-close and lending regression tests.
 
-- **v31 (in progress) — Bark Arena TV**: finished fights (ranked, arena, casual; Club duels on the server) are kept as
-  small replays (moves + dice, no video); `game.scrappyxrp.fun/tv` replays them back to back with all effects, an
-  overlay (names, dogs, bond) and every 4 fights the weekly ladder — for a 24/7 YouTube live stream from a VPS
-  (`tools/stream/setup.sh`). Players can switch it off in the kennel ("Don't show my fights"). Tested: a live ranked
-  fight and a Club duel replay on /tv to exactly the same end. Still to do: local test of the stream chain, docs.
+- **v31 — Shorts for reach**: every finished fight is kept as a small replay (moves + dice, no video). Every morning
+  the **Shorts factory on the VPS** turns the best fights of the day into 3 portrait clips (1080×1920, ~15–25 s, with
+  sound and a quiet chiptune): a hook line on top that fits the fight ("Down to 2 HP… watch this 😤", "A 1-of-20
+  Legendary drops in 🌟", "Two real players. One ring. 🥊"), the fight, an end card "Mint your fighter ·
+  scrappyxrp.fun/barkarena · link in bio". With each clip: YouTube title + text, TikTok text, Instagram text and a
+  question for the pinned comment. **`/admin` → "📱 Clips"**: watch, download, copy texts, tick where posted.
+  **`/admin` → "📈 Reach"**: website visits per platform, how many saw/clicked the mint, went into the game, and the new
+  players per platform. Also new: `game.scrappyxrp.fun/tv` (all fights back to back), players can switch off that their
+  fights are shown ("Don't show my fights" in the kennel). Tested: replays end exactly like the live fight / the Club
+  duel; the factory made real 1080×1920 MP4s with sound from a duel and an exhibition and uploaded them; admin cards,
+  website tracking and the installer route.
 
 ### Website (scrappyxrp.fun)
 - `barkarena/index.html`: TEAM tag on the board, guide text for the learning opponent, open challenges, chat FAQ,
-  borrow list, team wallets.
+  borrow list, team wallets. **v31:** "Get your fighter" section high up (3 steps + the xrp.cafe mint widget), hero
+  button "🐾 Get your fighter", a welcome banner for visitors from TikTok/YouTube/Instagram (`?src=tt|yt|ig`), visit and
+  click counting for "📈 Reach", "Try the free demo" opens the game's demo.
 
 ### Planned (Season 2)
 - Fight Club: matchmaking queue, Elo, own ladder.
@@ -56,6 +64,10 @@ offers done Mon 5 Oct for the week of 28 Sep).
 2. Upload `barkarena/index.html` to `public_html/barkarena/`.
 3. Check: sign in → 💬 opens the chat, send "hi"; Club tab → "📣 Post an open challenge", a second wallet sees it under
    "OPEN CHALLENGES"; kennel shows 🥇 on the best-bonded dog; `/admin` shows the "💬 Chat" card.
-4. From 00:15 UTC: week close in `/admin` (⚓ Anchor, then check the pre-picked prizes and "🎁 Send all"; scan each QR
+4. **Shorts factory (once, after steps 1–3):** on the VPS (Hostinger → VPS → Browser terminal, as root):
+   `curl -fsSL https://game.scrappyxrp.fun/kit/shorts.sh -o shorts.sh && bash shorts.sh` — it asks for the ADMIN_KEY,
+   installs everything and makes the first clips right away. Set the bio links: TikTok
+   `scrappyxrp.fun/barkarena/?src=tt`, Instagram `…?src=ig`, YouTube channel link `…?src=yt`.
+5. From 00:15 UTC: week close in `/admin` (⚓ Anchor, then check the pre-picked prizes and "🎁 Send all"; scan each QR
    with the issuer wallet in Xaman). The first load of the treasury reads each piece's metadata once — may take a moment.
    The issuer is no longer a prize winner even if it ranks.

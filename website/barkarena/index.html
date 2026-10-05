@@ -156,6 +156,18 @@ details.card summary::after{content:"+";font-size:22px;line-height:1;color:var(-
 details.card[open] summary::after{content:"–"}
 details.card .body{padding:0 18px 18px}
 details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
+/* visitors from a Short (?src=tt|yt|ig): welcome + the way to their own fighter */
+.welcome{margin-top:10px;padding:14px 18px;border-radius:16px;background:#fff4d6;border:2px solid var(--ink);box-shadow:0 3px 0 0 var(--ink);display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:space-between}
+.welcome b{font:800 17px var(--display)}.welcome p{margin:2px 0 0;color:#40506a;font-size:14.5px}
+.getfighter{display:grid;gap:18px;align-items:start}
+@media(min-width:880px){.getfighter{grid-template-columns:1fr 1fr}}
+.steps{counter-reset:st;list-style:none;margin:16px 0 0;padding:0;display:grid;gap:10px}
+.steps li{counter-increment:st;position:relative;padding:12px 14px 12px 54px;background:var(--surface);border-radius:14px;box-shadow:0 0 0 1px var(--line)}
+.steps li::before{content:counter(st);position:absolute;left:14px;top:12px;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font:800 15px/28px var(--sans);text-align:center}
+.steps li b{display:block;font-size:16px}.steps li span{color:var(--muted);font-size:14.5px;line-height:1.55}
+.perks{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.perks span{background:var(--raised);box-shadow:0 0 0 1px var(--line);border-radius:999px;padding:6px 12px;font-size:13.5px;font-weight:600}
+.mint-widget{display:flex;justify-content:center;width:100%;min-height:200px}
 </style>
 <link rel="stylesheet" href="/pixelscrappy/scrappy-theme.css">
 </head>
@@ -171,13 +183,20 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
     </nav>
   </header>
 
+  <div class="welcome" id="welcome" hidden>
+    <div><b id="welcomeT">👋 Saw a fight? Here's how you get your own dog in the ring.</b>
+      <p>Every fighter is a Pixel Scrappy NFT on the XRP Ledger — mint one, sign in, and it fights for you. Weekly NFT prizes for the best trainers.</p></div>
+    <div class="row" style="margin:0"><a class="btn" href="#mint" data-ev="mintcta">Get your fighter ↓</a><a class="btn ghost" href="https://game.scrappyxrp.fun/?demo=1" data-ev="demo">Try the free demo</a></div>
+  </div>
+
   <section class="pxhero" style="margin-top:6px">
     <div class="pxhero-in">
       <span class="beta">🟢 Now live</span>
       <h1 class="pxtitle" data-px="BARK ARENA">Bark Arena</h1>
       <p class="lead">Your Pixel Scrappys, in the ring. Connect Xaman or Joey and the dogs in your wallet fight with the traits they actually carry — no transaction, no fee.</p>
       <div class="row" style="margin-top:20px">
-        <a class="btn" href="https://game.scrappyxrp.fun/">Play Bark Arena</a>
+        <a class="btn" href="#mint" data-ev="mintcta">🐾 Get your fighter</a>
+        <a class="btn ghost" href="https://game.scrappyxrp.fun/" data-ev="play">Play Bark Arena</a>
         <a class="btn ghost" href="#how">How to play</a>
       </div>
     </div>
@@ -188,7 +207,30 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
     </div>
   </section>
 
+  <section id="mint" style="margin-top:28px">
+    <p class="kicker">Get your fighter</p>
+    <h2>Your own dog in the ring — in 3 steps</h2>
+    <div class="getfighter">
+      <div>
+        <ol class="steps">
+          <li><b>Get a free XRPL wallet</b><span>Download <a href="https://xaman.app/" target="_blank" rel="noopener">Xaman</a> (or Joey) and fund it with a little XRP.</span></li>
+          <li><b>Mint a Pixel Scrappy</b><span>Right here, or pick one on <a href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener" data-ev="mint">xrp.cafe</a>. Each of the 5,000 dogs carries its own traits — and fights with them. Rare traits, rare moves.</span></li>
+          <li><b>Open Bark Arena and sign in</b><span>Your dog appears in your kennel. Fight ranked, run the arena, join a pack, duel friends in the Fight Club. Signing in is free and moves nothing.</span></li>
+        </ol>
+        <div class="perks"><span>🎁 Weekly NFT prizes</span><span>🏆 Live leaderboard</span><span>⚓ Results sealed on the XRPL</span><span>🐶 Bond levels stay with the NFT</span></div>
+        <p class="lead" style="font-size:14px">Not ready yet? <a href="https://game.scrappyxrp.fun/?demo=1" data-ev="demo">Play the free demo</a> first — or ask a holder to lend you a dog.</p>
+      </div>
+      <div class="card" style="text-align:center">
+        <div class="mint-widget" id="mintWidget">
+          <script src="https://xrp.cafe/embed/mint.js" data-vanity="pixel-scrappy" data-theme="dark" data-width="100%" data-max-width="460px" async></script>
+        </div>
+        <p style="margin:12px 0 0"><a href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener" data-ev="mint">Open the mint on xrp.cafe →</a></p>
+      </div>
+    </div>
+  </section>
+
   <nav class="toc" aria-label="On this page">
+    <a href="#mint">🐾 Get a fighter</a>
     <a href="#leaderboard">🏆 Leaderboard</a>
     <a href="#how">📖 How to play</a>
     <a href="#fight">🥊 Fighting</a>
@@ -353,6 +395,36 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
     </div>
   </footer>
 </div>
+<script>
+/* Where visitors come from (a Short: ?src=tt|yt|ig) and what they do — counted on the game server, no cookies,
+   nothing personal. The source rides along to the game, which credits new players to it. */
+(function(){
+  var HIT = "https://game.scrappyxrp.fun/api/public/hit", q = new URLSearchParams(location.search), src = (q.get("src") || "").toLowerCase();
+  try { if (/^[a-z0-9_-]{1,24}$/.test(src)) localStorage.setItem("ba_web_src", src); else src = localStorage.getItem("ba_web_src") || ""; } catch(e){}
+  var sent = {};
+  function hit(ev){ if (sent[ev] && ev !== "play" && ev !== "demo") return; sent[ev] = 1;
+    var b = JSON.stringify({src: src || "direct", ev: ev});
+    try { if (!(navigator.sendBeacon && navigator.sendBeacon(HIT, b))) fetch(HIT, {method: "POST", body: b, keepalive: true}); } catch(e){} }
+  window.baHit = hit;
+  hit("view");
+  document.addEventListener("DOMContentLoaded", function(){
+    var names = {tt: "TikTok", yt: "YouTube", ig: "Instagram", x: "X"};
+    if (src && src !== "direct"){ var w = document.getElementById("welcome"); if (w){ w.hidden = false;
+      if (names[src]) document.getElementById("welcomeT").textContent = "👋 Hi from " + names[src] + "! Here's how you get your own dog in the ring."; } }
+    // every link into the game carries the source
+    document.querySelectorAll('a[href^="https://game.scrappyxrp.fun"]').forEach(function(a){
+      if (src){ var u = new URL(a.href); u.searchParams.set("src", src); a.href = u.toString(); }
+      a.addEventListener("click", function(){ hit(a.getAttribute("data-ev") === "demo" ? "demo" : "play"); });
+    });
+    document.querySelectorAll('[data-ev="mint"]').forEach(function(a){ a.addEventListener("click", function(){ hit("mint"); }); });
+    var m = document.getElementById("mint");
+    if (m && "IntersectionObserver" in window) new IntersectionObserver(function(es, o){ if (es[0].isIntersecting){ hit("mintview"); o.disconnect(); } }, {threshold: .35}).observe(m);
+    // the mint widget is an iframe: focus moving into it counts as a mint interaction
+    window.addEventListener("blur", function(){ setTimeout(function(){ var a = document.activeElement, w = document.getElementById("mintWidget");
+      if (a && a.tagName === "IFRAME" && w && w.contains(a)) hit("mint"); }, 0); });
+  });
+})();
+</script>
 <script>
 /* Live leaderboard from the game server's public endpoint. */
 (function(){

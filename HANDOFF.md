@@ -42,6 +42,9 @@ drop-in entrance + aura · v29 synthesized sounds for all of it (crowd, KO, one 
   Season 2 = matchmaking, Elo, Club ladder.
 - Week 3 (5 Oct): AI should learn more and get harder as bonds grow; issuer = test wallet, show as TEAM; packs stay max 10;
   do all of: Club open challenges, borrow list, name nudge; wants kennel ranking by bond and a small in-game chat.
+- Reach (5 Oct): owner wants daily Shorts on YouTube + TikTok, posts by hand; everything else automatic. Goal: lead
+  viewers to scrappyxrp.fun/barkarena (not the game directly) and to **mint** a Pixel Scrappy (public mint is live on
+  xrp.cafe). Owner bought a Hostinger VPS (KVM 2, Ubuntu 24.04) for the factory. 24/7 stream: advised against for now.
 - **XRP wagering in the Fight Club: advised against** (gambling law — chance element). Alternative offered: free-entry
   Club Cup with treasury prizes, or stakes without money value (rating points). Owner hasn't decided.
 - Teaser videos: owner wants **gameplay only, no text overlays**, MP4 with sound.
@@ -63,6 +66,9 @@ Each script takes a scratch dir for its data: `node tools/test/<script>.mjs /tmp
 - `season-api.mjs` — week close: freeze, hash check, anchor once, prize offer, claim, wrong player blocked.
 - `lend.mjs` — lending end-to-end incl. prize-share line. `sp.mjs` — screenshots of every signature move,
   bite and Mythic/Legendary intros. `bite.mjs` — bite frames.
+- `tv.mjs` — a live ranked fight and a Club duel replay on /tv to exactly the same end; opt-out; bad replays rejected.
+- `shorts.mjs` — the Shorts factory end to end (copies `public/kit/factory.mjs`): clips 1080×1920 with sound, upload,
+  /admin cards, website welcome + funnel pings, installer route. ffmpeg + ffprobe needed.
 - `v30.mjs` — team prizes/packs/boards, chat (filters, rate limit, mute/delete), open challenge, borrow list, kennel
   ranking, name nudge, screenshots `v30-*.png`. `ai-sim.mjs [html] [n]` — AI benchmark (strategies × bond 1/5/10, no browser).
 - Root `node_modules` is not in git: `npm ci` in the repo root before running the server or tests.

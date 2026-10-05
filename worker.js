@@ -790,6 +790,47 @@ async function publicReplays(env, url) {
   for (const h of pick) { const r = h.body || (env.FILES ? await env.FILES.getJson("replay:" + h.id) : null); if (r) out.push(r); }
   return json({replays: out, total: idx.length});
 }
+async function publicReplay(env, id) {
+  const idx = (await storeOf(env).blobGet("replays")) || [], h = idx.find(x => x.id === String(id || ""));
+  const r = h && (h.body || (env.FILES ? await env.FILES.getJson("replay:" + h.id) : null));
+  return r ? json({replay: r}) : json({error: "not_found"}, 404);
+}
+
+/* ------------------------------------------------------------------ Shorts funnel */
+/* Where new people come from: the Bark Arena website pings /public/hit with its ?src= (tt, yt, ig …) for
+   page views, the mint section coming into view, mint and play clicks; the game remembers the first ?src=
+   it saw and reports it once a wallet signs in (/src). /admin shows both per source. */
+const FUNNEL_EVENTS = ["view", "mintview", "mint", "play", "demo"], SRC_RE = /^[a-z0-9_-]{1,24}$/;
+async function funnelHit(env, b) {
+  const src = String((b && b.src) || "direct").toLowerCase(), ev = String((b && b.ev) || "");
+  if (!SRC_RE.test(src) || !FUNNEL_EVENTS.includes(ev)) return json({error: "bad_hit"}, 400);
+  const st = storeOf(env), f = (await st.blobGet("funnel")) || {}, day = today();
+  const d = f[day] = f[day] || {}, row = d[src] = d[src] || {};
+  row[ev] = (row[ev] || 0) + 1;
+  for (const k of Object.keys(f)) if (k < new Date(Date.now() - 60 * 864e5).toISOString().slice(0, 10)) delete f[k];
+  await st.blobSet("funnel", f);
+  return json({ok: true});
+}
+async function srcSet(env, account, b) {
+  const src = String((b && b.src) || "").toLowerCase();
+  if (!SRC_RE.test(src)) return json({error: "bad_src"}, 400);
+  const st = storeOf(env), m = (await st.blobGet("srcs")) || {};
+  if (!m[account]) { m[account] = {src, at: Date.now(), firstTouch: +b.at || null}; await st.blobSet("srcs", m); }
+  return json({ok: true});
+}
+async function adminFunnel(env) {
+  const st = storeOf(env), f = (await st.blobGet("funnel")) || {}, m = (await st.blobGet("srcs")) || {}, d = await st.dump();
+  const days = Object.keys(f).sort().reverse().slice(0, 21).map(day => ({day, src: f[day]}));
+  const players = {};
+  for (const [a, x] of Object.entries(m)) {
+    const p = players[x.src] = players[x.src] || {players: 0, holders: 0, fought: 0};
+    p.players++;
+    if (((d.holdings[a] || {}).tokens || []).length) p.holders++;
+    if (d.weekly.some(r => r.account === a && (r.wins | 0) + (r.losses | 0) > 0)) p.fought++;
+  }
+  return json({days, players});
+}
+
 async function tvOpt(env, account, b) {
   const st = storeOf(env), off = (await st.blobGet("tvoff")) || {};
   if (b && "off" in b) { if (b.off) off[account] = Date.now(); else delete off[account]; await st.blobSet("tvoff", off); }
@@ -1400,10 +1441,17 @@ export default {
         if (p === "/admin/anchor" && req.method === "POST") r = await adminAnchor(env, b);
         if (p === "/admin/prize" && req.method === "POST") r = await adminPrize(env, b);
         if (p === "/admin/xaman") r = await xamanResolve(env, url.searchParams.get("uuid"));
+        if (p === "/admin/funnel") r = await adminFunnel(env);
         if (p === "/admin/chat" || ((p === "/admin/chat/del" || p === "/admin/chat/mute") && req.method === "POST")) r = await adminChat(env, p, b);
         r.headers.set("cache-control", "no-store");
         return r;
       }
+      if (p === "/public/hit" && req.method === "POST") {
+        const r = await funnelHit(env, await req.json().catch(() => null));
+        r.headers.set("access-control-allow-origin", "*");
+        return r;
+      }
+      if (p === "/public/replay") return await publicReplay(env, url.searchParams.get("id"));
       if (p === "/public/replays") {
         const r = await publicReplays(env, url);
         r.headers.set("access-control-allow-origin", "*"); r.headers.set("cache-control", "no-store");
@@ -1438,6 +1486,7 @@ export default {
       if (p === "/lend" && req.method === "POST") return withCors(await lendStart(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/lend/end" && req.method === "POST") return withCors(await lendEnd(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/lend/report" && req.method === "POST") return withCors(await lendReport(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/src" && req.method === "POST") return withCors(await srcSet(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/replay" && req.method === "POST") return withCors(await replayPost(env, account, await req.json().catch(() => null)), cors);
       if (p === "/tv") return withCors(await tvOpt(env, account, req.method === "POST" ? await req.json().catch(() => ({})) : null), cors);
       if (p === "/lend/seek" && req.method === "POST") return withCors(await lendSeek(env, account, await req.json().catch(() => ({}))), cors);
