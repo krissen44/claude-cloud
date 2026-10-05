@@ -170,7 +170,7 @@ v19 cloud saves + `/admin` · v20 real arena rivals + player names · v21 arena 
 v23 server fight engine + Fight Club beta · v24 week close: results hash on the XRPL + treasury prizes · v25 lending · v26 no tickets into a new week · v27 animated backdrops + fight effects · v28 bites, signature-move effects, Mythic/Legendary entrances · v29 sounds for all of it.
 
 ### Testing locally
-```bash
+Offline harness with mocked XRPL/IPFS/Xaman + Playwright lives in **`tools/test/`** (see `HANDOFF.md` for usage). ```bash
 ISSUER=rI PORT=3000 DATA_DIR=/tmp/ba node server.js      # starts; XRPL/IPFS calls need internet
 node --check server.js && node --check worker.js
 ```

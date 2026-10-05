@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "Offline test harness for Bark Arena (mocked XRPL/IPFS/Xaman + Playwright)",
+  "dependencies": { "playwright": "^1.63.0" }
+}
