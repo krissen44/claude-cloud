@@ -6,8 +6,9 @@ import { createHmac } from "node:crypto";
 const S = process.argv[2], D = S + "/dataTix", U = "http://127.0.0.1:3984";
 fs.rmSync(D, {recursive:true, force:true}); fs.mkdirSync(D + "/saves", {recursive:true}); fs.writeFileSync(D + "/session.secret", "testsecret");
 // an old player (played since week 1) and his save — must not show up in the bonus scan
-const OLD = "rVETplayer11111111111111111111";
-fs.writeFileSync(D + "/store.json", JSON.stringify({players: {}, holdings: {[OLD]: {tokens: [1, 2, 3], dogs: [], updated: 1}},
+const OLD = "rVETplayer11111111111111111111", AFF = "rAFFplayer11111111111111111111";   // AFF: started this week, hit by the bug
+fs.writeFileSync(D + "/saves/" + AFF + ".json", JSON.stringify({data: {v: 1}, updated: 1}));
+fs.writeFileSync(D + "/store.json", JSON.stringify({players: {}, holdings: {[OLD]: {tokens: [1, 2, 3], dogs: [], updated: 1}, [AFF]: {tokens: Array.from({length: 17}, (_, i) => i + 1), dogs: [], updated: 1}},
   weekly: {["2026-09-21|" + OLD]: {account: OLD, week: "2026-09-21", wins: 3, losses: 1, xp: 100, streak: 1}}, profiles: {}}));
 fs.writeFileSync(D + "/saves/" + OLD + ".json", JSON.stringify({data: {v: 1}, updated: 1}));
 const tok = a => { const b0 = Buffer.from(JSON.stringify({a, exp:2e9})).toString("base64url"); return b0 + "." + createHmac("sha256", "testsecret").update(b0).digest("base64url"); };
@@ -42,7 +43,11 @@ r = await tix(p); ok(r.t === 6, `bugged player: ${r.t} tickets (want 4 + 2 = 6)`
 // 3. an existing player whose dogs were all known: nothing extra
 p = await open("rOLDplayer11111111111111111111", {...base, dogs:{N2931:{xp:0,lvl:1,w:0,l:0}, N4344:{xp:0,lvl:1,w:0,l:0}, N3821:{xp:0,lvl:1,w:0,l:0}}, tickets:7});
 r = await tix(p); ok(r.t === 7, `regular player: ${r.t} tickets (want 7, unchanged)`);
-// --- bonus for the players hit by the day-one bug
+// --- bonus for the players hit by the day-one bug: granted automatically by the first kennel load after the update
+const auto = await fetch(U + "/api/admin/tickets?key=adm").then(r => r.json());
+const ab = auto.bonuses[AFF];
+ok(ab && ab.n === 10 && ab.auto && ab.from === new Date(Date.now() + 864e5).toISOString().slice(0, 10) && !auto.bonuses[OLD],
+  "automatic grant after the update: affected holder of 17 gets 10 from tomorrow, old player nothing (" + JSON.stringify(ab) + ")");
 await new Promise(r => setTimeout(r, 4000));                  // cloud saves of the new players land on the server
 const adm = (p, b) => fetch(U + "/api/admin/" + p + (p.includes("?") ? "&" : "?") + "key=adm", b ? {method: "POST", body: JSON.stringify(b)} : {}).then(r => r.json());
 const scan = await adm("tickets/scan?since=2026-09-28");

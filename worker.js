@@ -837,7 +837,39 @@ async function adminFunnel(env) {
    /admin scans for the players who started since the given week and proposes what they missed. */
 const BONUS_DAYS = 7;
 const isoDay = ms => new Date(ms).toISOString().slice(0, 10);
+/* Holders who started since a week (their first weekly row; team wallets and non-holders left out) and the
+   day-one grant they missed. */
+async function bonusScan(env, since) {
+  const st = storeOf(env), d = await st.dump(), saves = await st.saveAll(), names = await st.profiles(), m = (await st.blobGet("tixbonus")) || {}, first = {};
+  for (const r of d.weekly) if ((r.wins | 0) + (r.losses | 0) + (r.xp | 0) > 0 && (!first[r.account] || r.week < first[r.account])) first[r.account] = r.week;
+  const out = [];
+  for (const a of Object.keys(saves)) {
+    if (isTeam(env, a) || (first[a] && first[a] < since)) continue;
+    const held = (((d.holdings || {})[a] || {}).tokens || []).length;
+    if (!held) continue;                                       // no dog, no ranked fights to miss
+    out.push({account: a, name: displayName(names, a), held, firstWeek: first[a] || null, missed: Math.min(10, 5 + held - 1),
+      lastSeen: d.players[a] ? new Date(d.players[a]).toISOString().slice(0, 16) : "", bonus: m[a] || null});
+  }
+  return out.sort((x, y) => y.missed - x.missed);
+}
+/* v31.1: the players hit by the day-one bug get their missed fights without anyone having to click: the first
+   bonus check after the update grants it once to everyone the scan finds, from the next day on. */
+const AUTO_BONUS = {id: "v31.1-day-one", since: "2026-09-28",
+  note: "Sorry — a bug cut your first day short. Here are the ranked fights you missed."};
+async function bonusAuto(env) {
+  const st = storeOf(env), done = (await st.blobGet("tixbonus_auto")) || {};
+  if (done[AUTO_BONUS.id]) return;
+  done[AUTO_BONUS.id] = {at: Date.now(), running: true};
+  await st.blobSet("tixbonus_auto", done);
+  const list = await bonusScan(env, AUTO_BONUS.since), m = (await st.blobGet("tixbonus")) || {};
+  const from = isoDay(Date.now() + 864e5), until = isoDay(Date.now() + (1 + BONUS_DAYS) * 864e5);
+  for (const p of list) if (!m[p.account]) m[p.account] = {n: p.missed, note: AUTO_BONUS.note, from, until, at: Date.now(), auto: AUTO_BONUS.id};
+  await st.blobSet("tixbonus", m);
+  done[AUTO_BONUS.id] = {at: Date.now(), granted: list.length, from};
+  await st.blobSet("tixbonus_auto", done);
+}
 async function bonusGet(env, account) {
+  await bonusAuto(env).catch(() => {});
   const m = (await storeOf(env).blobGet("tixbonus")) || {}, b = m[account], t = today();
   return json(b && !b.claimed && t >= b.from && t <= b.until ? {n: b.n, note: b.note} : {n: 0});
 }
@@ -851,18 +883,7 @@ async function adminBonus(env, p, b, url) {
   const st = storeOf(env), m = (await st.blobGet("tixbonus")) || {};
   if (p === "/admin/tickets/scan") {
     const since = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("since") || "") ? url.searchParams.get("since") : "2026-09-28";
-    const d = await st.dump(), saves = await st.saveAll(), names = await st.profiles(), first = {};
-    for (const r of d.weekly) if ((r.wins | 0) + (r.losses | 0) + (r.xp | 0) > 0 && (!first[r.account] || r.week < first[r.account])) first[r.account] = r.week;
-    const out = [];
-    for (const a of Object.keys(saves)) {
-      if (isTeam(env, a) || (first[a] && first[a] < since)) continue;
-      const held = (((d.holdings || {})[a] || {}).tokens || []).length;
-      if (!held) continue;                                     // no dog, no ranked fights to miss
-      const grant = Math.min(10, 5 + held - 1);
-      out.push({account: a, name: displayName(names, a), held, firstWeek: first[a] || null, missed: grant,
-        lastSeen: d.players[a] ? new Date(d.players[a]).toISOString().slice(0, 16) : "", bonus: m[a] || null});
-    }
-    return json({since, players: out.sort((x, y) => y.missed - x.missed)});
+    return json({since, players: await bonusScan(env, since), auto: (await st.blobGet("tixbonus_auto")) || {}});
   }
   if (p === "/admin/tickets/grant") {
     const from = /^\d{4}-\d{2}-\d{2}$/.test(b.from || "") ? b.from : isoDay(Date.now() + 864e5);   // default: from tomorrow
