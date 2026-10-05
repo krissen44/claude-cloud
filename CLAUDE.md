@@ -92,6 +92,8 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/admin/chat`, `/admin/chat/del` (POST `{id}`), `/admin/chat/mute` (POST `{account,on}`) | `?key=ADMIN_KEY` | Chat moderation (also on the `/admin` page) |
 | `/replay` (POST), `/tv` (GET; POST `{off}`), `/src` (POST `{src,at}`) | ✔ | Upload a finished fight as replay (moves + dice) / Bark Arena TV opt-out / first-touch source of a new player |
 | `/public/replays[?n=&skip=]`, `/public/replay?id=`, `/public/dogimg?t=`, `/public/hit` (POST `{src,ev}`) | – | TV + Shorts playlist, one replay, collection image (disk cache), website funnel ping (`view/mintview/mint/play/demo`) |
+| `/bonus` (GET), `/bonus/claim` (POST) | ✔ | Admin-granted extra ranked fights, collected once on the kennel load (`loadBonus`, note card), blob `tixbonus` |
+| `/admin/tickets/scan?since=`, `/admin/tickets/grant` (POST `{grants:[{account,n}], from?, note?}`) | `?key=ADMIN_KEY` | Holders who started since a week (first weekly row) + their day-one grant; grant from a day on (default tomorrow, 7 days) |
 | `/admin/funnel` | `?key=ADMIN_KEY` | Website visits per source/day + players per source (`srcs` blob) |
 | `/admin/clips` (GET list), `/admin/clips/upload?name=` (PUT), `/admin/clips/file?name=[&download]`, `/admin/clips/posted` / `delete` (POST) | `?key=ADMIN_KEY` | Shorts clips — **handled in `server.js`** (Node only, files in `DATA_DIR/clips`, kept 30 days) |
 | `/admin/export[?download=1]`, `/admin/csv` | `?key=ADMIN_KEY` | Everything as JSON backup (summary, per-player rows, raw store + saves) / players as CSV. Dashboard page: **`/admin`** |

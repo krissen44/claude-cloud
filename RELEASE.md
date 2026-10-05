@@ -10,7 +10,10 @@ with v30). The Shorts factory runs on GitHub Actions (first run 5 Oct 16:05 UTC:
   and the daily grant was counted before the wallet's dogs were loaded (a holder of 17 got 5 instead of 10). Fixed:
   first day = 5 + grant; after the kennel loads, today's grant is topped up once to what the dogs allow. Players hit by
   it get the missing tickets on their next visit. Tested: new holder 12 (3 dogs), affected player +2, others unchanged.
-- Upload: game ZIP (only `public/index.html` changed) → Node.js app, restart.
+- **Make it up to the players hit by it**: `/admin` → "🎟️ Ticket bonus" → 🔍 Scan (holders who started since the week
+  of 28 Sep) → check the list → "Grant". They collect the missed fights once, the next time they open the game, from
+  tomorrow on (7 days) — on top of the normal daily grant, with a "sorry" note in the kennel. Nobody gets it twice.
+- Upload: game ZIP (`public/index.html`, `server.js`, `worker.js` changed) → Node.js app, restart.
 
 ## Live since 5 Oct 2026 (v30 + v31)
 

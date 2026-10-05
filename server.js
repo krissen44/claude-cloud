@@ -235,6 +235,13 @@ select{border:2px solid var(--ink);border-radius:999px;padding:6px 10px;font:inh
     <p class="muted" style="margin:4px 0 0">Visits of scrappyxrp.fun/barkarena by source (tt TikTok, yt YouTube, ig Instagram, direct = no tag), how many saw the mint section,
       clicked mint, or went into the game — and the players who signed in after coming from a source.</p>
     <div id="funnel"><p class="muted">Loading…</p></div></div>
+  <div class="card"><h2 style="margin:0;font-size:18px">🎟️ Ticket bonus</h2>
+    <p class="muted" style="margin:4px 0 0">Extra ranked fights, collected once when the player next opens the game (from the start day on, for 7 days).
+      "Scan" lists holders who started since the given week — they lost fights on day one (bug fixed in v31.1: they got 5 instead of 5 + the daily grant).
+      Check the list, adjust, then grant.</p>
+    <div class="row" style="margin-top:8px"><label class="muted">Started since week <input id="bonusSince" value="2026-09-28" style="min-width:0;width:130px"></label>
+      <button class="btn ghost" id="bonusScan">🔍 Scan</button></div>
+    <div id="bonus"></div></div>
   <div class="card"><h2 style="margin:0;font-size:18px">💬 Chat</h2>
     <p class="muted" style="margin:4px 0 0">The last 80 messages of the in-game chat. Delete a message, or mute a wallet (it can still read, not write).</p>
     <div class="row" style="margin-top:8px"><button class="btn ghost" id="chatReload">↻ Refresh chat</button></div>
@@ -407,6 +414,27 @@ async function sign(req, title, text, onDone){
 $("mClose").onclick = () => { clearInterval(MPOLL); ONDONE = null; $("modal").hidden = true; season(); };
 $("go").onclick = () => { KEY = $("key").value.trim(); load(); };
 $("key").onkeydown = e => { if (e.key === "Enter") $("go").click(); };
+async function bonusScan(){
+  const j = await api("tickets/scan?since=" + encodeURIComponent($("bonusSince").value.trim()));
+  const L = j.players || [], tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  $("bonus").innerHTML = L.length ? "<table><tr><th></th><th>Player</th><th>Scrappys</th><th>First week</th><th>Last seen</th><th>Fights</th><th>Status</th></tr>" + L.map((p, i) =>
+    "<tr><td><input type='checkbox' data-bi='" + i + "' style='min-width:0'" + (p.bonus ? "" : " checked") + "></td><td style='text-align:left'>" + esc(p.name) + "<br><span class='mono'>" + esc(p.account) + "</span></td><td>" + p.held +
+    "</td><td>" + (p.firstWeek || "—") + "</td><td>" + esc(p.lastSeen) + "</td><td><input data-bn='" + i + "' value='" + p.missed + "' style='min-width:0;width:54px'></td><td>" +
+    (p.bonus ? (p.bonus.claimed ? "✅ collected" : "⏳ waiting (from " + p.bonus.from + ")") : "—") + "</td></tr>").join("") + "</table>" +
+    "<div class='row' style='margin-top:10px'><label class='muted'>From <input id='bonusFrom' value='" + tomorrow + "' style='min-width:0;width:130px'></label>" +
+    "<button class='btn' id='bonusGrant'>🎟️ Grant to the ticked players</button></div>"
+    : "<p class='muted'>Nobody found for that week.</p>";
+  window.BONUS = L;
+  const g = $("bonusGrant"); if (g) g.onclick = async () => {
+    const grants = [...$("bonus").querySelectorAll("[data-bi]")].filter(x => x.checked).map(x => ({account: BONUS[+x.dataset.bi].account, n: +$("bonus").querySelector("[data-bn='" + x.dataset.bi + "']").value || 0}));
+    if (!grants.length) return;
+    if (!confirm("Grant bonus fights to " + grants.length + " players, from " + $("bonusFrom").value + "?")) return;
+    const r = await api("tickets/grant", {grants, from: $("bonusFrom").value.trim()});
+    alert("Granted to " + r.granted + " players — they collect it when they open the game from " + r.from + " on.");
+    bonusScan();
+  };
+}
+$("bonusScan").onclick = bonusScan;
 $("reload").onclick = load; $("chatReload").onclick = () => chat(); $("clipsReload").onclick = () => clips(); $("filter").oninput = () => DATA && draw();
 if (KEY) load();
 </script></body></html>`;

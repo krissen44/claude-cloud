@@ -1549,6 +1549,17 @@ async function loadLending(){
   }
   if (tab === 'kennel' && !WALLET.loading) menu();
 }
+/* Extra ranked fights granted by the admin (e.g. after a bug), collected once. */
+async function loadBonus(){
+  if (!LIVE() || !WALLET.token || WALLET.demo) return;
+  try {
+    const j = await (await api('/bonus')).json(); if (!(j.n > 0)) return;
+    const c = await (await api('/bonus/claim', {method:'POST', body:{}})).json(); if (!c.ok) return;
+    SAVE.data.tickets = Math.min(25, (SAVE.data.tickets || 0) + c.n); SAVE.save();
+    WALLET.bonusNote = `+${c.n} ranked fights. ${j.note || ''}`;
+    if (tab === 'kennel' && !WALLET.loading) menu();
+  } catch(e){}
+}
 /* called by SAVE.award: a ranked or arena fight with a borrowed dog */
 function lendGain(id, xp){
   const f = (OWNED || []).find(x => x.id === id && x.borrowed);
@@ -2644,6 +2655,7 @@ async function loadKennel(fresh){
   if (SC.linkId) scRefresh();
   oppTopUp(); loadPacks(); claimDefense(); arenaRegister(); loadPrizes(); loadLending();
   if (SAVE.data.tvOff) api('/tv', {method:'POST', body:{off: true}}).catch(() => {});   // also covers Club duels (recorded on the server)
+  loadBonus();
   const src = lsGet('ba_src');
   if (src && src.src && lsGet('ba_src_sent') !== WALLET.account)
     api('/src', {method:'POST', body: src}).then(r => { if (r.ok) lsSet('ba_src_sent', WALLET.account); }).catch(() => {});
@@ -2735,6 +2747,7 @@ function walletWire(){
   if (q('demo'))      q('demo').onclick = () => { S.unlock(); S.click(); WALLET.demo = true; menu(); };
   if (q('signout'))   q('signout').onclick = () => { S.click(); walletSignOut(); };
   if (q('defOk'))     q('defOk').onclick = () => { S.click(); WALLET.defenseNote = ''; menu(); };
+  if (q('bonusOk'))   q('bonusOk').onclick = () => { S.click(); WALLET.bonusNote = ''; menu(); };
   if (q('prizeOk'))   q('prizeOk').onclick = () => { S.click(); PRIZE.done = ''; menu(); };
   app.querySelectorAll('[data-prize]').forEach(b => b.onclick = () => { S.unlock(); S.click(); prizeClaim(b.dataset.prize); });
   if (q('nameEdit'))  q('nameEdit').onclick = () => { S.click(); WALLET.editName = true; WALLET.nameError = ''; menu(); const i = q('nameIn'); if (i) i.focus(); };
@@ -3662,6 +3675,8 @@ function kennelView(){
   const R = ROSTER();
   if (!R.length) return walletCard() + `<div class="card"><p class="mini" style="margin:0"><b>No Pixel Scrappy in this wallet yet.</b> The kennel fills itself with the ones you hold — grab one on <a href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener">xrp.cafe</a>, then hit ↻ Refresh. Or try the demo dogs in the meantime. A holder can also <b>lend</b> you one — tell them your player name (✏️ above).</p>
     <div class="row" style="justify-content:flex-start;margin-top:10px"><button id="demo">Try the demo</button></div></div>` + prizeCards() + lendCard();
+  const bonusNote = WALLET.bonusNote ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🎟️ Bonus fights</b>
+      <div class="mini">${esc(WALLET.bonusNote)}</div></div><button id="bonusOk" class="sm">OK</button></div></div>` : '';
   const defNote = WALLET.defenseNote ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🛡️ Arena defence</b>
       <div class="mini">${esc(WALLET.defenseNote)}</div></div><button id="defOk" class="sm">OK</button></div></div>` : '';
   let dogs;
@@ -3673,7 +3688,7 @@ function kennelView(){
     dogs = (gen || '') + (leg ? `</div><h3 class="h3" style="margin:16px 0 10px">★ ${R === DATA.fighters ? 'THE 20 LEGENDARIES' : 'YOUR LEGENDARIES'} — hand-built, each with its own signature</h3><div class="pick">` + leg : '');
   }
   const top = bondOrder(R)[0], tg = top && SAVE.dog(top.id);
-  return walletCard() + prizeCards() + defNote + `
+  return walletCard() + prizeCards() + bonusNote + defNote + `
   <div class="card pnl">
     <div>
       <h3>TRAINER</h3>

@@ -4,9 +4,14 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { createHmac } from "node:crypto";
 const S = process.argv[2], D = S + "/dataTix", U = "http://127.0.0.1:3984";
-fs.rmSync(D, {recursive:true, force:true}); fs.mkdirSync(D, {recursive:true}); fs.writeFileSync(D + "/session.secret", "testsecret");
+fs.rmSync(D, {recursive:true, force:true}); fs.mkdirSync(D + "/saves", {recursive:true}); fs.writeFileSync(D + "/session.secret", "testsecret");
+// an old player (played since week 1) and his save — must not show up in the bonus scan
+const OLD = "rVETplayer11111111111111111111";
+fs.writeFileSync(D + "/store.json", JSON.stringify({players: {}, holdings: {[OLD]: {tokens: [1, 2, 3], dogs: [], updated: 1}},
+  weekly: {["2026-09-21|" + OLD]: {account: OLD, week: "2026-09-21", wins: 3, losses: 1, xp: 100, streak: 1}}, profiles: {}}));
+fs.writeFileSync(D + "/saves/" + OLD + ".json", JSON.stringify({data: {v: 1}, updated: 1}));
 const tok = a => { const b0 = Buffer.from(JSON.stringify({a, exp:2e9})).toString("base64url"); return b0 + "." + createHmac("sha256", "testsecret").update(b0).digest("base64url"); };
-const srv = spawn("node", [new URL("./live.mjs", import.meta.url).pathname], {env:{...process.env, PORT:"3984", DATA_DIR:D, ISSUER:"rI", TAXON:"369"}, stdio:"ignore"});
+const srv = spawn("node", [new URL("./live.mjs", import.meta.url).pathname], {env:{...process.env, PORT:"3984", DATA_DIR:D, ISSUER:"rI", TAXON:"369", ADMIN_KEY:"adm"}, stdio:"ignore"});
 setTimeout(() => { console.log("TIMEOUT"); srv.kill(); process.exit(1); }, 120000);
 await new Promise(r => setTimeout(r, 1200));
 const ok = (c, m) => console.log((c ? "PASS " : "FAIL ") + m);
@@ -37,5 +42,25 @@ r = await tix(p); ok(r.t === 6, `bugged player: ${r.t} tickets (want 4 + 2 = 6)`
 // 3. an existing player whose dogs were all known: nothing extra
 p = await open("rOLDplayer11111111111111111111", {...base, dogs:{N2931:{xp:0,lvl:1,w:0,l:0}, N4344:{xp:0,lvl:1,w:0,l:0}, N3821:{xp:0,lvl:1,w:0,l:0}}, tickets:7});
 r = await tix(p); ok(r.t === 7, `regular player: ${r.t} tickets (want 7, unchanged)`);
+// --- bonus for the players hit by the day-one bug
+await new Promise(r => setTimeout(r, 4000));                  // cloud saves of the new players land on the server
+const adm = (p, b) => fetch(U + "/api/admin/" + p + (p.includes("?") ? "&" : "?") + "key=adm", b ? {method: "POST", body: JSON.stringify(b)} : {}).then(r => r.json());
+const scan = await adm("tickets/scan?since=2026-09-28");
+console.log("scan:", scan.players.map(x => x.name + " held " + x.held + " → " + x.missed).join(" · "));
+ok(!scan.players.some(x => x.account === OLD) && scan.players.some(x => x.account === "rNEWplayer11111111111111111111"), "scan lists new holders, not old players");
+const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+let g = await adm("tickets/grant", {grants: [{account: "rBUGplayer11111111111111111111", n: 7}], from: today});
+ok(g.granted === 1, "granted (from today, for the test)");
+g = await adm("tickets/grant", {grants: [{account: "rOLDplayer11111111111111111111", n: 5}]});
+ok(g.from === tomorrow, "default start is tomorrow (" + g.from + ")");
+p = await open("rBUGplayer11111111111111111111", {...base, tickets: 6, grantDay: {day: today, n: 7}});
+await p.waitForFunction(() => WALLET.bonusNote, null, {timeout: 8000}).catch(() => {});
+r = await tix(p); const note = await p.evaluate(() => WALLET.bonusNote);
+ok(r.t === 13 && /\+7 ranked fights/.test(note || ""), `bonus collected: ${r.t} tickets, note "${note}"`);
+await p.screenshot({path: S + "/bonus-note.png"});
+await p.reload(); await p.waitForFunction(() => OWNED && !WALLET.loading, null, {timeout:20000}); await p.waitForTimeout(1500);
+r = await tix(p); ok(r.t === 13, `collected only once (${r.t})`);
+p = await open("rOLDplayer11111111111111111111", {...base, dogs:{N2931:{xp:0,lvl:1,w:0,l:0}, N4344:{xp:0,lvl:1,w:0,l:0}, N3821:{xp:0,lvl:1,w:0,l:0}}, tickets:7, grantDay: {day: today, n: 7}});
+await p.waitForTimeout(1500); r = await tix(p); ok(r.t === 7, `a bonus from tomorrow is not paid today (${r.t})`);
 console.log("page errors:", errs.length ? errs : "none");
 await br.close(); srv.kill(); process.exit(0);

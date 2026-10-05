@@ -831,6 +831,54 @@ async function adminFunnel(env) {
   return json({days, players});
 }
 
+/* ------------------------------------------------------------------ ticket bonus */
+/* Extra ranked fights for a player, collected once on the next kennel load from a given day on (e.g. the
+   day-one bug fixed in v31.1: new holders got 5 fights instead of 5 starting + the daily grant).
+   /admin scans for the players who started since the given week and proposes what they missed. */
+const BONUS_DAYS = 7;
+const isoDay = ms => new Date(ms).toISOString().slice(0, 10);
+async function bonusGet(env, account) {
+  const m = (await storeOf(env).blobGet("tixbonus")) || {}, b = m[account], t = today();
+  return json(b && !b.claimed && t >= b.from && t <= b.until ? {n: b.n, note: b.note} : {n: 0});
+}
+async function bonusClaim(env, account) {
+  const st = storeOf(env), m = (await st.blobGet("tixbonus")) || {}, b = m[account], t = today();
+  if (!b || b.claimed || t < b.from || t > b.until) return json({ok: false});
+  b.claimed = Date.now(); await st.blobSet("tixbonus", m);
+  return json({ok: true, n: b.n});
+}
+async function adminBonus(env, p, b, url) {
+  const st = storeOf(env), m = (await st.blobGet("tixbonus")) || {};
+  if (p === "/admin/tickets/scan") {
+    const since = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("since") || "") ? url.searchParams.get("since") : "2026-09-28";
+    const d = await st.dump(), saves = await st.saveAll(), names = await st.profiles(), first = {};
+    for (const r of d.weekly) if ((r.wins | 0) + (r.losses | 0) + (r.xp | 0) > 0 && (!first[r.account] || r.week < first[r.account])) first[r.account] = r.week;
+    const out = [];
+    for (const a of Object.keys(saves)) {
+      if (isTeam(env, a) || (first[a] && first[a] < since)) continue;
+      const held = (((d.holdings || {})[a] || {}).tokens || []).length;
+      if (!held) continue;                                     // no dog, no ranked fights to miss
+      const grant = Math.min(10, 5 + held - 1);
+      out.push({account: a, name: displayName(names, a), held, firstWeek: first[a] || null, missed: grant,
+        lastSeen: d.players[a] ? new Date(d.players[a]).toISOString().slice(0, 16) : "", bonus: m[a] || null});
+    }
+    return json({since, players: out.sort((x, y) => y.missed - x.missed)});
+  }
+  if (p === "/admin/tickets/grant") {
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(b.from || "") ? b.from : isoDay(Date.now() + 864e5);   // default: from tomorrow
+    const note = String(b.note || "Sorry — a bug cut your first day short. Here are the ranked fights you missed.").slice(0, 160);
+    let n = 0;
+    for (const g of Array.isArray(b.grants) ? b.grants.slice(0, 500) : []) {
+      const a = String(g.account || ""), k = Math.max(1, Math.min(15, g.n | 0));
+      if (!/^r\w{20,40}$/.test(a) || (m[a] && !m[a].claimed)) continue;
+      m[a] = {n: k, note, from, until: isoDay(Date.parse(from + "T12:00:00Z") + BONUS_DAYS * 864e5), at: Date.now()}; n++;
+    }
+    await st.blobSet("tixbonus", m);
+    return json({ok: true, granted: n, from});
+  }
+  return json({bonuses: m});
+}
+
 async function tvOpt(env, account, b) {
   const st = storeOf(env), off = (await st.blobGet("tvoff")) || {};
   if (b && "off" in b) { if (b.off) off[account] = Date.now(); else delete off[account]; await st.blobSet("tvoff", off); }
@@ -1442,6 +1490,7 @@ export default {
         if (p === "/admin/prize" && req.method === "POST") r = await adminPrize(env, b);
         if (p === "/admin/xaman") r = await xamanResolve(env, url.searchParams.get("uuid"));
         if (p === "/admin/funnel") r = await adminFunnel(env);
+        if (p === "/admin/tickets" || p === "/admin/tickets/scan" || (p === "/admin/tickets/grant" && req.method === "POST")) r = await adminBonus(env, p, b, url);
         if (p === "/admin/chat" || ((p === "/admin/chat/del" || p === "/admin/chat/mute") && req.method === "POST")) r = await adminChat(env, p, b);
         r.headers.set("cache-control", "no-store");
         return r;
@@ -1486,6 +1535,8 @@ export default {
       if (p === "/lend" && req.method === "POST") return withCors(await lendStart(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/lend/end" && req.method === "POST") return withCors(await lendEnd(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/lend/report" && req.method === "POST") return withCors(await lendReport(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/bonus" && req.method === "GET") return withCors(await bonusGet(env, account), cors);
+      if (p === "/bonus/claim" && req.method === "POST") return withCors(await bonusClaim(env, account), cors);
       if (p === "/src" && req.method === "POST") return withCors(await srcSet(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/replay" && req.method === "POST") return withCors(await replayPost(env, account, await req.json().catch(() => null)), cors);
       if (p === "/tv") return withCors(await tvOpt(env, account, req.method === "POST" ? await req.json().catch(() => ({})) : null), cors);
