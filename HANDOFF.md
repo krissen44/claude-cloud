@@ -11,7 +11,7 @@ Branch: `claude/upbeat-hypatia-cht3ou` on `krissen44/claude-cloud` (v29 and earl
   (Monday 00:00 UTC). Never tell the owner to upload mid-week.
 - Owner likes to see results: screenshots / short videos of UI changes, a downloadable package at the end.
 
-## Where things stand (2026-10-05, evening)
+## Where things stand (2026-10-05, evening — v30 + v31 live, Shorts running)
 - **Live on Hostinger:** game v29 + website guide (uploaded Fri 2 Oct). First week close done Mon 5 Oct: week of 28 Sep
   anchored, 4 prize offers sent (#2033 → rK9Ua…mX3H, #220 → XRPno1, #4456 → Chopper, #1608 → rhc4S…Z7Lx, pack Moon).
 - **Week-2 numbers** (from the admin export): 20 players, 889 fights (week 1: 17 / 185), 10 of 17 came back + 10 new;

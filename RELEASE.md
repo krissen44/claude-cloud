@@ -1,10 +1,10 @@
 # Next release — upload at the week roll (Monday 00:00 UTC)
 
 Changes collect here during the week and go live together when the new week starts.
-Last version confirmed live: **game v29** + website guide (uploaded Fri 2 Oct 2026; first week close with anchor + 4 prize
-offers done Mon 5 Oct for the week of 28 Sep).
+Last version confirmed live: **game v31 + website** (uploaded by the owner on Mon 5 Oct 2026, ~16:00 UTC, together
+with v30). The Shorts factory runs on GitHub Actions (first run 5 Oct 16:05 UTC: success; clips posted by the owner).
 
-## Pending for the next week start — Mon 12 Oct 2026
+## Live since 5 Oct 2026 (v30 + v31) — nothing pending
 
 ### Game (game.scrappyxrp.fun)
 - **v30 — after the week-2 data** (players won 76 % of fights, top players 88–95 %, issuer wallet on the ladder,
