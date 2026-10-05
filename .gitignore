@@ -1,2 +1,4 @@
 node_modules/
 tools/wc/package*.json
+tools/test/package-lock.json
+tools/test/node_modules/

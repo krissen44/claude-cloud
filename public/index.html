@@ -392,6 +392,30 @@ a.btn.shop{display:inline-block;text-decoration:none;font-size:12px;padding:8px 
 .recap .pr{display:grid;grid-template-columns:22px 1fr auto;gap:6px;align-items:start;padding:7px 8px;border:2px solid var(--panelB);border-radius:8px;margin-bottom:6px}
 .recap .pr.mine{border-color:var(--accent)}
 .recap .pr .n{font-weight:700}
+.ksort button.on{border-color:var(--accent);color:var(--accent);font-weight:700}
+/* chat */
+#chatFab{position:fixed;right:16px;bottom:16px;z-index:40;width:52px;height:52px;border-radius:50%;border:2px solid var(--panelB);
+  background:var(--panel);color:var(--ink);font-size:22px;cursor:pointer;box-shadow:0 4px 14px rgba(10,16,28,.25)}
+body.chat-on #app{padding-bottom:72px}
+#chatFab:hover{border-color:var(--accent)}
+#chatFab i{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;border-radius:10px;background:#e0483e;color:#fff;
+  font:700 11px/20px system-ui,sans-serif;font-style:normal;padding:0 5px}
+#chatBox{position:fixed;right:16px;bottom:78px;z-index:41;width:min(360px,calc(100vw - 32px));height:min(460px,calc(100vh - 110px));
+  display:flex;flex-direction:column;background:var(--panel);border:2px solid var(--panelB);border-radius:14px;box-shadow:0 10px 30px rgba(10,16,28,.3);overflow:hidden}
+#chatBox header{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:2px solid var(--panelB)}
+#chatBox header b{font-family:'Press Start 2P',monospace;font-size:9px;color:var(--ink2)}
+#chatBox header button{background:none;border:0;color:var(--ink2);font-size:18px;cursor:pointer;line-height:1}
+#chatList{flex:1;overflow-y:auto;padding:8px 12px;font-size:12.5px;line-height:1.45}
+#chatList p{margin:0 0 7px;word-wrap:break-word}
+#chatList .who{font-weight:700}#chatList .me .who{color:var(--accent)}
+#chatList .t{color:var(--ink2);font-size:10px;margin-left:4px}
+#chatList .sys{color:var(--ink2);font-style:italic;font-size:11.5px}
+#chatList .tag{font-size:8px;padding:1px 4px}
+#chatBox form{display:flex;gap:6px;padding:8px;border-top:2px solid var(--panelB)}
+#chatBox input{flex:1;min-width:0;padding:8px 10px;border-radius:9px;border:2px solid var(--panelB);font:inherit;font-size:13px;background:var(--panel);color:var(--ink)}
+#chatBox form button{padding:8px 12px}
+#chatErr{font-size:11px;color:var(--hpLow);padding:0 12px 6px}
+@media(max-width:560px){#chatFab{right:12px;bottom:12px}#chatBox{right:8px;bottom:72px;width:calc(100vw - 16px)}}
 </style>
 </head>
 <body>
@@ -919,13 +943,29 @@ function blast(f, g, n, who, ab, opt){
   return damage(g, n + frenzy(), `${who} uses <b>${esc(ab.value)}</b> for`, 'big', opt);
 }
 
-/* The opponent. Reads your habits: not just which move you lean on, but
-   which move tends to follow your last one or two — so a fixed rhythm
-   (bite, guard, bite, guard…) gets read and countered. It only ever looks
-   at moves already played, never at the one you're choosing now. */
-function predictFoe(f){
+/* The opponent (v30). It reads your habits on three levels and learns:
+   1. What you play next — from this fight (which move follows your last one
+      or two) and from earlier fights (AIM, your style, kept in your save).
+   2. Whether you play around it — it keeps score of three answers to that
+      prediction: the plain counter, and the answers to someone who expects
+      the counter (one and two steps further). The one that has been working
+      wins. So "bait a pattern, then counter its counter" stops paying off.
+   3. How hard to try — skill rises with your dog's bond level: a bond-10 dog
+      meets an opponent that follows its reads more often, uses its ability
+      at the right time and plays the score in the last rounds.
+   It only ever looks at moves already played, never at the one you're
+   choosing now (the Insight trait's 30 % peek aside). */
+const COUNTER = {bite:'guard', guard:'taunt', taunt:'bite'};   // the move that beats the key
+const MOVES = ['bite', 'guard', 'taunt'];
+const rot = (m, s) => { for (let i = 0; i < s; i++) m = COUNTER[m]; return m; };
+const wins = (a, b) => COUNTER[b] === a;
+let AIM = null;                 // the player's style across fights (the page loads/saves it); null = no memory
+let hist = {bite:0, guard:0, taunt:0}, plannedE = null, insightShown = false;
+const aiSkill = foe => Math.min(1, .3 + .075 * ((foe.lvl || 1) - 1));   // bond 1 → .30, bond 10 → .975
+function aimNew(){ return {v:1, n:0, t:{}, lv:[0,0,0]}; }
+/* What the foe plays next, as weights per move. */
+function predictFoe(f, sk){
   const h = f.hist || [], score = {bite:0, guard:0, taunt:0};
-  if (h.length < 2) return null;
   const ctxMatch = k => {                      // what followed the same last-k moves before?
     if (h.length <= k) return;
     const ctx = h.slice(-k).join();
@@ -934,25 +974,100 @@ function predictFoe(f){
   };
   ctxMatch(2); ctxMatch(1);
   for (const m of h) if (m in score) score[m] += .5;   // plain habit, weakly
+  // the long memory: what this player tends to play after the same move (or to open with)
+  if (AIM && sk != null){
+    const row = AIM.t[h.length ? h[h.length-1] : '^'];
+    if (row){
+      const tot = MOVES.reduce((n, m) => n + (row[m] || 0), 0);
+      if (tot >= 3) for (const m of MOVES) score[m] += 4 * sk * (row[m] || 0) / tot;
+    }
+  }
   const tot = score.bite + score.guard + score.taunt; if (!tot) return null;
-  const move = Object.keys(score).sort((a,b) => score[b] - score[a])[0];
+  const move = MOVES.slice().sort((a,b) => score[b] - score[a])[0];
   return {move, conf: score[move] / tot};
 }
-const COUNTER = {bite:'guard', guard:'taunt', taunt:'bite'};
-let hist = {bite:0, guard:0, taunt:0}, plannedE = null, insightShown = false;
-function ai(f, foe, seen){
-  if (seen && has(f,'insight') && Math.random() < .30 && seen.type in COUNTER) return {type: COUNTER[seen.type]};
-  // a readable pattern gets countered — the clearer the pattern, the more often
-  const pr = predictFoe(f);
-  if (pr && pr.conf > .45 && Math.random() < Math.min(.8, pr.conf)) return {type: COUNTER[pr.move]};
+/* After each round: learn from the move the foe actually played. */
+function aiLearn(f, foe){
+  const last = (f.hist || [])[f.hist.length - 1];
+  if (f.read && last in COUNTER){
+    f.lv = f.lv || [0, 0, 0];
+    for (let s = 0; s < 3; s++){
+      const m = rot(f.read, s + 1);
+      f.lv[s] = f.lv[s] * .7 + (wins(m, last) ? 1 : wins(last, m) ? -1 : 0);
+    }
+  }
+  f.read = null;
+  if (AIM && foe === P && !simulating && f.lv) AIM.lv = f.lv.map(x => Math.round(x * 100) / 100);
+  if (AIM && foe === P && !simulating && last){
+    const prev = f.hist.length > 1 ? f.hist[f.hist.length-2] : '^';
+    if (last in COUNTER){
+      const row = AIM.t[prev] = AIM.t[prev] || {};
+      for (const m of MOVES) row[m] = (row[m] || 0) * .97;            // recent habits count more
+      row[last] = (row[last] || 0) + 1;
+      AIM.n++;
+    }
+  }
+}
+function aiPickAbility(f, foe, pr, sk){
   const aff = f.actives.filter(a => a.cost <= f.energy);
-  if (aff.length && Math.random() < .35) return {type:'ability', a:aff[rint(0,aff.length-1)]};
+  if (!aff.length) return null;
+  const guardP = pr && pr.move === 'guard' ? pr.conf : .3, biteP = pr && pr.move === 'bite' ? pr.conf : .35;
+  let best = null, bestV = 0;
+  for (const a of aff){
+    let v = .5;
+    switch (a.effect){
+      case 'damage': v = a.ignores_guard ? 1 : 1 - guardP * 1.6; break;
+      case 'double': v = 1 - guardP * 1.6; break;
+      case 'heal': case 'transmute': v = (f.maxHp - f.hp) >= (a.amount || 4) ? 1.1 : .1; break;
+      case 'shield': case 'hold': case 'counter': v = .3 + biteP * 1.2 + (foe.energy >= 5 ? .3 : 0); break;
+      case 'dip': v = (f.maxHp - f.hp) >= 6 ? 1 : .2; break;
+      case 'splash': v = f.energy >= 5 ? 1 : .1; break;
+      case 'drain': case 'crash': v = foe.energy >= 3 ? .9 : .3; break;
+      case 'hex': case 'horizon': v = foe.energy >= 4 || foe.actives.some(x => x.cost <= foe.energy) ? .9 : .5; break;
+      case 'energize': v = f.energy <= 3 ? .8 : .2; break;
+    }
+    if (v > bestV){ bestV = v; best = a; }
+  }
+  // the old opponent cast at random 35 % of the time; a skilled one casts when it pays
+  return best && Math.random() < .25 + (.35 + .25 * sk) * Math.min(1, bestV) ? best : null;
+}
+function ai(f, foe, seen){
+  if (!f.lv && AIM && foe === P && !simulating) f.lv = AIM.lv.map(x => x * .5);   // how this player played around it last time
+  aiLearn(f, foe);
+  const sk = aiSkill(foe);
+  if (seen && has(f,'insight') && Math.random() < .30 && seen.type in COUNTER) return {type: COUNTER[seen.type]};
+  const mem = !!AIM && foe === P && !simulating;            // the long memory is about the player only
+  const pr = f.hist.length >= 2 || (mem && AIM.n >= 6) ? predictFoe(f, mem ? sk : null) : null;
+  // which answer to the read has been working: counter it, or counter the counter-player
+  let lvl = 0;
+  if (f.lv) for (let s = 1; s < 3; s++) if (f.lv[s] > f.lv[lvl] + .2) lvl = s;
+  if (pr && pr.conf > .5 - .12 * sk && Math.random() < Math.min(.55 + .35 * sk, pr.conf + .25 * sk)){
+    f.read = pr.move;
+    const m = rot(pr.move, lvl + 1);
+    // a counter that is a bite may as well be the better hit, if one is ready
+    if (m !== 'guard'){ const ab = aiPickAbility(f, foe, pr, sk); if (ab && Math.random() < sk * .5) return {type:'ability', a:ab}; }
+    return {type: m};
+  }
+  if (pr) f.read = pr.move;
+  const ab = aiPickAbility(f, foe, pr, sk);
+  if (ab) return {type:'ability', a:ab};
+  // the last rounds: play the score (the bell goes to the healthier dog, by % health)
+  if (turn >= C.max_turns - 2 && Math.random() < sk){
+    const lead = f.hp / f.maxHp - foe.hp / foe.maxHp;
+    if (lead > .15) return {type: Math.random() < .6 ? 'guard' : 'taunt'};
+    if (lead < -.05) return {type:'bite'};
+  }
   // Two turns without landing anything and it stops being patient.
   if (f.idle >= 2 && Math.random() < .6) return {type:'bite'};
   // Otherwise a mix. Smelling blood it leans on bite, but never so hard that guarding is a sure thing.
-  const r = Math.random(), biteP = foe.hp < 8 ? .6 : .45;
-  if (r < biteP) return {type:'bite'};
-  return {type: r < biteP + (1 - biteP) * .6 ? 'guard' : 'taunt'};
+  const w = {bite: foe.hp < 8 ? .6 : .45, guard: .33, taunt: .22};
+  // a skilled one also reads the board: a loaded foe ability gets a guard, an empty tank a taunt
+  if (foe.actives.some(a => a.cost <= foe.energy && (a.effect === 'damage' || a.effect === 'double') && !a.ignores_guard)) w.guard += .35 * sk;
+  if (f.actives.some(a => a.cost > f.energy && a.cost <= f.energy + 2)) w.taunt += .25 * sk;
+  if (foe.energy <= 1) w.guard -= .15 * sk;
+  let r = Math.random() * (w.bite + w.guard + w.taunt);
+  for (const m of MOVES){ if ((r -= w[m]) < 0) return {type: m}; }
+  return {type:'bite'};
 }
 
 function resolve(pa, ea){
@@ -1338,12 +1453,12 @@ async function prizeClaim(key){
    bond level it has in its owner's kennel); what the borrower earns with it is
    reported to the server: the bond XP goes to the dog, 25 % of the trainer XP to
    the owner, both collected on the owner's next visit. */
-const LEND = {out:[], in:[], note:'', err:'', open:false};
+const LEND = {out:[], in:[], note:'', err:'', open:false, seeking:false, seekers:[]};
 async function loadLending(){
   if (!LIVE() || !WALLET.token || WALLET.demo) return;
   let j;
   try { const r = await api('/lend'); j = await r.json(); if (!r.ok) return; } catch(e){ return; }
-  LEND.out = j.out || []; LEND.in = j.in || [];
+  LEND.out = j.out || []; LEND.in = j.in || []; LEND.seeking = !!j.seeking; LEND.seekers = j.seekers || [];
   // borrowed dogs join the kennel, at their real bond level
   for (const l of LEND.in){
     if ((OWNED || []).some(f => f.id === l.dog.id)) continue;
@@ -1388,14 +1503,25 @@ function lendCard(){
   const inn = LEND.in.map(l => `<div class="wal" style="margin-top:8px"><div><div class="mini">🤝 Borrowed from <b>${esc(l.ownerName)}</b> until ${until(l.end)}</div>
       <b>Pixel Scrappy #${l.dog.t}</b> <span class="lvl">BOND ${l.lvl}</span></div><button class="ghost sm" data-lendend="${l.id}">Give back</button></div>`).join('');
   if (!own.length) return note + (inn ? `<div class="card"><h3 class="h3">BORROWED</h3>${inn}
-      <p class="mini" style="margin:8px 0 0">Fight with it like your own — ranked and arena. Its bond XP goes to the dog, and its owner gets a share of your XP.</p></div>` : '');
+      <p class="mini" style="margin:8px 0 0">Fight with it like your own — ranked and arena. Its bond XP goes to the dog, and its owner gets a share of your XP.</p></div>`
+    : `<div class="card"><h3 class="h3">🙋 BORROW A SCRAPPY</h3>
+      <p class="mini" style="margin:0 0 8px">No Pixel Scrappy yet? Holders can lend you one of theirs for 1–14 days — the NFT stays in their wallet, you fight ranked and arena with it like your own, and its owner gets a share of your XP. Put your name on the list every holder sees.</p>
+      ${!WALLET.name ? `<p class="mini" style="margin:0"><b>Set a player name first</b> (✏️ in the wallet card above) — holders lend by name.</p>`
+        : LEND.seeking ? `<div class="wal"><div class="mini">✅ <b>You're on the list as ${esc(WALLET.name)}.</b> When a holder lends you a dog it appears here in your kennel.</div><button id="seekOff" class="ghost sm">Take me off</button></div>`
+        : `<div class="row" style="justify-content:flex-start"><button id="seekOn">🙋 I'm looking for a dog</button></div>`}
+      ${LEND.err ? `<p class="mini" style="margin:8px 0 0"><b>${esc(LEND.err)}</b></p>` : ''}</div>`);
   const out = LEND.out.map(l => `<div class="wal" style="margin-top:8px"><div><div class="mini">Lent to <b>${esc(l.borrowerName)}</b> until ${until(l.end)}</div>
       <b>Pixel Scrappy #${l.dog.t}</b></div><button class="ghost sm" data-lendend="${l.id}">End</button></div>`).join('');
   const free = own.filter(f => !LEND.out.some(l => l.dog.id === f.id));
+  const canLend = LEND.out.length < 3 && free.length;
+  const seek = LEND.seekers.length ? `<div style="margin-top:10px"><div class="mini"><b>🙋 Looking for a dog:</b></div>
+      <div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap;margin-top:6px">${LEND.seekers.map(x =>
+        `<button class="ghost sm" data-seekto="${esc(x.name)}" ${canLend ? '' : 'disabled'}>${esc(x.name)}</button>`).join('')}</div>
+      <p class="mini" style="margin:6px 0 0">${canLend ? 'Tap a name to fill it in below.' : 'You have no free Scrappy to lend right now.'}</p></div>` : '';
   return note + `<div class="card"><h3 class="h3">🤝 LEND A SCRAPPY</h3>
     <p class="mini" style="margin:0 0 8px">Let a player without a Pixel Scrappy fight with one of yours. The NFT never leaves your wallet. Its bond XP stays with the dog, and you get <b>25 %</b> of the trainer XP they earn with it — plus a share if they win a weekly prize with it.</p>
-    ${out}
-    ${LEND.out.length < 3 && free.length ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">
+    ${out}${seek}
+    ${canLend ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">
       <select id="lendDog" style="padding:8px 12px">${free.map(f => `<option value="${esc(f.id)}">${esc(f.name)} · Bond ${SAVE.dog(f.id).lvl}</option>`).join('')}</select>
       <input id="lendTo" type="text" maxlength="16" placeholder="Player name" style="flex:1;min-width:120px;padding:9px 14px">
       <select id="lendDays" style="padding:8px 12px"><option value="1">1 day</option><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select>
@@ -1406,6 +1532,18 @@ function lendCard(){
 function lendWire(){
   const q = id => document.getElementById(id);
   if (q('lendOk')) q('lendOk').onclick = () => { S.click(); LEND.note = ''; menu(); };
+  app.querySelectorAll('[data-seekto]').forEach(b => b.onclick = () => { S.click(); const i = q('lendTo'); if (i){ i.value = b.dataset.seekto; i.focus(); } });
+  const seek = async on => {
+    S.unlock(); S.click(); LEND.err = '';
+    try {
+      const r = await api('/lend/seek', {method:'POST', body:{on}}), j = await r.json();
+      if (!r.ok) LEND.err = j.error === 'need_name' ? 'Set a player name first (✏️ above).' : j.error === 'borrower_holds' ? 'You hold a Pixel Scrappy — lending is for players without one.' : 'That did not work (' + (j.error || r.status) + ').';
+      else { LEND.seeking = !!j.seeking; LEND.seekers = j.seekers || []; }
+    } catch(e){ LEND.err = 'The server is not reachable right now.'; }
+    menu();
+  };
+  if (q('seekOn')) q('seekOn').onclick = () => seek(true);
+  if (q('seekOff')) q('seekOff').onclick = () => seek(false);
   app.querySelectorAll('[data-lendend]').forEach(b => b.onclick = async () => {
     if (!confirm('End this loan now?')) return;
     S.click(); b.disabled = true;
@@ -1841,9 +1979,15 @@ function scListHtml(){
       <div class="row" style="gap:6px"><button data-scjoin="${d.id}" ${sel ? '' : 'disabled'}>🥊 Accept</button>
       ${L && L.id === d.id ? `<button class="ghost sm" data-scdrop="1">Not now</button>` : ''}</div></div>`).join('')}
     <p class="mini" style="margin:8px 0 0">${sel ? 'You fight with the Scrappy picked below.' : 'Pick your fighter below first.'}</p></div>`);
+  const lobby = ((SC.me || {}).lobby || []).filter(d => !inbox.some(x => x.id === d.id));
+  out.push(`<div class="card"><h3 class="h3">📣 OPEN CHALLENGES</h3>${lobby.length ? lobby.map(d => `
+    <div class="wal" style="margin-top:8px"><div><div class="mini"><b>${esc(d.a.name)}</b> · ${Math.max(1, Math.round((Date.now() - d.posted) / 60000))} min ago</div>${scDogLine(d.a)}</div>
+      <button data-scjoin="${d.id}" ${sel ? '' : 'disabled'}>🥊 Accept</button></div>`).join('')
+    : `<p class="mini" style="margin:0">Nobody is waiting right now. Post one below — everybody in the Club sees it, and the chat tells them.</p>`}
+    ${lobby.length && !sel ? '<p class="mini" style="margin:8px 0 0">Pick your fighter below first.</p>' : ''}</div>`);
   const mine = duels.filter(d => d.side === 'a' && d.status === 'open');
   if (mine.length) out.push(`<div class="card"><h3 class="h3">YOUR OPEN CHALLENGES</h3>${mine.map(d => `
-    <div class="wal" style="margin-top:8px"><div><div class="mini">${d.invite ? 'Waiting for <b>' + esc(d.invite) + '</b>' : 'Open link — anyone with it can accept'}</div>${scDogLine(d.a)}</div>
+    <div class="wal" style="margin-top:8px"><div><div class="mini">${d.invite ? 'Waiting for <b>' + esc(d.invite) + '</b>' : d.open ? '📣 Open to everyone in the Club' : 'Open link — anyone with it can accept'}</div>${scDogLine(d.a)}</div>
       <div class="row" style="gap:6px">${d.invite ? '' : `<button class="sm" data-sccopy="${d.id}">🔗 Copy link</button>`}
       <button class="ghost sm" data-sccancel="${d.id}">Cancel</button></div></div>
     ${d.invite ? '' : `<input class="sclink" readonly value="${esc(scLinkOf(d.id))}" style="width:100%;margin-top:6px;font-size:12px;padding:6px 10px">`}`).join('')}
@@ -1866,8 +2010,8 @@ function scClubView(){
         <input id="scName" type="text" maxlength="16" placeholder="Player name" style="flex:1;min-width:140px;padding:9px 14px">
         <button id="scByName" ${sel ? '' : 'disabled'}>🥊 Challenge</button>
       </div>
-      <div class="row" style="margin-top:10px"><button id="scInvite" class="ghost" ${sel ? '' : 'disabled'}>🔗 Create an invite link</button></div>
-      <p class="mini" style="margin:9px 0 0">${sel ? 'Challenge a player by their name, or send a link to anyone who holds a Pixel Scrappy.' : 'Pick your fighter first.'}</p>
+      <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap"><button id="scOpen" ${sel ? '' : 'disabled'}>📣 Post an open challenge</button><button id="scInvite" class="ghost" ${sel ? '' : 'disabled'}>🔗 Create an invite link</button></div>
+      <p class="mini" style="margin:9px 0 0">${sel ? 'Challenge a player by their name, post an open challenge anyone in the Club can take, or send a link to anyone who holds a Pixel Scrappy.' : 'Pick your fighter first.'}</p>
     </div>
     <div class="card">
       <h3 class="h3">HOW IT WORKS</h3>
@@ -1893,12 +2037,13 @@ function scWire(){
     try { await navigator.clipboard.writeText(url); b.textContent = '✅ Copied'; }
     catch(e){ const i = b.closest('.wal').nextElementSibling; if (i) i.select(); b.textContent = 'Copy it below'; }
   });
-  const create = async (opponent) => {
+  const create = async (opponent, open) => {
     SC.err = ''; SC.note = '';
     try {
-      const j = await scCall('/club/create', {dogId: SAVE.data.club.dog, opponent: opponent || undefined});
+      const j = await scCall('/club/create', {dogId: SAVE.data.club.dog, opponent: opponent || undefined, open: open || undefined});
       SC.note = opponent ? `🥊 Challenge sent to <b>${esc(j.duel.invite)}</b>. They see it in their Club tab.`
-                         : '🔗 Invite link ready — copy it and send it to your opponent.';
+              : open ? '📣 Open challenge posted — it shows in everyone\'s Club tab and in the chat. Stay here, the fight starts when someone accepts.'
+                     : '🔗 Invite link ready — copy it and send it to your opponent.';
     } catch(e){ SC.err = e.message; }
     await scRefresh(); menu();
   };
@@ -1907,6 +2052,8 @@ function scWire(){
   if (nm) nm.onkeydown = e => { if (e.key === 'Enter') bn.click(); };
   const iv = document.getElementById('scInvite');
   if (iv) iv.onclick = () => { S.unlock(); S.click(); iv.disabled = true; create(null); };
+  const op = document.getElementById('scOpen');
+  if (op) op.onclick = () => { S.unlock(); S.click(); op.disabled = true; create(null, true); };
 }
 
 async function scEnter(v){
@@ -2444,7 +2591,7 @@ async function fillLadder(){
   try {
     const r = await api('/ladder'); const j = await r.json();
     const board = (rows, label, sfx) => `<div><h3>${label}</h3>${rows.length ? rows.map((x,i) =>
-      `<p class="lb ${x.you?'you':''}"><span>${i+1}.</span><span>${esc(x.you ? 'YOU' : x.who)}</span><b>${x.v}${sfx||''}</b></p>`).join('')
+      `<p class="lb ${x.you?'you':''}"><span>${i+1}.</span><span>${esc(x.you ? 'YOU' : x.who)}${x.team ? ' <span class="tag">TEAM</span>' : ''}</span><b>${x.v}${sfx||''}</b></p>`).join('')
       : '<p class="mini">Nobody yet.</p>'}</div>`;
     box.innerHTML = `<p class="mini" style="margin:0 0 10px"><b>Week of ${esc(j.week)}</b> · ${j.players} player${j.players===1?'':'s'} on the board · resets Monday 00:00 UTC</p>
       <div class="pnl3">${board(j.xp,'MOST XP')}${board(j.wins,'MOST WINS')}${board(j.streak,'LONGEST STREAK','🔥')}</div>`;
@@ -3244,6 +3391,19 @@ function stage(){
     <button class="snd" id="snd" title="Sound"></button>
   </div>`;
 }
+/* After a win, a player without a name gets a nudge: names show on the ladder,
+   in the arena ("#123 from name"), the chat and the weekly post. */
+function nameNudge(win){
+  if (!win || !LIVE() || !WALLET.token || WALLET.demo || WALLET.name) return '';
+  return `<div class="mini" style="margin:12px auto 0;max-width:440px;padding:9px 12px;border:2px dashed var(--panelB);border-radius:12px">
+    🏷️ <b>Nice win!</b> On the ladder you show up as <b>${esc(WALLET.account.slice(0,5) + '…' + WALLET.account.slice(-4))}</b>.
+    Pick a name so everybody knows who beat them. <button id="nameNudge" class="sm" style="margin-left:4px">✏️ Set a name</button></div>`;
+}
+function nameNudgeWire(){
+  const b = document.getElementById('nameNudge');
+  if (b) b.onclick = () => { S.click(); arenaRun = null; tab = 'kennel'; WALLET.editName = true; WALLET.nameError = ''; menu();
+    const i = document.getElementById('nameIn'); if (i) i.focus(); window.scrollTo({top: 0, behavior: 'smooth'}); };
+}
 function renderControls(){
   const c = document.getElementById('ctrl'); if (!c) return;
   c.classList.remove('busy');
@@ -3255,11 +3415,13 @@ function renderControls(){
       <div class="mini">🏟️ Arena · ${r.done ? (r.won===3 ? '<b>CHAMPION</b>' : 'out after '+r.won+' win'+(r.won===1?'':'s')) : 'round '+(r.round+1)+' of 3 next'}</div>
       <div style="text-align:left;margin:10px auto;max-width:420px">${arenaLines(r.lines)}</div>
       ${r.done ? `<div class="mini">+${r.xp} XP shared across your squad — full XP, because you fought it live.</div>` : ''}
+      ${r.done ? nameNudge(r.won > 0) : ''}
       <div class="row" style="margin-top:12px">
         ${r.done ? `<button id="menu">Back to the arena</button>` : `<button id="again">Next round →</button>`}</div>
       ${shopLink(E.def) ? `<div class="row" style="margin-top:10px">${shopLink(E.def)}</div>` : ''}</div>`;
     const nx = document.getElementById('again'); if (nx) nx.onclick = () => { S.click(); arenaNext(); };
     const mn = document.getElementById('menu'); if (mn) mn.onclick = () => { arenaRun = null; tab = 'arena'; menu(); };
+    nameNudgeWire();
     return;
   }
   if (over){
@@ -3274,6 +3436,7 @@ function renderControls(){
       <div class="xp"><i style="width:${pct}%"></i></div>
       <div class="mini">${g.lvl>=BOND.maxLevel ? 'Bond maxed' : g.xp+' / '+need+' to the next level'} · ${g.w}W ${g.l}L${SAVE.data.streak>1?' · '+SAVE.data.streak+' win streak 🔥':''}</div>
       ${ups}
+      ${isRanked ? nameNudge(v === 'YOU WIN') : ''}
       <div class="row" style="margin-top:12px">
         <button id="again">${SAVE.data.tickets>0 ? 'Fight again ('+SAVE.data.tickets+' left)' : 'Casual fight'}</button><button id="menu">Back to the kennel</button></div>
       ${shopLink(E.def) ? `<div class="row" style="margin-top:10px">${shopLink(E.def)}</div>` : ''}</div>`;
@@ -3282,6 +3445,7 @@ function renderControls(){
       startFight(P.def, pickOpponent(P.def.id), r);      // a fresh rival every fight, not a rematch
     };
     document.getElementById('menu').onclick = menu;
+    nameNudgeWire();
     return;
   }
   // The Founder's Insight: the opponent's move is decided now, and sometimes shown.
@@ -3308,6 +3472,7 @@ function renderControls(){
   c.querySelectorAll('[data-ab]').forEach(b => b.onclick = () => go({type:'ability', a:P.actives[+b.dataset.ab]}));
 }
 function shell(){
+  chatSync(false);
   app.innerHTML = stage() + `<div id="ctrl"></div>
     <div class="card"><div class="log" id="log">${log.join('<br>')}</div></div>`;
   fxInit(document.querySelector('canvas.fx'), stageTheme());
@@ -3326,6 +3491,8 @@ function startFight(a,b,ranked,oppLvl){
   const mb = isRanked ? myBonus() : null;
   P = build(a, el, mb); E = build(b, eo, null); turn = 1; log = []; ev = []; over = false;
   hist = {bite:0, guard:0, taunt:0}; plannedE = null;
+  // the opponent remembers this trainer's style across fights (kept in the save, synced)
+  const ad = SAVE.data; if (!ad.ai || ad.ai.v !== 1) ad.ai = aimNew(); AIM = ad.ai;
   if (mb) say(`<span class="turn">${mb.emoji} Pack bonus active — <b>${mb.name}</b>: ${mb.txt}.</span>`);
   if (!isRanked && !arenaRun) say(`<span class="turn">Casual fight — no XP, nothing counts towards the ladder.</span>`);
   say(`<span class="turn">The bell rings — ${esc(a.name)} (Bond ${el}) vs ${esc(b.name)} (Bond ${eo}).</span>`);
@@ -3358,16 +3525,26 @@ function introCard(){
 }
 function signInFirst(){ return walletCard() + `<div class="card"><p class="mini" style="margin:0">Sign in first — this tab works with the Scrappys in your wallet.</p></div>`; }
 
+/* The kennel can be ranked: by bond (default — your best-trained dogs first, with
+   their place), by rarity, or by token number (legendaries in their own row). */
+const KSORT = {bond:'🏅 Bond', rarity:'💎 Rarity', number:'# Number'};
+let kSort = (s => KSORT[s] ? s : 'bond')(lsGet('ba_ksort'));
+const RARITY_ORDER = {Mythic:5, Legendary:4, Epic:3, Rare:2, Uncommon:1, Common:0};
+function bondOrder(R){
+  const sc = f => { const g = SAVE.dog(f.id); return [g.lvl, g.xp, g.w - g.l, -(f.token || 0)]; };
+  return R.slice().sort((a, b) => { const x = sc(a), y = sc(b); for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return y[i] - x[i]; return 0; });
+}
 function kennelView(){
   const D = SAVE.data, tl = SAVE.trainerLvl(), ti = SAVE.trainerInto();
   const mb = myBonus();
   const quests = (D.quests||[]).map(q =>
     `<p class="q ${q.got?'done':''}">${q.got?'✅':'▫️'} <span>${esc(q.txt)} <b>${q.n}/${q.goal}</b> · +${q.xp} XP</span></p>`).join('');
-  const card = (f,i) => {
+  const card = (f, rank) => {
     const g = SAVE.dog(f.id);
     const need = BOND.need(g.lvl), pct = g.lvl>=BOND.maxLevel ? 100 : Math.round(100*g.xp/need);
+    const medal = rank ? (rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : '#' + rank) + ' ' : '';
     return `<button data-f="${esc(f.id)}"><img src="${f.img}" alt="">
-      <span><b>${esc(f.name)}</b><br>${esc(f.rarity).toUpperCase()}
+      <span><b>${medal}${esc(f.name)}</b><br>${esc(f.rarity).toUpperCase()}
       <br><span class="lvl">BOND ${g.lvl}</span>
       <span class="xp" style="display:block"><i style="width:${pct}%"></i></span>
       ${g.w+g.l ? g.w+'W '+g.l+'L' : 'never fought'}${f.borrowed ? `<br><span class="tag">🤝 from ${esc(f.borrowed.from)}</span>` : ''}
@@ -3380,9 +3557,15 @@ function kennelView(){
     <div class="row" style="justify-content:flex-start;margin-top:10px"><button id="demo">Try the demo</button></div></div>` + prizeCards() + lendCard();
   const defNote = WALLET.defenseNote ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🛡️ Arena defence</b>
       <div class="mini">${esc(WALLET.defenseNote)}</div></div><button id="defOk" class="sm">OK</button></div></div>` : '';
-  const gen = R.filter(f => !f.legendary).map(f => card(f)).join('');
-  const leg = R.filter(f =>  f.legendary).map(f => card(f)).join('');
-  const dogs = (gen || '') + (leg ? `</div><h3 class="h3" style="margin:16px 0 10px">★ ${R === DATA.fighters ? 'THE 20 LEGENDARIES' : 'YOUR LEGENDARIES'} — hand-built, each with its own signature</h3><div class="pick">` + leg : '');
+  let dogs;
+  if (kSort === 'bond') dogs = bondOrder(R).map((f, i) => card(f, i + 1)).join('');
+  else if (kSort === 'rarity') dogs = R.slice().sort((a, b) => (b.legendary ? 9 : RARITY_ORDER[b.rarity] || 0) - (a.legendary ? 9 : RARITY_ORDER[a.rarity] || 0) || SAVE.dog(b.id).lvl - SAVE.dog(a.id).lvl).map(f => card(f)).join('');
+  else {
+    const gen = R.filter(f => !f.legendary).map(f => card(f)).join('');
+    const leg = R.filter(f =>  f.legendary).map(f => card(f)).join('');
+    dogs = (gen || '') + (leg ? `</div><h3 class="h3" style="margin:16px 0 10px">★ ${R === DATA.fighters ? 'THE 20 LEGENDARIES' : 'YOUR LEGENDARIES'} — hand-built, each with its own signature</h3><div class="pick">` + leg : '');
+  }
+  const top = bondOrder(R)[0], tg = top && SAVE.dog(top.id);
   return walletCard() + prizeCards() + defNote + `
   <div class="card pnl">
     <div>
@@ -3402,7 +3585,10 @@ function kennelView(){
     </div>
   </div>
   <div class="card">
-    <p class="mini" style="margin:0 0 11px"><b>Your kennel.</b> Every Scrappy levels its own bond. The bond stays with the NFT — sell it and the new owner inherits the training.</p>
+    <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap;margin:0 0 11px">
+      <p class="mini" style="margin:0;flex:1;min-width:200px"><b>Your kennel${R.length > 1 ? ' · ' + R.length + ' dogs' : ''}.</b> Every Scrappy levels its own bond. The bond stays with the NFT — sell it and the new owner inherits the training.${tg && (tg.w + tg.l || tg.lvl > 1) ? ` Top dog: <b>${esc(top.name)}</b>, Bond ${tg.lvl}.` : ''}</p>
+      <div class="row ksort" style="gap:4px">${Object.entries(KSORT).map(([k, l]) => `<button class="sm ${k === kSort ? 'on' : ''}" data-ksort="${k}" style="margin-top:0">${l}</button>`).join('')}</div>
+    </div>
     <div class="pick">${dogs}</div>
     <p class="mini" style="margin:11px 0 0"><b>Kit rule.</b> Each Scrappy carries eight traits, one per layer — only the <b>three rarest</b> fight, and at most one of them is an active ability. That keeps a fight readable and makes the individual traits matter, not just the rarity tier. </p>
     <p class="mini" style="margin:7px 0 0"><b>Bond unlocks:</b> ${Object.entries(BOND.perks).map(([l,p])=>`<b>L${l}</b> ${esc(p.txt)}`).join(' · ')}</p>
@@ -3637,7 +3823,7 @@ async function weekLadder(wk){
   const board = k => rows.slice().sort((a,b) => b[k]-a[k]);
   const out = {week:wk, players:rows.length, mine:{}};
   for (const k of ['xp','wins','streak']){
-    const b = board(k); out[k] = b.slice(0,10).map(x => ({who:x.who, v:x[k], you:!!x.you}));
+    const b = board(k); out[k] = b.slice(0,10).map(x => ({who:x.who, v:x[k], you:!!x.you, team:!!x.team}));
     const i = b.findIndex(x => x.you); out.mine[k] = L[k] > 0 ? {rank:i+1, v:L[k]} : null;
   }
   return out;
@@ -3660,7 +3846,7 @@ function weekRecapHtml(wk, lad){
     const top = (lad[key] || []).slice(0,5), me = lad.mine && lad.mine[key];
     const inTop = top.some(x => x.you);
     return `<div><h3>${label}</h3>${top.length ? top.map((x,i) =>
-      `<p class="lb ${x.you?'you':''}"><span>${i+1}.</span><span>${esc(x.you ? 'YOU' : x.who)}</span><b>${x.v}${sfx||''}</b></p>`).join('')
+      `<p class="lb ${x.you?'you':''}"><span>${i+1}.</span><span>${esc(x.you ? 'YOU' : x.who)}${x.team ? ' <span class="tag">TEAM</span>' : ''}</span><b>${x.v}${sfx||''}</b></p>`).join('')
       : '<p class="mini">Nobody.</p>'}
       ${me && !inTop ? `<p class="lb you"><span>${me.rank}.</span><span>YOU</span><b>${me.v}${sfx||''}</b></p>` : ''}</div>`;
   };
@@ -3715,12 +3901,85 @@ function weekRecapDue(){
   return D.recapWeek !== lastWeekKey() && D.week === SAVE.weekOf() && (L.xp > 0 || L.wins > 0) && !WALLET.loading && !needLogin();
 }
 
+/* ---- chat: one small room for every signed-in player ---- */
+const CHAT = {open:false, msgs:[], seq:0, seen:+(lsGet('ba_chat_seen') || 0), err:'', muted:false, busy:false, on:false};
+const CHAT_ERR = {no_links:'Links are not allowed in the chat (scrappyxrp.fun and xrp.cafe are fine).',
+  no_secrets:'That looks like a wallet secret. Never share it — with anyone.', slow_down:'Easy — one message every few seconds.',
+  muted:'You are muted in the chat.', empty:'Type something first.'};
+const chatAllowed = () => LIVE() && !!WALLET.token && !WALLET.demo;
+function chatTime(t){ const d = new Date(t); return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'); }
+function chatMine(m){ return !m.sys && WALLET.account && (m.who === WALLET.name || m.who === WALLET.account.slice(0,5) + '…' + WALLET.account.slice(-4)); }
+function chatDraw(){
+  let fab = document.getElementById('chatFab'), box = document.getElementById('chatBox');
+  document.body.classList.toggle('chat-on', CHAT.on);              // room under the page for the button
+  if (!CHAT.on){ if (fab) fab.remove(); if (box) box.remove(); return; }
+  if (!fab){
+    fab = document.createElement('button'); fab.id = 'chatFab'; fab.setAttribute('aria-label', 'Chat');
+    fab.onclick = () => { S.click(); CHAT.open = !CHAT.open; if (CHAT.open) chatPoll(); chatDraw(); };
+    document.body.appendChild(fab);
+  }
+  const unread = CHAT.msgs.filter(m => m.id > CHAT.seen && !m.sys && !chatMine(m)).length;
+  fab.innerHTML = CHAT.open ? '✕' : '💬' + (unread ? `<i>${unread > 9 ? '9+' : unread}</i>` : '');
+  if (!CHAT.open){ if (box) box.remove(); return; }
+  if (!box){
+    box = document.createElement('div'); box.id = 'chatBox'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', 'Bark Arena chat');
+    box.innerHTML = `<header><b>💬 BARK CHAT</b><button aria-label="Close">×</button></header><div id="chatList" aria-live="polite"></div>
+      <div id="chatErr"></div><form><input maxlength="200" placeholder="Say something nice…" autocomplete="off"><button type="submit">Send</button></form>`;
+    box.querySelector('header button').onclick = () => { CHAT.open = false; chatDraw(); };
+    box.querySelector('form').onsubmit = e => { e.preventDefault(); chatSend(); };
+    document.body.appendChild(box);
+  }
+  const list = box.querySelector('#chatList'), atEnd = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+  list.innerHTML = CHAT.msgs.length ? CHAT.msgs.map(m => m.sys
+      ? `<p class="sys">${esc(m.text)}<span class="t">${chatTime(m.at)}</span></p>`
+      : `<p class="${chatMine(m) ? 'me' : ''}"><span class="who">${esc(m.who)}</span>${m.team ? ' <span class="tag">TEAM</span>' : ''}<span class="t">${chatTime(m.at)}</span><br>${esc(m.text)}</p>`).join('')
+    : '<p class="sys">No messages yet — say hi! 🐾</p>';
+  if (atEnd || !CHAT.drawn) list.scrollTop = list.scrollHeight;
+  CHAT.drawn = true;
+  box.querySelector('#chatErr').textContent = CHAT.muted ? CHAT_ERR.muted : CHAT.err;
+  if (CHAT.seq > CHAT.seen){ CHAT.seen = CHAT.seq; lsSet('ba_chat_seen', CHAT.seen); fab.innerHTML = '✕'; }
+}
+async function chatPoll(){
+  if (!CHAT.on || CHAT.busy) return;
+  CHAT.busy = true;
+  try {
+    const since = CHAT.msgs.length ? CHAT.msgs[CHAT.msgs.length - 1].id : 0;
+    const r = await api('/chat?since=' + since), j = await r.json();
+    if (r.ok){
+      if (j.seq < since) CHAT.msgs = [];                       // the room was reset
+      CHAT.msgs = CHAT.msgs.concat(j.msgs || []).slice(-80); CHAT.seq = j.seq; CHAT.muted = !!j.muted;
+      if (!since && !CHAT.seen) CHAT.seen = Math.max(0, j.seq - 3);   // first visit: a few unread, not 80
+    }
+  } catch(e){}
+  CHAT.busy = false; chatDraw();
+}
+async function chatSend(){
+  const box = document.getElementById('chatBox'); if (!box) return;
+  const inp = box.querySelector('input'), text = inp.value.trim(); if (!text) return;
+  CHAT.err = '';
+  try {
+    const r = await api('/chat', {method:'POST', body:{text}}), j = await r.json().catch(() => ({}));
+    if (!r.ok){ CHAT.err = CHAT_ERR[j.error] || 'Could not send (' + (j.error || r.status) + ').'; chatDraw(); return; }
+    inp.value = ''; S.click();
+  } catch(e){ CHAT.err = 'The server is not reachable right now.'; chatDraw(); return; }
+  await chatPoll(); inp.focus();
+}
+/* shown on the menu screens for signed-in players; hidden in the ring */
+function chatSync(show){
+  const on = show && chatAllowed();
+  if (on && !CHAT.on){ CHAT.on = true; chatPoll(); }
+  if (!on){ CHAT.on = false; }
+  chatDraw();
+}
+setInterval(() => { if (CHAT.on && !document.hidden && (CHAT.open || Date.now() - (CHAT.last || 0) > 25000)){ CHAT.last = Date.now(); chatPoll(); } }, 4000);
+
 function menu(){
   SAVE.checkDay();
+  chatSync(true);
   app.innerHTML = nav() +
     (tab==='kennel' ? kennelView() : tab==='ladder' ? ladderView() : tab==='club' ? clubView()
       : needLogin() ? signInFirst() : tab==='arena' ? arenaView() : packsView()) +
-    `<div class="card"><p class="mini" style="margin:0"><b>How it works.</b> Bite beats taunt, taunt beats guard, guard beats bite. Damage is rolled, so a Common can still drop a Legendary. Ability traits come from the NFT metadata and cost energy (◆). Ten rounds; healthiest at the bell wins. Opponents match your bond level.</p>
+    `<div class="card"><p class="mini" style="margin:0"><b>How it works.</b> Bite beats taunt, taunt beats guard, guard beats bite. Damage is rolled, so a Common can still drop a Legendary. Ability traits come from the NFT metadata and cost energy (◆). Ten rounds; healthiest at the bell wins. Opponents match your bond level — and they learn your style: the higher your bond, the sharper they read you.</p>
     <p class="mini" style="margin:9px 0 0"><button id="wipe" class="sm">Reset progress</button></p></div>`;
 
   app.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { S.unlock(); S.click(); tab = b.dataset.t; menu();
@@ -3730,6 +3989,7 @@ function menu(){
   app.querySelectorAll('[data-weekrecap]').forEach(b => b.onclick = () => { S.click(); showWeekRecap(); });
   if (weekRecapDue()) showWeekRecap();            // a new week: last week's results come first
   else if (SAVE.dayComplete() && !SAVE.data.today.shown && !WALLET.loading && !needLogin()) showRecap();
+  app.querySelectorAll('[data-ksort]').forEach(b => b.onclick = () => { S.click(); kSort = b.dataset.ksort; lsSet('ba_ksort', kSort); menu(); });
   app.querySelectorAll('[data-f]').forEach(b => b.onclick = () => {
     S.unlock(); S.click();
     const me = findDog(b.dataset.f); if (!me) return;

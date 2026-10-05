@@ -11,7 +11,7 @@ exactly the files to upload and say where each goes.
 | `server.js`, `worker.js`, `public/index.html`, `package.json` | **Bark Arena**, the Pixel Scrappy NFT fighting game | Hostinger Node.js app → `https://game.scrappyxrp.fun` |
 | `website/` | Pieces of the **scrappyxrp.fun** site (static files) | Hostinger `public_html/` |
 
-Git branch used so far: `claude/dreamy-pasteur-du9fm3` (repo `krissen44/claude-cloud`).
+Git branches used so far: `claude/dreamy-pasteur-du9fm3` (up to v29), `claude/upbeat-hypatia-cht3ou` (v30+) — repo `krissen44/claude-cloud`.
 
 **Release rule (owner's decision):** changes are **not uploaded one by one**. They collect during the week and go live
 together at the **week roll (Monday 00:00 UTC)**. Record every change in `RELEASE.md` (what, why, upload steps) and
@@ -61,7 +61,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 
 ### Environment variables (Hostinger)
 `ISSUER=rGAVUGyhdbxQs1G7nwCCFU4w8P4HfgFKD6`, `TAXON=369` (empty/`*` = any taxon), `XUMM_API_KEY`, `XUMM_API_SECRET`,
-`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
+`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
 `META_HOSTS`, `ORIGIN`, `PORT`.
 
 ### API (`/api/...`)
@@ -81,12 +81,15 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/arena/rivals` | ✔ | Up to 30 Scrappys held by other players, today's registered squads first `{token,id,uri,lvl,owner,squad}` |
 | `/arena/squad` (POST `{ids}`), `/arena/result` (POST `{id, attackerWon}`) | ✔ | Register today's squad / report an arena fight vs another player's dog |
 | `/arena/defense`, `/arena/defense/claim` (POST `{upTo}`) | ✔ | Pending defence bond XP for the caller / mark it collected |
-| `/club/me`, `/club/create` (POST `{dogId, opponent?}`), `/club/state?id=`, `/club/join` (POST `{id,dogId}`), `/club/cancel`, `/club/move` (POST `{id, move}`), `/club/leave` | ✔ | Fight Club beta: the server is the referee (see below) |
+| `/chat[?since=id]` (GET), `/chat` (POST `{text}`) | ✔ | In-game chat: last 80 messages (no wallets in the feed), plain text, no links except scrappyxrp.fun/xrp.cafe, no family seeds, 1 msg / 4 s; 403 `muted` |
+| `/club/me` (incl. `lobby` = open challenges), `/club/create` (POST `{dogId, opponent?, open?}`), `/club/state?id=`, `/club/join` (POST `{id,dogId}`), `/club/cancel`, `/club/move` (POST `{id, move}`), `/club/leave` | ✔ | Fight Club beta: the server is the referee (see below) |
 | `/save` (GET/POST) | ✔ | Full browser save per wallet (cloud backup + cross-device sync), file `DATA_DIR/saves/<account>.json` |
+| `/lend/seek` (POST `{on}`) | ✔ | A non-holder with a name puts themselves on the "looking for a dog" list (7 days); `/lend` GET returns `seeking` + `seekers` |
 | `/lend` (GET; POST `{dogId,to,days}`), `/lend/end` (POST `{id}`), `/lend/report` (POST `{id,bond,trainer}`), `/lend/claim` (POST `{upTo}`) | ✔ | Lending: loans given/taken + rewards waiting for the owner; borrower reports XP earned with the dog |
 | `/public/results[?week=]` | – | Frozen results of a finished week: canonical `json` string + `sha256` + `anchor` tx + prizes (CORS `*`) |
 | `/prizes`, `/prizes/claim` (POST `{week,place}`), `/prizes/status?uuid=` | ✔ | The player's prize offers; claim → Xaman NFTokenAcceptOffer payload for the ledger sell offer |
 | `/admin/season`, `/admin/anchor` (POST `{week}`), `/admin/prize` (POST `{week,place,nftId}`), `/admin/xaman?uuid=` | `?key=ADMIN_KEY` | Week close: results, treasury, Xaman payloads signed by the issuer wallet, payload status |
+| `/admin/chat`, `/admin/chat/del` (POST `{id}`), `/admin/chat/mute` (POST `{account,on}`) | `?key=ADMIN_KEY` | Chat moderation (also on the `/admin` page) |
 | `/admin/export[?download=1]`, `/admin/csv` | `?key=ADMIN_KEY` | Everything as JSON backup (summary, per-player rows, raw store + saves) / players as CSV. Dashboard page: **`/admin`** |
 
 ### Game rules (as implemented — keep the website guide in sync)
@@ -94,9 +97,16 @@ hand over one combined package for the week start; don't tell the owner to uploa
   Energy starts 2, +1/round, max 9. **Bite** 4–7, 15% miss, +2 vs taunt. **Guard** blocks bite, +1 energy and
   **snaps back 2** (`C.guard.snap_vs_bite ?? 2`). **Taunt** +2 energy, chips 2 through guard. **Frenzy** from round 7: +1…+4 bite damage.
 - **Kit**: only the 3 rarest of 8 traits fight, max 1 active ability. Mythic sets add a set bonus; Legendaries use hand-built kits.
-- **Opponent AI** (`ai()` / `predictFoe()`): counters patterns from the player's move history (order-1/2 context +
-  frequency), never peeks at the current move (except the intended 30% "Insight" trait). Simulation baseline
-  (2,000 fights each): random 46%, always-bite 35%, alternating 21–22%, bite/taunt 4%. Re-run a simulation after AI/rule changes.
+- **Opponent AI (v30)** (`ai()`, `predictFoe()`, `aiLearn()`, `aiPickAbility()`, all in an `//@engine` section): predicts the
+  player's next move from this fight (order-1/2 context + frequency) **and from earlier fights** (`AIM` = per-player
+  transition counts, kept in the save as `SAVE.data.ai`, loaded in `startFight`, only learned from the real player, never
+  in ghost sims). It scores three answers to its read (counter / counter-the-counter-player / one more, `f.lv`, carried
+  over in `AIM.lv`) and plays the one that works, so baiting a pattern stops paying. Skill `aiSkill(foe)` = .30 at bond 1
+  → .975 at bond 10: follows reads more often, casts abilities when they pay (heal when hurt, damage when no guard is
+  expected, shields vs bites), reads the board (guards a loaded foe ability) and plays the score in the last 2 rounds.
+  Never peeks at the current move (except the intended 30% "Insight" trait). Benchmark `node tools/test/ai-sim.mjs`
+  (player win % at bond 1/5/10, ±3 noise): random ≈46–50 everywhere, always-bite 23/14/6, alternating 10/5/2, counter-the-counter 41/39/46
+  (old AI: 67–71), adaptive 48/47/43. Real players won 76 % (top 88–95 %) against the old AI in week 2. Re-run after AI/rule changes.
 - **Rivals (ranked fights)**: random collection dogs (#21–5000, `COLLECTION_SIZE`), fetched in the background into a rotating pool
   (`OPP`), ~12% Legendaries, never a token in `/taken`; demo dogs only until the pool loads. Bond level ±1 of yours.
 - **Rivals (arena)**: only Scrappys other signed-in players hold (`/api/arena/rivals`, from `holdings[].dogs` + the
@@ -107,6 +117,14 @@ hand over one combined package for the week start; don't tell the owner to uploa
   `arenaReport`); if that dog is in its owner's squad today, the owner gets bond XP queued (18 win / 6 loss, cap 120 per
   dog per day, max 12 reports per attacker per day). The owner collects it on the next kennel load (`/api/arena/defense`
   → `claimDefense` → `SAVE.bondXp`, then `/api/arena/defense/claim`) with a notice. Bond XP only — no trainer XP/ladder.
+- **Team wallets**: the issuer (+ `TEAM` env) plays for testing — shown with a TEAM tag on ladder, public board, chat
+  and in frozen results (`team: true`), but skipped for prizes and not counted in pack standings (`isTeam`).
+- **Chat**: 💬 button bottom-right on menu screens for signed-in players (hidden in the ring), `CHAT`, `chatSync`,
+  `chatPoll` (4 s open / 25 s closed for the unread badge), `chatSend`. System messages announce open Club challenges
+  and borrow requests (`chatSystem`). Stored as blob `chat` (`STORE.blobGet/blobSet`; D1 table `blobs`).
+- **Kennel ranking**: sort buttons Bond (default; medals 🥇🥈🥉 then #n, by bond level, XP, W−L) / Rarity / Number
+  (`KSORT`, `bondOrder`, saved in `localStorage.ba_ksort`). "Top dog" line in the kennel card.
+- **Name nudge**: after a ranked win or a live arena run with a win, a player without a name gets "✏️ Set a name" (`nameNudge`).
 - **Player names**: optional display name (`/api/profile`, 3–16 chars `[A-Za-z0-9 _.-]`, unique case-insensitive, no
   wallet look-alikes), set via ✏️ in the wallet card; shown in ladder, public board, arena labels and admin.
 - **Tickets**: 5/day + 1 per extra owned Scrappy (max 10), bank max 15 — unused ones carry to the next day but **not into a new week** (Monday starts at the daily grant, `newWeek` in `checkDay`). Ranked XP: win 30, loss 12, +10 vs rarer.
@@ -122,7 +140,8 @@ hand over one combined package for the week start; don't tell the owner to uploa
   Club tab after sign-in). Both send a move (`bite|guard|taunt|ab0-2`); the server resolves the round with the shared
   engine and a random seed, stores `{t,a,b,seed,auto}` and both pages replay rounds with `resolveSeeded` (A = left =
   challenger). 20 s per round (`CLUB_TURN_MS`), missed round = auto-guard, 2 misses = forfeit, leave = forfeit, invites
-  expire after 15 min, max 3 open per player. Own record (`clubAdd/clubGet`), no tickets, no XP. Client: `SC`,
+  expire after 15 min, max 3 open per player. **Open challenges** (`open: true`) show for everyone in the Club tab
+  (`lobby`, "📣 OPEN CHALLENGES", newest 12) and are announced in the chat. Own record (`clubAdd/clubGet`), no tickets, no XP. Client: `SC`,
   `scClubView`, `scEnter`, `scStep`, `scControls` in `public/index.html`; the old ROOM (P2P) code stays for hosts with a
   realtime room. Season 2: matchmaking, Elo, Club ladder.
 - **Week close (verifiable results + prizes)**: 15 min after Monday 00:00 UTC a finished week is frozen once
@@ -138,7 +157,8 @@ hand over one combined package for the week start; don't tell the owner to uploa
   holds the dog. Borrower's kennel shows it (`f.borrowed`, bond level from the owner's cloud save via `SAVE.setBond`);
   `SAVE.award` → `lendGain` → `/lend/report`: the bond XP goes to the dog, **25 %** of the borrower's trainer XP to the
   owner (cap 150/day), queued in `db.lendq`, collected on the owner's next kennel load (`loadLending`). Borrowed dogs
-  can fight ranked + arena, not the Club, and don't register for arena defence. Prize share: a prize won with ≥ 50 % of
+  can fight ranked + arena, not the Club, and don't register for arena defence. Non-holders can tap "🙋 I'm looking
+  for a dog" (needs a name; blob `lendseek`, 7 days); holders see the names in their lend card (tap = fill in). Prize share: a prize won with ≥ 50 % of
   the week's XP on one borrowed dog adds a line `L<place>` for the lender in week close (admin decides to send it).
 - **Stage visuals (v27)**: `stage()` picks a backdrop by `stageTheme()` — `meadow` (ranked/casual), `arena` (`arenaRun`),
   `club` (`clubMode`) — built in `scenery()` (CSS-animated DOM: birds, tufts, pennants SVG, crowd, spotlights, neon).
@@ -167,7 +187,9 @@ v12 playtest fixes ("Fight again" re-used the same rival; demo dogs leaked in; r
 v13 exploit fix (always-bite won 77%) → pattern-reading AI + guard snap-back; recap counted abandoned tournaments ·
 v14 one-pack-a-week rule, losses tracked, full pack stats table · v15 `ACCESS_KEY` gate · v16 `/api/public/board` · v17 wallet chooser + Joey extension sign-in · v18 Joey app over WalletConnect (confirmed working live by the owner) ·
 v19 cloud saves + `/admin` · v20 real arena rivals + player names · v21 arena defence XP · v22 "buy this rival" link ·
-v23 server fight engine + Fight Club beta · v24 week close: results hash on the XRPL + treasury prizes · v25 lending · v26 no tickets into a new week · v27 animated backdrops + fight effects · v28 bites, signature-move effects, Mythic/Legendary entrances · v29 sounds for all of it.
+v23 server fight engine + Fight Club beta · v24 week close: results hash on the XRPL + treasury prizes · v25 lending · v26 no tickets into a new week · v27 animated backdrops + fight effects · v28 bites, signature-move effects, Mythic/Legendary entrances · v29 sounds for all of it ·
+v30 (after week-2 data: players won 76 %, top players 95 %) learning opponent AI scaled by bond, team wallets out of prizes/packs,
+in-game chat, open Club challenges, borrow requests, kennel bond ranking, name nudge.
 
 ### Testing locally
 Offline harness with mocked XRPL/IPFS/Xaman + Playwright lives in **`tools/test/`** (see `HANDOFF.md` for usage). ```bash
@@ -181,6 +203,8 @@ Always syntax-check the inline game script after editing `public/index.html`.
 
 ### Known limitations / open decisions
 - Stats, XP and streaks are computed in the browser and trusted by the server (clamped only) — a determined user can fake them.
+- The AI memory lives in the player's save: clearing it (Reset progress / new device without cloud save) resets what the opponent learned.
+- Chat is polling, not push (4 s); no private messages; moderation = admin delete/mute only.
 - First day gives 10 tickets (5 starting + 5 daily grant).
 - Fight Club duels live in server memory (`DUELS`): a server restart drops open/running duels (records are kept).
   The D1/Cloudflare path has no shared memory across isolates, so the Club is Node-only for now.

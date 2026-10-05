@@ -263,6 +263,15 @@ function storeOf(env) {
       await DB.prepare(`CREATE TABLE IF NOT EXISTS results (week TEXT PRIMARY KEY, data TEXT)`).run();
       await DB.prepare(`INSERT INTO results (week, data) VALUES (?1, ?2) ON CONFLICT(week) DO UPDATE SET data = ?2`).bind(wk, JSON.stringify(rec)).run();
     },
+    blobGet: async (k) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS blobs (k TEXT PRIMARY KEY, data TEXT)`).run();
+      const r = await DB.prepare(`SELECT data FROM blobs WHERE k = ?1`).bind(k).first();
+      return r ? JSON.parse(r.data) : null;
+    },
+    blobSet: async (k, v) => {
+      await DB.prepare(`CREATE TABLE IF NOT EXISTS blobs (k TEXT PRIMARY KEY, data TEXT)`).run();
+      await DB.prepare(`INSERT INTO blobs (k, data) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET data = ?2`).bind(k, JSON.stringify(v)).run();
+    },
     taken: async () => {
       await DB.prepare(`CREATE TABLE IF NOT EXISTS holdings (account TEXT PRIMARY KEY, tokens TEXT, updated INTEGER)`).run();
       const rows = (await DB.prepare(`SELECT tokens FROM holdings`).all()).results || [];
@@ -394,7 +403,7 @@ async function packRows(env, wk) {
   const rows = await storeOf(env).weekRows(wk), by = {};
   for (const id of PACK_IDS) by[id] = {id, members: 0, wins: 0, losses: 0, xp: 0, streak: 0};
   for (const r of rows) {
-    const p = by[r.pack]; if (!p) continue;
+    const p = by[r.pack]; if (!p || isTeam(env, r.account)) continue;
     p.members++; p.wins += r.wins | 0; p.losses += r.losses | 0; p.xp += r.xp | 0; p.streak = Math.max(p.streak, r.streak | 0);
   }
   return Object.values(by);
@@ -478,6 +487,9 @@ async function nftLookup(env, token) {
 
 /* ------------------------------------------------------------------ names & arena rivals */
 const displayName = (names, a) => (names && names[a] && names[a].name) || shortAcct(a);
+/* Team wallets (the issuer, plus TEAM=r…,r… if set) play for testing: they show
+   on the boards marked as team, but never take a prize or count for a pack. */
+const isTeam = (env, a) => !!a && (a === env.ISSUER || String(env.TEAM || "").split(",").map(x => x.trim()).includes(a));
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 _.\-]{1,14}[A-Za-z0-9_.]$/;           // 3–16 chars, no leading/trailing space
 async function setProfile(env, account, b) {
   const name = String((b && b.name) || "").replace(/\s+/g, " ").trim();
@@ -588,7 +600,7 @@ function clubFinish(env, d, winner, why) {
 function clubView(d, me) {
   const side = d.a.acct === me ? "a" : d.b && d.b.acct === me ? "b" : null;
   const pub = f => f && {name: f.name, def: f.def, lvl: f.lvl, img: f.img, uri: f.uri};
-  return {id: d.id, status: d.status, side, a: pub(d.a), b: pub(d.b), invite: d.inviteName || null,
+  return {id: d.id, status: d.status, side, a: pub(d.a), b: pub(d.b), invite: d.inviteName || null, open: !!d.open,
     turn: d.st ? d.st.turn : 0, left: d.status === "active" ? Math.max(0, d.deadline - Date.now()) : 0,
     moved: {you: !!(side && d.moves[side]), them: !!(side && d.moves[side === "a" ? "b" : "a"])},
     rounds: d.rounds, result: d.result, hp: d.st ? {a: d.st.P.hp, b: d.st.E.hp} : null};
@@ -599,7 +611,10 @@ async function clubRoute(env, account, p, req, url) {
   const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
   if (p === "/club/me") {
     const mine = [...DUELS.values()].filter(d => d.status !== "done" && (d.a.acct === account || (d.b && d.b.acct === account) || d.inviteAcct === account));
-    return json({record: await storeOf(env).clubGet(account), duels: mine.map(d => clubView(d, account)).map((v, i) => ({...v, forMe: mine[i].inviteAcct === account && !mine[i].b}))});
+    // open challenges: posted to everyone in the Club, newest first
+    const lobby = [...DUELS.values()].filter(d => d.open && d.status === "open" && d.a.acct !== account)
+      .sort((x, y) => y.created - x.created).slice(0, 12).map(d => ({...clubView(d, account), posted: d.created}));
+    return json({record: await storeOf(env).clubGet(account), duels: mine.map(d => clubView(d, account)).map((v, i) => ({...v, forMe: mine[i].inviteAcct === account && !mine[i].b})), lobby});
   }
   if (p === "/club/create") {
     if ([...DUELS.values()].filter(d => d.a.acct === account && d.status !== "done").length >= 3) return json({error: "too_many_open"}, 429);
@@ -612,9 +627,11 @@ async function clubRoute(env, account, p, req, url) {
       if (!inviteAcct || inviteAcct === account) return json({error: "no_such_player"}, 404);
       inviteName = names[inviteAcct].name;
     }
-    const d = {id: rid(), created: Date.now(), status: "open", a: me, b: null, inviteAcct, inviteName,
+    const open = !inviteAcct && !!body.open;
+    const d = {id: rid(), created: Date.now(), status: "open", a: me, b: null, inviteAcct, inviteName, open,
                st: null, moves: {a: null, b: null}, misses: {a: 0, b: 0}, rounds: [], result: null, deadline: 0};
     DUELS.set(d.id, d);
+    if (open) await chatSystem(env, `🥊 ${me.name} posted an open Fight Club challenge with ${me.def.name} (Bond ${me.lvl}) — accept it in the Club tab.`);
     return json({duel: clubView(d, account)});
   }
   const d = DUELS.get(String(body.id || url.searchParams.get("id") || ""));
@@ -673,7 +690,88 @@ async function lendInfo(env, account) {
     const g = (((await st.saveGet(l.owner)) || {}).data || {}).dogs || {};
     l.lvl = Math.max(1, (g[l.dog.id] || {}).lvl | 0 || 1); l.xp = (g[l.dog.id] || {}).xp | 0;
   }
-  return {out: loans.filter(l => l.owner === account).map(view), in: inn, rewards: await st.lendGet(account)};
+  const seek = await seekersOf(env, loans), mine = seek.find(x => x.account === account);
+  return {out: loans.filter(l => l.owner === account).map(view), in: inn, rewards: await st.lendGet(account),
+    seeking: !!mine, seekers: seek.filter(x => x.account !== account).map(x => ({name: x.name, since: x.at}))};
+}
+/* "Looking for a dog": players without a Scrappy can put their name on a list
+   every holder sees in the lending card (a week, or until they borrow one). */
+const SEEK_TTL = 7 * 864e5;
+async function seekersOf(env, loans) {
+  const st = storeOf(env), list = (await st.blobGet("lendseek")) || {}, hold = await st.allHoldings(), names = await st.profiles(), now = Date.now();
+  return Object.entries(list).filter(([a, at]) => now - at < SEEK_TTL && names[a] && !((hold[a] || {}).tokens || []).length && !loans.some(l => l.borrower === a))
+    .sort((x, y) => y[1] - x[1]).slice(0, 20).map(([a, at]) => ({account: a, name: names[a].name, at}));
+}
+async function lendSeek(env, account, b) {
+  const st = storeOf(env), hold = await st.allHoldings(), names = await st.profiles();
+  const list = (await st.blobGet("lendseek")) || {};
+  if (b && b.on) {
+    if (((hold[account] || {}).tokens || []).length) return json({error: "borrower_holds"}, 409);
+    if (!names[account]) return json({error: "need_name"}, 409);
+    const fresh = !list[account];
+    list[account] = Date.now();
+    if (fresh) await chatSystem(env, `🤝 ${names[account].name} is looking for a Scrappy to borrow — holders can lend one in their kennel.`);
+  } else delete list[account];
+  for (const [a, at] of Object.entries(list)) if (Date.now() - at > SEEK_TTL) delete list[a];
+  await st.blobSet("lendseek", list);
+  return json({ok: true, ...(await lendInfo(env, account))});
+}
+
+/* ------------------------------------------------------------------ chat */
+/* One small room for everybody who is signed in. The last 80 messages are kept;
+   pages poll for new ones. Plain text only: no links (phishing) except our own
+   sites, nothing that looks like a wallet secret, one message per 4 s. The admin
+   can delete a message or mute a wallet. */
+const CHAT_KEEP = 80, CHAT_MAX = 200, CHAT_GAP_MS = 4000;
+const CHAT_TLDS = /^(?:com|net|org|io|xyz|app|fun|link|gg|me|co|ly|to|info|site|online|club|top|vip|pro|shop|store|live|ru|cn|de|uk|us|tk|ml|ga|cf|gq|finance|exchange|dev|ai|so|cc|tv|biz|money|claim|click|win|bet|nft|art|page|eu|in|xrp)$/i;
+const CHAT_OK_HOSTS = /^(?:[a-z0-9-]+\.)*(?:scrappyxrp\.fun|xrp\.cafe)$/i;
+async function chatLoad(env) { return (await storeOf(env).blobGet("chat")) || {seq: 0, msgs: [], mute: {}, last: {}}; }
+async function chatSave(env, c) { c.msgs = c.msgs.slice(-CHAT_KEEP); await storeOf(env).blobSet("chat", c); }
+async function chatSystem(env, text) {
+  const c = await chatLoad(env);
+  c.msgs.push({id: ++c.seq, at: Date.now(), sys: true, text: String(text).slice(0, 240)});
+  await chatSave(env, c);
+}
+const chatPublic = m => ({id: m.id, at: m.at, who: m.who || null, text: m.text, ...(m.sys ? {sys: true} : {}), ...(m.team ? {team: true} : {})});
+async function chatGet(env, account, since) {
+  const c = await chatLoad(env), n = Math.max(0, +since || 0);
+  return json({seq: c.seq, msgs: c.msgs.filter(m => m.id > n).map(chatPublic), muted: !!c.mute[account]});
+}
+function chatClean(t) {
+  return String(t || "").replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e]/g, " ").replace(/\s+/g, " ").trim().slice(0, CHAT_MAX);
+}
+async function chatPost(env, account, b) {
+  const text = chatClean(b && b.text);
+  if (!text) return json({error: "empty"}, 400);
+  const hosts = text.match(/(?:https?:\/\/)?(?:www\.)?((?:[a-z0-9-]+\.)+[a-z]{2,})(?:[\/:?#]\S*)?/gi) || [];
+  for (const h of hosts) {
+    const host = h.replace(/^https?:\/\//i, "").replace(/^www\./i, "").split(/[\/:?#]/)[0];
+    const linky = /^(?:https?:\/\/|www\.)/i.test(h) || CHAT_TLDS.test(host.split(".").pop());
+    if (linky && !CHAT_OK_HOSTS.test(host)) return json({error: "no_links"}, 400);
+  }
+  if (/\bs[1-9A-HJ-NP-Za-km-z]{28}\b/.test(text))                        // a family seed: never in public
+    return json({error: "no_secrets"}, 400);
+  const c = await chatLoad(env);
+  if (c.mute[account]) return json({error: "muted"}, 403);
+  const now = Date.now();
+  if (now - (c.last[account] || 0) < CHAT_GAP_MS) return json({error: "slow_down"}, 429);
+  c.last[account] = now;
+  for (const [a, t] of Object.entries(c.last)) if (now - t > 3600e3) delete c.last[a];
+  const names = await storeOf(env).profiles();
+  c.msgs.push({id: ++c.seq, at: now, a: account, who: displayName(names, account), text, ...(isTeam(env, account) ? {team: true} : {})});
+  await chatSave(env, c);
+  return json({ok: true, seq: c.seq});
+}
+async function adminChat(env, p, b) {
+  const c = await chatLoad(env);
+  if (p === "/admin/chat/del") { c.msgs = c.msgs.filter(m => m.id !== +b.id); await chatSave(env, c); }
+  if (p === "/admin/chat/mute") {
+    const a = String(b.account || "");
+    if (!/^r\w{20,40}$/.test(a)) return json({error: "bad_account"}, 400);
+    if (b.on) c.mute[a] = Date.now(); else delete c.mute[a];
+    await chatSave(env, c);
+  }
+  return json({msgs: c.msgs, mute: Object.keys(c.mute)});
 }
 async function lendStart(env, account, b) {
   const st = storeOf(env), hold = await st.allHoldings(), loans = await activeLoans(env);
@@ -734,16 +832,17 @@ async function buildResults(env, wk) {
   const rows = (await st.weekRows(wk)).filter(r => (r.xp | 0) > 0 || (r.wins | 0) + (r.losses | 0) > 0)
     .sort((a, b) => (b.xp | 0) - (a.xp | 0) || (b.wins | 0) - (a.wins | 0) || (a.account < b.account ? -1 : 1));
   const players = rows.map((r, i) => ({rank: i + 1, account: r.account, name: displayName(names, r.account),
-    xp: r.xp | 0, wins: r.wins | 0, losses: r.losses | 0, streak: r.streak | 0, pack: r.pack || null}));
+    xp: r.xp | 0, wins: r.wins | 0, losses: r.losses | 0, streak: r.streak | 0, pack: r.pack || null,
+    ...(isTeam(env, r.account) ? {team: true} : {})}));
   const packs = (await packRows(env, wk)).filter(p => p.members > 0)
     .map(p => ({id: p.id, members: p.members, wins: p.wins, losses: p.losses, xp: p.xp, perMember: Math.round(100 * p.wins / p.members) / 100}))
     .sort((a, b) => b.perMember - a.perMember || b.wins - a.wins || (a.id < b.id ? -1 : 1))
     .map((p, i) => ({rank: i + 1, ...p}));
-  const prizes = players.filter(p => p.xp > 0).slice(0, 3).map((p, i) => ({place: String(i + 1), account: p.account, name: p.name}));
+  const prizes = players.filter(p => p.xp > 0 && !p.team).slice(0, 3).map((p, i) => ({place: String(i + 1), account: p.account, name: p.name}));
   const win = packs[0];
   if (win && win.wins > 0) {
     const taken = new Set(prizes.map(p => p.account));
-    const active = players.filter(p => p.pack === win.id && !taken.has(p.account))
+    const active = players.filter(p => p.pack === win.id && !p.team && !taken.has(p.account))
       .sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses) || b.xp - a.xp)[0];
     if (active) prizes.push({place: "pack", account: active.account, name: active.name, pack: win.id});
   }
@@ -1061,7 +1160,7 @@ async function ladder(env, me, week) {
   const st = storeOf(env);
   const [x, w, s] = await Promise.all([st.top(wk, "xp"), st.top(wk, "wins"), st.top(wk, "streak")]);
   const names = await st.profiles();
-  const fmt = (rows) => rows.map(r => ({who: displayName(names, r.account), v: r.v, you: r.account === me}));
+  const fmt = (rows) => rows.map(r => ({who: displayName(names, r.account), v: r.v, you: r.account === me, ...(isTeam(env, r.account) ? {team: true} : {})}));
   const mine = me ? {xp: await st.rank(wk, "xp", me), wins: await st.rank(wk, "wins", me), streak: await st.rank(wk, "streak", me)} : null;
   return json({week:wk, players: await st.count(wk), xp: fmt(x), wins: fmt(w), streak: fmt(s), mine});
 }
@@ -1075,7 +1174,7 @@ async function publicBoard(env) {
   if (c) return c;
   const st = storeOf(env), wk = weekOf(), last = weekOf(new Date(Date.now() - 7 * 864e5));
   const names = await st.profiles();
-  const fmt = rows => rows.map(r => ({who: displayName(names, r.account), v: r.v}));
+  const fmt = rows => rows.map(r => ({who: displayName(names, r.account), v: r.v, ...(isTeam(env, r.account) ? {team: true} : {})}));
   const [x, w, s] = await Promise.all([st.top(wk, "xp"), st.top(wk, "wins"), st.top(wk, "streak")]);
   const [lx, lw, ls] = await Promise.all([st.top(last, "xp"), st.top(last, "wins"), st.top(last, "streak")]);
   const out = {
@@ -1184,6 +1283,7 @@ export default {
         if (p === "/admin/anchor" && req.method === "POST") r = await adminAnchor(env, b);
         if (p === "/admin/prize" && req.method === "POST") r = await adminPrize(env, b);
         if (p === "/admin/xaman") r = await xamanResolve(env, url.searchParams.get("uuid"));
+        if (p === "/admin/chat" || ((p === "/admin/chat/del" || p === "/admin/chat/mute") && req.method === "POST")) r = await adminChat(env, p, b);
         r.headers.set("cache-control", "no-store");
         return r;
       }
@@ -1206,6 +1306,9 @@ export default {
       if (p === "/lend" && req.method === "POST") return withCors(await lendStart(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/lend/end" && req.method === "POST") return withCors(await lendEnd(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/lend/report" && req.method === "POST") return withCors(await lendReport(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/lend/seek" && req.method === "POST") return withCors(await lendSeek(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/chat" && req.method === "GET") return withCors(await chatGet(env, account, url.searchParams.get("since")), cors);
+      if (p === "/chat" && req.method === "POST") return withCors(await chatPost(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/lend/claim" && req.method === "POST") {
         const b = await req.json().catch(() => ({}));
         await storeOf(env).lendClear(account, +b.upTo || 0);

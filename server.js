@@ -34,6 +34,7 @@ db.packs = db.packs || {};
 db.results = db.results || {};
 db.loans = db.loans || {};            // id -> {owner, borrower, dog, start, end, ended?, xp:{week:xp}}
 db.lendq = db.lendq || {};            // owner -> [{id, bond, trainer, from, at}]: earned by lent dogs, not yet collected
+db.blobs = db.blobs || {};          // small shared records: chat, lend requests
 db.lendDay = db.lendDay || {};        // "owner|day" -> trainer XP credited that day (cap)        // week -> frozen results {json, sha256, anchor, prizes}
 let dirty = false;
 function flush() {
@@ -110,6 +111,8 @@ const STORE = {
   async lendClear(a, upTo) { db.lendq[a] = (db.lendq[a] || []).filter(e => e.at > upTo); if (!db.lendq[a].length) delete db.lendq[a]; dirty = true; },
   async resultGet(wk) { return db.results[wk] || null; },
   async resultSet(wk, rec) { db.results[wk] = rec; dirty = true; },
+  async blobGet(k) { return db.blobs[k] === undefined ? null : JSON.parse(JSON.stringify(db.blobs[k])); },
+  async blobSet(k, v) { db.blobs[k] = v; dirty = true; },
   async taken() { return [...new Set(Object.values(db.holdings).flatMap(h => h.tokens))]; },
   /* Full game saves, one file per wallet (accounts are validated r-addresses). */
   async saveGet(a) { try { return JSON.parse(fs.readFileSync(path.join(SAVE_DIR, a + ".json"), "utf8")); } catch { return null; } },
@@ -125,7 +128,7 @@ const STORE = {
     }
     return out;
   },
-  async dump() { return { players: db.players, weekly: Object.values(db.weekly), holdings: db.holdings, packs: db.packs, profiles: db.profiles, results: db.results, loans: db.loans }; },
+  async dump() { return { players: db.players, weekly: Object.values(db.weekly), holdings: db.holdings, packs: db.packs, profiles: db.profiles, results: db.results, loans: db.loans, blobs: db.blobs }; },
 };
 
 /* In-memory cache with expiry, standing in for Cloudflare KV. */
@@ -218,6 +221,10 @@ select{border:2px solid var(--ink);border-radius:999px;padding:6px 10px;font:inh
     <p class="muted" style="margin:4px 0 0">A finished week is frozen 15 minutes after Monday 00:00 UTC. Anchor its SHA-256 on the XRPL and send the prizes
       (top 3 XP + most active member of the winning pack) from the treasury — every step is a Xaman QR you sign with the issuer wallet.</p>
     <div id="season"><p class="muted">Loading…</p></div></div>
+  <div class="card"><h2 style="margin:0;font-size:18px">💬 Chat</h2>
+    <p class="muted" style="margin:4px 0 0">The last 80 messages of the in-game chat. Delete a message, or mute a wallet (it can still read, not write).</p>
+    <div class="row" style="margin-top:8px"><button class="btn ghost" id="chatReload">↻ Refresh chat</button></div>
+    <div id="chat"><p class="muted">Loading…</p></div></div>
 </div>
 <div id="modal" hidden><div class="card"><b id="mTitle">Sign in Xaman</b><p class="muted" id="mText" style="margin:6px 0"></p>
   <img id="mQr" alt="Xaman QR"><p><a id="mLink" target="_blank" rel="noopener">Open in Xaman</a></p>
@@ -249,7 +256,18 @@ async function load(){
     .map(([l,v]) => "<div class='card stat'><span>"+l+"</span><b>"+v+"</b></div>").join("");
   $("dlJson").href = "/api/admin/export?download=1&key=" + encodeURIComponent(KEY);
   $("dlCsv").href = "/api/admin/csv?key=" + encodeURIComponent(KEY);
-  draw(); season();
+  draw(); season(); chat();
+}
+async function chat(body, path){
+  const j = await api(path || "chat", body);
+  const muted = new Set(j.mute || []);
+  $("chat").innerHTML = (j.msgs || []).length ? "<table>" + j.msgs.slice().reverse().map(m =>
+    "<tr><td class='muted'>" + new Date(m.at).toISOString().slice(5,16).replace("T"," ") + "</td><td>" + (m.sys ? "<i>system</i>" : "<b>" + esc(m.who) + "</b>" + (m.team ? " (team)" : "") + "<br><span class='mono'>" + esc(m.a) + "</span>") +
+    "</td><td style='white-space:normal;text-align:left'>" + esc(m.text) + "</td><td><button class='btn ghost' data-cdel='" + m.id + "'>Delete</button>" +
+    (m.a ? " <button class='btn ghost' data-cmute='" + m.a + "'>" + (muted.has(m.a) ? "Unmute" : "Mute") + "</button>" : "") + "</td></tr>").join("") + "</table>"
+    : "<p class='muted'>No messages yet.</p>";
+  $("chat").querySelectorAll("[data-cdel]").forEach(b => b.onclick = () => chat({id: +b.dataset.cdel}, "chat/del"));
+  $("chat").querySelectorAll("[data-cmute]").forEach(b => b.onclick = () => chat({account: b.dataset.cmute, on: b.textContent === "Mute"}, "chat/mute"));
 }
 /* week close */
 let SEASON = null, MPOLL = null;
@@ -299,7 +317,7 @@ async function sign(req, title, text){
 $("mClose").onclick = () => { clearInterval(MPOLL); $("modal").hidden = true; season(); };
 $("go").onclick = () => { KEY = $("key").value.trim(); load(); };
 $("key").onkeydown = e => { if (e.key === "Enter") $("go").click(); };
-$("reload").onclick = load; $("filter").oninput = () => DATA && draw();
+$("reload").onclick = load; $("chatReload").onclick = () => chat(); $("filter").oninput = () => DATA && draw();
 if (KEY) load();
 </script></body></html>`;
 

@@ -2,7 +2,7 @@
 
 Read **CLAUDE.md** first (architecture, API, rules, version history) and **RELEASE.md** (what ships next and how).
 This file only adds what isn't there: where things stand, the owner's decisions, how to test, and what's next.
-Branch: `claude/dreamy-pasteur-du9fm3` on `krissen44/claude-cloud`. Last code commit: sounds v29.
+Branch: `claude/upbeat-hypatia-cht3ou` on `krissen44/claude-cloud` (v29 and earlier: `claude/dreamy-pasteur-du9fm3`). Last code: v30.
 
 ## Owner & working rules
 - Owner writes **German** → answer in German; code, comments, commits in English.
@@ -11,19 +11,16 @@ Branch: `claude/dreamy-pasteur-du9fm3` on `krissen44/claude-cloud`. Last code co
   (Monday 00:00 UTC). Never tell the owner to upload mid-week.
 - Owner likes to see results: screenshots / short videos of UI changes, a downloadable package at the end.
 
-## Where things stand (2026-10-05)
-- **Live on Hostinger:** game v19 (cloud saves + `/admin`) and the website launch package (Bark Arena public).
-- **Ready to ship — this week roll (Mon 5 Oct):** v20–v29, packaged as
-  - `bark-arena-game-2026-10-05.zip` = `package.json`, `package-lock.json`, `server.js`, `worker.js`, **`fight-engine.js`** (new),
-    `public/` (`index.html`, `wc.js`), `node_modules/` → Hostinger Node.js app of game.scrappyxrp.fun, then restart the app.
-  - `scrappyxrp-website-2026-10-05.zip` = `barkarena/index.html` → `public_html/barkarena/`.
-  - Rebuild them from the repo root:
-    `zip -r bark-arena-game-2026-10-05.zip package.json package-lock.json server.js worker.js fight-engine.js public node_modules`
-    and `cd website && zip ../scrappyxrp-website-2026-10-05.zip barkarena/index.html`.
-  - Checklist (also in RELEASE.md): `ACCESS_KEY` removed, `ADMIN_KEY` set, upload + restart, smoke test (sign in, set a
-    name, arena rivals "from <name>", `/admin` Name column, Fight Club invite link in a second browser, lending to a
-    non-holder test wallet), then from 00:15 UTC **week close in `/admin`**: anchor the hash, send prizes — both are Xaman
-    QRs signed with the **issuer wallet** (needs 2 XRP free reserve per open prize offer).
+## Where things stand (2026-10-05, evening)
+- **Live on Hostinger:** game v29 + website guide (uploaded Fri 2 Oct). First week close done Mon 5 Oct: week of 28 Sep
+  anchored, 4 prize offers sent (#2033 → rK9Ua…mX3H, #220 → XRPno1, #4456 → Chopper, #1608 → rhc4S…Z7Lx, pack Moon).
+- **Week-2 numbers** (from the admin export): 20 players, 889 fights (week 1: 17 / 185), 10 of 17 came back + 10 new;
+  players won 76 % vs the AI (top 88–95 %, rK9Ua 125–6); packs Moon 9 / Ledger 7 / Bone 2 / Static 0 (owner keeps max 10);
+  0 Club duels, 0 loans, 7 of 34 with a name; the issuer wallet ("Scrappy", owner's test wallet) ranked #1 in week 1, #5 in week 2.
+- **Ready for Mon 12 Oct:** v30 (see RELEASE.md) — learning AI scaled by bond, team wallets out of prizes/packs, chat,
+  open Club challenges, borrow requests, kennel bond ranking, name nudge. Same ZIP layout as before:
+  `zip -r bark-arena-game-2026-10-12.zip package.json package-lock.json server.js worker.js fight-engine.js public node_modules`
+  and `cd website && zip ../scrappyxrp-website-2026-10-12.zip barkarena/index.html`.
 
 ## What v20–v29 contain (one line each; details in CLAUDE.md / RELEASE.md)
 v20 arena rivals = other players' dogs + optional unique player names · v21 arena defence bond XP for registered squads ·
@@ -42,6 +39,8 @@ drop-in entrance + aura · v29 synthesized sounds for all of it (crowd, KO, one 
   (NFTs can't be split → extra "🤝 Lender share" line in week close; admin decides).
 - Fight Club Season 1 = invite link / player name, 20 s rounds, auto-guard, 2 misses = forfeit, own record, no XP.
   Season 2 = matchmaking, Elo, Club ladder.
+- Week 3 (5 Oct): AI should learn more and get harder as bonds grow; issuer = test wallet, show as TEAM; packs stay max 10;
+  do all of: Club open challenges, borrow list, name nudge; wants kennel ranking by bond and a small in-game chat.
 - **XRP wagering in the Fight Club: advised against** (gambling law — chance element). Alternative offered: free-entry
   Club Cup with treasury prizes, or stakes without money value (rating points). Owner hasn't decided.
 - Teaser videos: owner wants **gameplay only, no text overlays**, MP4 with sound.
@@ -63,6 +62,9 @@ Each script takes a scratch dir for its data: `node tools/test/<script>.mjs /tmp
 - `season-api.mjs` — week close: freeze, hash check, anchor once, prize offer, claim, wrong player blocked.
 - `lend.mjs` — lending end-to-end incl. prize-share line. `sp.mjs` — screenshots of every signature move,
   bite and Mythic/Legendary intros. `bite.mjs` — bite frames.
+- `v30.mjs` — team prizes/packs/boards, chat (filters, rate limit, mute/delete), open challenge, borrow list, kennel
+  ranking, name nudge, screenshots `v30-*.png`. `ai-sim.mjs [html] [n]` — AI benchmark (strategies × bond 1/5/10, no browser).
+- Root `node_modules` is not in git: `npm ci` in the repo root before running the server or tests.
 - `teaser.mjs <dir> <ffmpeg>` — records gameplay via CDP screencast (1280×720) + the game's WebAudio via a
   MediaRecorder tap, muxes MP4 (`bark-arena-gameplay.mp4`). ffmpeg: `pip install imageio-ffmpeg` →
   `python3 -c "import imageio_ffmpeg as f; print(f.get_ffmpeg_exe())"`.
@@ -70,6 +72,7 @@ Each script takes a scratch dir for its data: `node tools/test/<script>.mjs /tmp
 - Gotchas learned: kill stale mock servers before re-running (an old server on the same port serves old code);
   block external requests in Playwright (`page.route` abort) or screenshots wait ~1 s for blocked fonts;
   `page.screenshot({clip})` is much faster than `locator.screenshot()` for timing-sensitive frames;
-  async errors inside `play()` don't fire `pageerror` — listen for `unhandledrejection`.
+  async errors inside `play()` don't fire `pageerror` — listen for `unhandledrejection`;
+  never `pkill -f live.mjs` from a shell whose own command line contains that text (it kills itself) — kill by PID.
 - Always: `node --check server.js worker.js fight-engine.js`, syntax-check the inline script of `public/index.html`,
   and `loadEngine('public/index.html')` must still find ≥ 8 `//@engine` sections.
