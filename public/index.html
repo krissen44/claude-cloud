@@ -596,15 +596,30 @@ const SAVE = (() => {
       const y = new Date(Date.now()-864e5).toISOString().slice(0,10);
       const missed = d.day && d.day !== y;
       if (missed) d.streak = 0;                          // missed a day → streak goes
-      // unused tickets bank into the next day, but never into a new week: Monday starts at the plain daily grant
-      d.tickets = newWeek ? dailyGrant() : Math.min(BANK_MAX, (d.tickets||0) + dailyGrant());
+      // unused tickets bank into the next day, but never into a new week: Monday starts at the plain daily grant.
+      // A brand-new save (no day yet) keeps its 5 starting tickets on top of the first grant.
+      const first = !d.day;
+      d.tickets = first ? Math.min(BANK_MAX, TICKET_BASE + dailyGrant())
+                : newWeek ? dailyGrant() : Math.min(BANK_MAX, (d.tickets||0) + dailyGrant());
+      d.grantDay = {day: t, n: dailyGrant()};
       d.day = t; rollQuests(); save(true);
     }
     if (!d.today || d.today.day !== t){ d.today = freshToday(t); save(true); }
   }
+  /* The day's grant is set before the wallet is read, so a holder's dogs may not be known yet (a new player,
+     a new device): once the kennel is loaded, the grant is topped up to what the dogs really allow. */
+  function registerDogs(ids){
+    const t = today(), before = dailyGrant();
+    if (!d.grantDay || d.grantDay.day !== t) d.grantDay = {day: t, n: before};
+    for (const id of ids) dog(id);
+    const extra = dailyGrant() - d.grantDay.n;
+    if (extra > 0 && d.day === t){ d.tickets = Math.min(BANK_MAX, (d.tickets||0) + extra); d.grantDay.n += extra; save(true); return extra; }
+    return 0;
+  }
   checkDay();
   return {
     get data(){ return d; },
+    registerDogs,
     useAccount(a){ KEY = a ? 'ba_save_v1:' + a : 'ba_save_v1'; load(); checkDay(); },
     // take a save from the server as it is (keeps its own updatedAt)
     adopt(data){ load(data); try { localStorage.setItem(KEY, JSON.stringify(d)); } catch(e){} checkDay(); },
@@ -2622,6 +2637,7 @@ async function loadKennel(fresh){
     else if (failed.length) WALLET.error = `${failed.length} of ${j.nfts.length} Scrappy${j.nfts.length===1?'':'s'} could not be loaded (${failed[0]}). Hit ↻ Refresh to retry.`;
     out.sort((a,b) => (b.legendary?1:0) - (a.legendary?1:0) || (a.token||1e9) - (b.token||1e9));
     OWNED = out; WALLET.owned = out.length;
+    SAVE.registerDogs(out.map(f => f.id));
     oppLearnBase(j.nfts);
   } catch(e){ WALLET.error = 'Could not load your kennel (' + e.message + ').'; }
   WALLET.loading = false; if (SC.linkId) tab = 'club'; menu();

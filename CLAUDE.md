@@ -238,7 +238,7 @@ Always syntax-check the inline game script after editing `public/index.html`.
 - Chat is polling, not push (4 s); no private messages; moderation = admin delete/mute only.
 - Replays are uploaded by the client: dice could be faked to make a fake fight appear on TV/Shorts (only cosmetic).
 - YouTube/TikTok uploads are manual: automatic posting needs Google's API audit / TikTok app review (owner decided: post by hand).
-- First day gives 10 tickets (5 starting + 5 daily grant).
+- First day gives 5 starting tickets + the daily grant (max 15). The grant is set before the wallet is read; `SAVE.registerDogs` (after the kennel loads) tops up the difference once per day (`d.grantDay`). v31.1 fixed new holders getting only 5.
 - Fight Club duels live in server memory (`DUELS`): a server restart drops open/running duels (records are kept).
   The D1/Cloudflare path has no shared memory across isolates, so the Club is Node-only for now.
 

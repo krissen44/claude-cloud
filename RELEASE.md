@@ -4,7 +4,15 @@ Changes collect here during the week and go live together when the new week star
 Last version confirmed live: **game v31 + website** (uploaded by the owner on Mon 5 Oct 2026, ~16:00 UTC, together
 with v30). The Shorts factory runs on GitHub Actions (first run 5 Oct 16:05 UTC: success; clips posted by the owner).
 
-## Live since 5 Oct 2026 (v30 + v31) — nothing pending
+## Hotfix v31.1 — ready (bug found by the owner on 5 Oct)
+- **New players got only 5 ranked fights on day one** (should be 5 starting + the daily grant, and +1 per extra
+  Scrappy). Two causes: since v26 a brand-new save was treated like a week start, which replaced the starting tickets;
+  and the daily grant was counted before the wallet's dogs were loaded (a holder of 17 got 5 instead of 10). Fixed:
+  first day = 5 + grant; after the kennel loads, today's grant is topped up once to what the dogs allow. Players hit by
+  it get the missing tickets on their next visit. Tested: new holder 12 (3 dogs), affected player +2, others unchanged.
+- Upload: game ZIP (only `public/index.html` changed) → Node.js app, restart.
+
+## Live since 5 Oct 2026 (v30 + v31)
 
 ### Game (game.scrappyxrp.fun)
 - **v30 — after the week-2 data** (players won 76 % of fights, top players 88–95 %, issuer wallet on the ladder,
