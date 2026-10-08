@@ -13,6 +13,10 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
   step 1 (links joeywallet.xyz), how-to step 2, FAQ; `/pixelscrappy/` banner. Tutorial video re-recorded with Joey first.
   Upload: `public/index.html` (game ZIP), `barkarena/index.html` → `public_html/barkarena/`, `pixelscrappy/index.html`
   → `public_html/pixelscrappy/`.
+- **Link page `scrappyxrp.fun/links/` (linktree alternative):** `website/links/index.html`, static, site look (sticker
+  cards, Scrappy blue). Website, Bark Arena (passes `?src=` on, e.g. `/links/?src=tt` → `/barkarena/?src=tt`), Pixel
+  Scrappy + Scrappy on xrp.cafe, $SCRAP on FirstLedger, DexScreener chart, SCRAP/XRP AMM pool, issuer with copy button,
+  Discord, YouTube, TikTok. Upload: `links/index.html` → `public_html/links/`. Use it as the bio link everywhere.
 - **How-to-play tutorial video** for YouTube (not part of the upload): `tools/test/tutorial.mjs` records the real website
   and game on a mock server (`tools/test/tut-mock.mjs`) with chapter cards, step cards for wallet + mint, captions and a
   chiptune bed → `bark-arena-tutorial.mp4` (1920×1080) + `chapters.txt`.

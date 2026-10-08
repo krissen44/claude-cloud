@@ -273,6 +273,10 @@ Always syntax-check the inline game script after editing `public/index.html`.
 - **`website/barkarena/`** — game page at `https://scrappyxrp.fun/barkarena/`, **public**: indexable, canonical + OG tags,
   linked from the main page (menu + footer) and the pixel page (nav, footer, "Your Pixel Scrappy can fight" banner). Live leaderboard from `https://game.scrappyxrp.fun/api/public/board` (this/last week, refresh 60 s),
   detailed how-to-play and FAQ. Numbers in the guide mirror the game rules above — update both together.
+- **`website/links/`** — link page (linktree alternative) at `https://scrappyxrp.fun/links/`: website, Bark Arena, both
+  xrp.cafe collections (`scrappy`, `pixel-scrappy`), $SCRAP (issuer `rGHtYnnigyuaHehWGfAdoEhkoirkGNdZzo`, currency hex
+  `7363726170…` = "scrap") on FirstLedger + DexScreener + the SCRAP/XRP AMM pool, Discord, YouTube `@Scrappyxrp`,
+  TikTok `@scrappy_xrp`. `?src=` is passed on to the Bark Arena link.
 - The `/whitelist/` folder on Hostinger should be deleted (no longer used).
 
 ### Open questions for the owner
