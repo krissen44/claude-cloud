@@ -427,10 +427,10 @@ body.clip .stage{flex:none;height:450px}
 body.clip .fighter{width:212px;bottom:70px}body.clip .fighter img{width:212px;height:212px}
 body.clip .fighter.left{left:2px}body.clip .fighter.right{right:2px}
 .cliptop{height:60px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px;font:9px 'Press Start 2P',monospace;color:#7fa3cc;letter-spacing:1px}
-.cliphook{height:118px;display:flex;align-items:center;justify-content:center;padding:0 22px;text-align:center}
+.cliphook{height:118px;display:flex;align-items:center;justify-content:center;padding:0 58px 0 22px;text-align:center}
 .cliphook b{font:900 29px/1.18 system-ui,'Noto Color Emoji',sans-serif;color:#fff;text-shadow:0 3px 0 #000,0 0 18px rgba(0,0,0,.6);animation:hookin .5s cubic-bezier(.2,1.5,.4,1) both}
 @keyframes hookin{from{transform:scale(.5);opacity:0}}
-.cliphook.long b{font-size:24px}
+.cliphook.long b{font-size:25px}.cliphook.xlong b{font-size:21px}
 .cliplow{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px;padding:10px 16px 0}
 .cliplow i{font:12px 'Press Start 2P',monospace;color:#ffd95e;font-style:normal}
 .clipwho b{display:block;font-size:17px;line-height:1.2}.clipwho span{font-size:12px;color:#bcd3ec}.clipwho.r{text-align:right}
@@ -4310,7 +4310,8 @@ function clipDry(rep){
 /* How good a clip this fight makes (exhibitions are drawn until one is worth it). */
 const clipDrama = s => (s.w ? 0 : -3) + (s.winLow < .25 ? 4 : s.winLow < .45 ? 2 : 0) + (s.ko ? 2 : 0) + (s.big >= 9 ? 2 : s.big >= 7 ? 1 : 0) + Math.min(2, s.abil) * .5 + (s.rounds >= 6 && s.rounds <= 10 ? 1 : 0);
 const RRANK = {Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4, Mythic: 4};
-function clipHook(rep, s){
+const clipUpset = (rep, s) => s.w && RRANK[(s.w === 'P' ? rep.P : rep.E).def.rarity] + 2 <= RRANK[(s.w === 'P' ? rep.E : rep.P).def.rarity];
+function clipHook(rep, s, tt){
   const W = s.w === 'P' ? rep.P : rep.E, L = s.w === 'P' ? rep.E : rep.P, pick = a => a[Math.floor(Math.random() * a.length)];
   const leg = x => x.def.legendary, myth = x => x.def.rarity === 'Mythic';
   if (s.w && RRANK[W.def.rarity] + 2 <= RRANK[L.def.rarity]) return pick([`${W.def.rarity} vs ${leg(L) ? 'LEGENDARY' : L.def.rarity}… no way 🤯`, `Nobody bet on the ${W.def.rarity.toLowerCase()} 😳`]);
@@ -4321,12 +4322,14 @@ function clipHook(rep, s){
   if (myth(rep.P) || myth(rep.E)) return pick(['Mythic aura activated ✨', 'Only 49 of these exist ✨']);
   if (s.big >= 9) return pick([`CRUNCH!! ${s.big} damage in one bite 🦷`, `${s.big} damage. One bite. 💥`]);
   if (s.ko) return pick(['No mercy. Full KO 💀', 'This ends in a knockout 💥']);
-  return pick(['Pixel dogs. Real fights. 🐾', 'Your NFT, but it fights 🐾', 'Which dog wins? 👀']);
+  return pick(tt ? ['Pixel dogs. Real fights. 🐾', 'Which dog wins? 👀', 'Cutest fight you\'ll see today 🐾'] : ['Pixel dogs. Real fights. 🐾', 'Your NFT, but it fights 🐾', 'Which dog wins? 👀']);
 }
 async function clipBoot(){
-  tvMode = true; WAIT_K = .8; document.body.classList.add('tv', 'clip');
+  const q = new URLSearchParams(location.search), TT = q.get('v') === 'tt';
+  /* v=tt: the TikTok / Reels cut — shorter (the last rounds only), faster, no crypto words or wallet tags on screen,
+     an end card that asks for a follow. Default: the YouTube cut. */
+  tvMode = true; WAIT_K = TT ? .7 : .8; document.body.classList.add('tv', 'clip', TT ? 'clip-tt' : 'clip-yt');
   if (!S.on) S.toggle(); S.unlock();
-  const q = new URLSearchParams(location.search);
   let rep = null, s = null;
   try {
     if (q.get('id')){ const r = await fetch('/api/public/replay?id=' + encodeURIComponent(q.get('id'))); if (r.ok) rep = (await r.json()).replay; }
@@ -4336,35 +4339,50 @@ async function clipBoot(){
     const stars = DATA.fighters.filter(f => f.legendary || f.rarity === 'Mythic' || f.rarity === 'Epic');
     let best = null;
     for (let i = 0; i < 40; i++){
-      const a = stars[Math.floor(Math.random() * stars.length)], pool = DATA.fighters.filter(f => f !== a);
+      // mostly a star against a small dog: the underdog stories are what people watch
+      const small = DATA.fighters.filter(f => !f.legendary && ['Common', 'Uncommon', 'Rare'].includes(f.rarity));
+      const a = stars[Math.floor(Math.random() * stars.length)], pool = (Math.random() < .75 && small.length ? small : DATA.fighters).filter(f => f !== a);
       const b = pool[Math.floor(Math.random() * pool.length)], lvl = 3 + Math.floor(Math.random() * 7);
       const c = {kind: 'ghost', P: {def: a, lvl}, E: {def: b, lvl: Math.max(1, Math.min(10, lvl + rint(-1, 1)))}, rounds: null};
-      const d = clipDry(c), sc = clipDrama(d);
+      const d = clipDry(c), sc = clipDrama(d) + (clipUpset(c, d) ? 4 : 0);      // underdog wins travel best
       if (!best || sc > best.sc) best = {c, d, sc};
       if (sc >= 6) break;
     }
     rep = Object.assign(best.c, {rounds: best.d.rec}); s = clipDry(rep);
   }
   CLIP.rep = rep; CLIP.stats = {v: s.v, w: s.w, ko: s.ko, winLow: s.winLow, big: s.big, rounds: s.rounds, drama: clipDrama(s)};
-  CLIP.hook = q.get('hook') || clipHook(rep, s);
+  CLIP.hook = q.get('hook') || clipHook(rep, s, TT);
+  CLIP.variant = TT ? 'tt' : 'yt';
   TV.theme = rep.kind === 'club' ? 'club' : rep.kind === 'arena' ? 'arena' : ['meadow', 'arena', 'club'][Math.floor(Math.random() * 3)];
   const [ia, ib] = await Promise.all([tvImg(rep.P.def), tvImg(rep.E.def)]);
   const a = Object.assign({}, rep.P.def, {img: ia}), b = Object.assign({}, rep.E.def, {img: ib});
   P = build(a, rep.P.lvl, rep.P.bonus ? {key: rep.P.bonus} : null); E = build(b, rep.E.lvl, null);
   turn = 1; log = []; ev = []; over = false;
-  const who = (x, side) => `<div class="clipwho ${side}"><b>${x.who ? esc(x.who) : side === 'r' && rep.kind !== 'ghost' ? 'a wild Scrappy' : esc(x.def.name)}</b>
+  // TikTok cut: the first rounds happen off screen, the clip opens on the last few (the decisive part)
+  let skip = 0;
+  if (TT){
+    skip = Math.max(0, rep.rounds.length - 4);
+    simulating = true;
+    try { for (let i = 0; i < skip; i++){ const r = rep.rounds[i];
+      if (rep.kind === 'club') resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
+      else { const pa = moveOf(P, r.a), ea = moveOf(E, r.b); rollsReplay(r.r, () => resolve(pa, ea)); } } }
+    finally { simulating = false; }
+    log = []; ev = [];
+  }
+  const wallet = w => /…/.test(w || '') || /^r[1-9A-HJ-NP-Za-km-z]{4,}/.test(w || '');
+  const who = (x, side) => `<div class="clipwho ${side}"><b>${x.who && !(TT && wallet(x.who)) ? esc(x.who) : side === 'r' && rep.kind !== 'ghost' && !x.who ? 'a wild Scrappy' : esc(x.def.name)}</b>
     <span>${esc(x.def.rarity)}${x.def.legendary ? ' · 1 of 20' : ''} · Bond ${x.lvl}</span></div>`;
   app.innerHTML = `<div class="cliptop"><span>🐾 BARK ARENA</span></div>
-    <div class="cliphook${CLIP.hook.length > 30 ? ' long' : ''}"><b>${esc(CLIP.hook)}</b></div>${stage()}
+    <div class="cliphook${CLIP.hook.length > 22 ? ' long' : ''}${CLIP.hook.length > 32 ? ' xlong' : ''}"><b>${esc(CLIP.hook)}</b></div>${stage()}
     <div class="cliplow">${who(rep.P, 'l')}<i>VS</i>${who(rep.E, 'r')}</div>
-    <div class="clipfoot">Pixel Scrappy · XRP Ledger</div>`;
+    <div class="clipfoot">${TT ? 'Bark Arena · Pixel Scrappy' : 'Pixel Scrappy · XRP Ledger'}</div>`;
   fxInit(document.querySelector('canvas.fx'), TV.theme); auraInit(); setBars();
   await new Promise(r => { CLIP.go = r; CLIP.state = 'ready'; });
   CLIP.state = 'playing';
-  await wait(300); await introFx(); await wait(250);
+  await wait(TT ? 120 : 300); if (!TT || !skip) await introFx(); await wait(TT ? 80 : 250);
   simulating = true;
   try {
-    for (const r of rep.rounds){
+    for (const r of rep.rounds.slice(skip)){
       if (over) break;
       if (rep.kind === 'club') resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
       else { const pa = moveOf(P, r.a), ea = moveOf(E, r.b); rollsReplay(r.r, () => resolve(pa, ea)); }
@@ -4374,11 +4392,15 @@ async function clipBoot(){
   } finally { simulating = false; }
   await wait(900);
   const end = document.createElement('div'); end.className = 'clipend';
-  end.innerHTML = `<div class="ce1">Every dog is an NFT<br>on the XRP Ledger</div>
-    <div class="ce2"><img src="${a.img}" alt=""><img src="${b.img}" alt=""></div>
-    <div class="ce3">Mint your fighter 🐾</div><div class="ce4">scrappyxrp.fun/barkarena</div><div class="ce5">🔗 link in bio</div>`;
+  end.innerHTML = TT
+    ? `<div class="ce1">Cute pixel dogs.<br>Real fights.</div>
+       <div class="ce2"><img src="${a.img}" alt=""><img src="${b.img}" alt=""></div>
+       <div class="ce3">Follow for daily fights 🐾</div><div class="ce5">Play free · link in bio</div>`
+    : `<div class="ce1">Every dog is an NFT<br>on the XRP Ledger</div>
+       <div class="ce2"><img src="${a.img}" alt=""><img src="${b.img}" alt=""></div>
+       <div class="ce3">Mint your fighter 🐾</div><div class="ce4">scrappyxrp.fun/barkarena</div><div class="ce5">Subscribe for daily fights · link in description</div>`;
   document.body.appendChild(end); S.fanfare(true);
-  await wait(3400 / WAIT_K);
+  await wait((TT ? 2400 : 3400) / WAIT_K);
   CLIP.state = 'done';
 }
 

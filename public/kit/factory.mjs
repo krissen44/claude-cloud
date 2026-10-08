@@ -18,10 +18,14 @@ const log = (...a) => console.log(new Date().toISOString(), ...a);
 const state = (() => { try { return JSON.parse(fs.readFileSync(STATE, "utf8")); } catch { return {used: [], n: 0}; } })();
 const day = new Date().toISOString().slice(0, 10);
 
-// ---- which fights
+// ---- which fights: underdog wins and close calls travel best (week 1 on YouTube: "Rare vs LEGENDARY… no way",
+// "Nobody bet on the rare" led; Legendary-vs-Legendary and Fight Club clips trailed)
 const RK = {Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Mythic: 5, Legendary: 5};
-const score = r => Math.max(RK[r.P.def.rarity] || 0, RK[r.E.def.rarity] || 0) + (r.P.def.legendary || r.E.def.legendary ? 3 : 0)
-  + (r.kind === "club" ? 4 : 0) + (r.kind === "arena" ? 2 + (r.stage === 2 ? 3 : 0) : 0) + (r.close ? 3 : 0) + (r.rounds.length >= 6 ? 1 : 0);
+const winner = r => r.result === "W" ? r.P : r.result === "L" ? r.E : null;
+const upset = r => { const w = winner(r), l = w === r.P ? r.E : r.P; return !!w && (RK[w.def.rarity] || 0) + 2 <= (RK[l.def.rarity] || 0); };
+const score = r => (upset(r) ? 6 : 0) + (r.close ? 3 : 0) + Math.max(RK[r.P.def.rarity] || 0, RK[r.E.def.rarity] || 0) / 2
+  + ((r.P.def.legendary ? 1 : 0) + (r.E.def.legendary ? 1 : 0) === 1 ? 2 : 0)        // one Legendary against a smaller dog
+  + (r.kind === "club" ? 1 : 0) + (r.kind === "arena" ? 1 + (r.stage === 2 ? 2 : 0) : 0) + (r.rounds.length >= 6 ? 1 : 0);
 let picks = [];
 try {
   const j = await (await fetch(`${GAME}/api/public/replays?n=40`)).json();
@@ -31,32 +35,36 @@ try {
 while (picks.length < N) picks.push({ghost: true});
 log("clips to make:", picks.map(p => p.id || "exhibition").join(", "));
 
-// ---- captions (the algorithms like a question, a hook, 3–6 hashtags; the link goes in bio / description)
+// ---- captions (a hook, a question, a few hashtags; the link goes in bio / description).
+// TikTok and Instagram throttle finance/crypto content: their texts are about a cute pixel game, no crypto words.
 const pick = a => a[Math.floor(Math.random() * a.length)];
-const TAGS = ["#PixelScrappy", "#XRPL", "#NFTgame", "#XRP", "#pixelart", "#indiegame", "#web3gaming", "#dogs", "#NFT", "#cryptogaming"];
-const tags = (n, extra = []) => [...extra, ...TAGS.slice().sort(() => Math.random() - .5)].slice(0, n).join(" ");
+const mix = (list, n, extra = []) => [...extra, ...list.slice().sort(() => Math.random() - .5)].slice(0, n).join(" ");
+const YT_TAGS = ["#PixelScrappy", "#XRPL", "#NFTgame", "#XRP", "#pixelart", "#indiegame", "#web3gaming", "#dogs"];
+const TT_TAGS = ["#pixelart", "#indiegame", "#gaming", "#cutedogs", "#retrogaming", "#dogsoftiktok", "#gamedev", "#pixelgame"];
+const IG_TAGS = ["#pixelart", "#indiegame", "#gaming", "#cutedogs", "#retrogaming", "#dogsofinstagram", "#gamedev", "#pixelartist", "#8bit"];
 const QUESTIONS = ["Which dog would you pick? 👇", "Would you have guarded there? 🤔", "Rate this fight 1–10 👇", "Team left or team right? 👇", "Name a better comeback 👇"];
-function captions(c){
-  const a = c.rep.P, b = c.rep.E, q = pick(QUESTIONS);
-  const who = x => x.who ? `${x.who}'s ${x.def.name}` : x.def.name;
-  const line = `${who(a)} (${a.def.rarity}) vs ${who(b)} (${b.def.rarity})`;
+const wallet = w => /…/.test(w || "");
+function captions(yt, tt){
+  const q = pick(QUESTIONS), qt = pick(QUESTIONS);
+  const who = (x, plain) => x.who && !(plain && wallet(x.who)) ? `${x.who}'s ${x.def.name}` : x.def.name;
+  const line = (c, plain) => `${who(c.rep.P, plain)} (${c.rep.P.def.rarity}) vs ${who(c.rep.E, plain)} (${c.rep.E.def.rarity})`;
   return {
-    hook: c.hook, line, question: q,
-    youtube: {title: `${c.hook} #Shorts`.slice(0, 100),
-      description: `${line} — Bark Arena, where every fighter is a Pixel Scrappy NFT on the XRP Ledger. 🐾\n${q}\n\nMint your fighter & play: ${SITE}?src=yt\n\n${tags(5, ["#Shorts"])}`},
-    tiktok: `${c.hook} ${q}\nEvery dog is an NFT on the XRP Ledger — mint yours, link in bio 🐾\n${tags(6, ["#fyp"])}`,
-    instagram: `${c.hook}\n${line}\n${q}\nMint your fighter → link in bio 🐾\n.\n${tags(8)}`,
-    comment: `${q} Mint your own fighter: scrappyxrp.fun/barkarena 🐾`,
+    hook: yt.hook, line: line(yt), question: q,
+    youtube: {title: `${yt.hook} #Shorts`.slice(0, 100),
+      description: `${line(yt)} — Bark Arena, where every fighter is a Pixel Scrappy NFT on the XRP Ledger. 🐾\n${q}\n\nPlay free & get your fighter: ${SITE}?src=yt\n\n${mix(YT_TAGS, 5, ["#Shorts"])}`},
+    tiktok: `${tt.hook} ${qt}\nCute pixel dogs, real fights — play free, link in bio 🐾\n${mix(TT_TAGS, 5, ["#fyp"])}`,
+    instagram: `${tt.hook}\n${line(tt, true)}\n${qt}\nPlay free → link in bio 🐾\n.\n${mix(IG_TAGS, 8)}`,
+    comment: `${q} Play free → scrappyxrp.fun/barkarena 🐾`,
+    commentTT: qt,
+    tt: {hook: tt.hook, line: line(tt, true)},
   };
 }
 
 // ---- recording: frames from Chrome's screencast + the page's WebAudio, muxed by ffmpeg
 const br = await chromium.launch({executablePath: process.env.CHROMIUM || undefined, args: ["--autoplay-policy=no-user-gesture-required"]});
 fs.mkdirSync(WORK, {recursive: true});
-let made = 0;
-for (const [i, p] of picks.entries()){
-  const tag = `${day}-${state.n % 1000 + 1}`.replace(/[^0-9a-z-]/g, "");
-  const dir = path.join(WORK, tag); fs.rmSync(dir, {recursive: true, force: true}); fs.mkdirSync(dir, {recursive: true});
+async function record(query, dir, music){
+  fs.rmSync(dir, {recursive: true, force: true}); fs.mkdirSync(dir, {recursive: true});
   const ctx = await br.newContext({viewport: {width: 450, height: 800}, deviceScaleFactor: 1.6});
   try {
     await ctx.addInitScript(() => {                 // everything that plays to the speakers also plays into a recorder
@@ -68,7 +76,7 @@ for (const [i, p] of picks.entries()){
     });
     const pg = await ctx.newPage();
     pg.on("pageerror", e => log("page:", e.message));
-    await pg.goto(`${GAME}/clip?${p.id ? "id=" + encodeURIComponent(p.id) : "ghost=1"}`, {waitUntil: "load", timeout: 60000});
+    await pg.goto(`${GAME}/clip?${query}`, {waitUntil: "load", timeout: 60000});
     await pg.waitForFunction(() => typeof CLIP === "object" && CLIP.state === "ready", null, {timeout: 120000});
     const info = await pg.evaluate(() => ({hook: CLIP.hook, stats: CLIP.stats, rep: {kind: CLIP.rep.kind, stage: CLIP.rep.stage,
       P: {who: CLIP.rep.P.who || null, lvl: CLIP.rep.P.lvl, def: {name: CLIP.rep.P.def.name, rarity: CLIP.rep.P.def.rarity, token: CLIP.rep.P.def.token}},
@@ -79,7 +87,7 @@ for (const [i, p] of picks.entries()){
       window.__chunks = []; window.__rec = rec; rec.ondataavailable = e => window.__chunks.push(e.data);
       rec.onstart = () => res(Date.now()); rec.start(250);
     }));
-    if (MUSIC) await pg.evaluate(() => {          // a quiet chiptune bed under the fight (same graph, so it's recorded)
+    if (music) await pg.evaluate(() => {          // a quiet chiptune bed under the fight (same graph, so it's recorded)
       const c = window.__ac, g = c.createGain(); g.gain.value = .05; g.connect(c.destination);
       const t0 = c.currentTime + .05, beat = .25, bass = [55, 55, 65.4, 55, 73.4, 55, 65.4, 49], lead = [440, 523, 587, 659, 587, 523, 659, 784];
       const note = (f, t, d, type, v) => { const o = c.createOscillator(), e = c.createGain(); o.type = type; o.frequency.value = f;
@@ -118,20 +126,35 @@ for (const [i, p] of picks.entries()){
       "-t", dur.toFixed(3), "-map", "0:v", "-map", "1:a", "-vf", "fps=30,scale=1080:1920:flags=lanczos,format=yuv420p",
       "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-profile:v", "high", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
       "-af", "loudnorm=I=-14:TP=-1.5:LRA=11", "-movflags", "+faststart", mp4]);
-    execFileSync(FF, ["-y", "-loglevel", "error", "-ss", "2.2", "-i", mp4, "-frames:v", "1", "-q:v", "3", jpg]);
-    const meta = {day, made: Date.now(), seconds: +dur.toFixed(1), fps: +(seq.length / dur).toFixed(1), replay: p.id || null, kind: info.rep.kind,
-      stats: info.stats, rep: info.rep, ...captions(info)};
-    for (const [file, ext] of [[mp4, "mp4"], [jpg, "jpg"]]) {
-      const r = await fetch(`${GAME}/api/admin/clips/upload?key=${encodeURIComponent(KEY)}&name=${tag}.${ext}`, {method: "PUT", body: fs.readFileSync(file)});
-      if (!r.ok) throw new Error(`upload ${ext}: ${r.status}`);
-    }
-    const r = await fetch(`${GAME}/api/admin/clips/upload?key=${encodeURIComponent(KEY)}&name=${tag}.json`, {method: "PUT", body: JSON.stringify(meta, null, 1)});
-    if (!r.ok) throw new Error("upload json: " + r.status);
-    log(`clip ${tag}: ${meta.seconds}s, ${meta.fps} fps, "${meta.hook}"`);
+    execFileSync(FF, ["-y", "-loglevel", "error", "-ss", Math.min(2.2, dur / 3).toFixed(2), "-i", mp4, "-frames:v", "1", "-q:v", "3", jpg]);
+    return {...info, mp4, jpg, seconds: +dur.toFixed(1), fps: +(seq.length / dur).toFixed(1)};
+  } finally { await ctx.close().catch(() => {}); }
+}
+const put = async (name, body) => {
+  const r = await fetch(`${GAME}/api/admin/clips/upload?key=${encodeURIComponent(KEY)}&name=${name}`, {method: "PUT", body});
+  if (!r.ok) throw new Error(`upload ${name}: ${r.status}`);
+};
+
+let made = 0;
+for (const p of picks){
+  const tag = `${day}-${state.n % 1000 + 1}`.replace(/[^0-9a-z-]/g, ""), dir = path.join(WORK, tag);
+  const q = p.id ? "id=" + encodeURIComponent(p.id) : "ghost=1";
+  try {
+    // YouTube cut (full fight, chiptune, mint end card) and TikTok/Reels cut (last rounds, no music — add a trending
+    // sound in the app — no crypto words, follow end card): two different files, so neither looks like a re-upload
+    const yt = await record(q, dir + "-yt", MUSIC);
+    const tt = await record(q + "&v=tt", dir + "-tt", false);
+    await put(`${tag}.mp4`, fs.readFileSync(yt.mp4)); await put(`${tag}.jpg`, fs.readFileSync(yt.jpg));
+    await put(`${tag}-tt.mp4`, fs.readFileSync(tt.mp4)); await put(`${tag}-tt.jpg`, fs.readFileSync(tt.jpg));
+    const meta = {day, made: Date.now(), seconds: yt.seconds, fps: yt.fps, replay: p.id || null, kind: yt.rep.kind,
+      stats: yt.stats, rep: yt.rep, ...captions(yt, tt)};
+    meta.tt.seconds = tt.seconds;
+    await put(`${tag}.json`, JSON.stringify(meta, null, 1));
+    log(`clip ${tag}: YouTube ${yt.seconds}s "${yt.hook}" · TikTok ${tt.seconds}s "${tt.hook}"`);
     if (p.id) state.used.push(p.id);
     state.n++; made++;
   } catch (e) { log("clip failed:", e.message); }
-  finally { await ctx.close().catch(() => {}); if (!process.env.KEEP_WORK) fs.rmSync(dir, {recursive: true, force: true}); }
+  finally { if (!process.env.KEEP_WORK) for (const d of [dir + "-yt", dir + "-tt"]) fs.rmSync(d, {recursive: true, force: true}); }
 }
 await br.close();
 state.used = state.used.slice(-500);

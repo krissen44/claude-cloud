@@ -286,16 +286,22 @@ async function clips(){
   window.CLIPS = L;
   $("clips").innerHTML = L.length ? L.map((c, i) => "<div class='clip'><video controls preload='none' playsinline poster='" + f(c.name + ".jpg") + "' src='" + f(c.name + ".mp4") + "'></video>" +
     "<div class='ci'><b>" + esc(c.hook) + "</b><div class='muted'>" + esc(c.name) + " · " + esc(c.kind) + " · " + c.seconds + " s · " + c.mb + " MB<br>" + esc(c.line || "") + "</div>" +
-    "<div class='row' style='margin-top:6px'><a class='btn' href='" + f(c.name + ".mp4") + "&download=1'>⬇ Video</a>" +
-    ["yt-title:YouTube title", "yt-desc:YouTube text", "tiktok:TikTok text", "instagram:Instagram text", "comment:Comment"].map(x => { const [k, l] = x.split(":");
+    "<div class='row' style='margin-top:6px'><b class='muted' style='min-width:84px'>▶ YouTube</b><a class='btn' href='" + f(c.name + ".mp4") + "&download=1'>⬇ Video</a>" +
+    ["yt-title:Title", "yt-desc:Text", "comment:Comment"].map(x => { const [k, l] = x.split(":");
       return "<button class='btn ghost' data-copy='" + i + ":" + k + "'>📋 " + l + "</button>"; }).join("") + "</div>" +
+    "<div class='row' style='margin-top:6px'><b class='muted' style='min-width:84px'>♪ TikTok/IG</b>" +
+    (c.tt ? "<a class='btn' href='" + f(c.name + "-tt.mp4") + "&download=1'>⬇ Video" + (c.tt.seconds ? " (" + c.tt.seconds + " s)" : "") + "</a>" : "<span class='muted'>same video</span>") +
+    ["tiktok:TikTok text", "instagram:Instagram text", "comment-tt:Comment"].map(x => { const [k, l] = x.split(":");
+      return "<button class='btn ghost' data-copy='" + i + ":" + k + "'>📋 " + l + "</button>"; }).join("") + "</div>" +
+    (c.tt ? "<div class='muted' style='margin-top:4px'>TikTok cut: <b>" + esc(c.tt.hook) + "</b> — no music inside: add a trending sound in the app (quiet), post it there directly.</div>" : "") +
     "<div class='row' style='margin-top:6px'>" + ["youtube", "tiktok", "instagram"].map(pl => "<label class='muted'><input type='checkbox' style='min-width:0' data-posted='" + c.name + ":" + pl + "'" +
       (c.posted && c.posted[pl] ? " checked" : "") + "> " + pl + "</label>").join(" ") +
     " <button class='btn ghost' data-cdelete='" + c.name + "'>🗑</button></div></div></div>").join("")
     : "<p class='muted'>No clips yet — the factory makes the first ones after it is set up on the VPS.</p>";
   $("clips").querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => {
     const [i, k] = b.dataset.copy.split(":"), c = CLIPS[+i];
-    const t = k === "yt-title" ? c.youtube.title : k === "yt-desc" ? c.youtube.description : k === "tiktok" ? c.tiktok : k === "instagram" ? c.instagram : c.comment;
+    const t = k === "yt-title" ? c.youtube.title : k === "yt-desc" ? c.youtube.description : k === "tiktok" ? c.tiktok : k === "instagram" ? c.instagram
+      : k === "comment-tt" ? (c.commentTT || c.question || c.comment) : c.comment;
     try { await navigator.clipboard.writeText(t); b.textContent = "✅ Copied"; } catch(e){ prompt("Copy:", t); }
   });
   $("clips").querySelectorAll("[data-posted]").forEach(x => x.onchange = () => { const [name, platform] = x.dataset.posted.split(":");
@@ -519,7 +525,7 @@ async function clipsRoute(req, res, url) {
     let b = {}; try { b = JSON.parse(String(await readBody(req))); } catch {}
     const base = String(b.name || ""), jf = path.join(CLIPS_DIR, base + ".json");
     if (!CLIP_NAME.test(base + ".json") || !fs.existsSync(jf)) return send(404, { error: "not_found" });
-    if (p === "/delete") { for (const x of ["mp4", "json", "jpg"]) { try { fs.unlinkSync(path.join(CLIPS_DIR, base + "." + x)); } catch {} } return send(200, { ok: true }); }
+    if (p === "/delete") { for (const x of ["mp4", "json", "jpg", "tt.mp4", "tt.jpg"]) { try { fs.unlinkSync(path.join(CLIPS_DIR, base + (x.startsWith("tt") ? "-" : ".") + x)); } catch {} } return send(200, { ok: true }); }
     const j = JSON.parse(fs.readFileSync(jf, "utf8")); j.posted = j.posted || {};
     if (["youtube", "tiktok", "instagram"].includes(b.platform)) j.posted[b.platform] = b.on ? Date.now() : null;
     fs.writeFileSync(jf, JSON.stringify(j, null, 1));

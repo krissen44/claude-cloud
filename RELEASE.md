@@ -4,6 +4,17 @@ Changes collect here during the week and go live together when the new week star
 Last version confirmed live: **game v31 + website** (uploaded by the owner on Mon 5 Oct 2026, ~16:00 UTC, together
 with v30). The Shorts factory runs on GitHub Actions (first run 5 Oct 16:05 UTC: success; clips posted by the owner).
 
+## v31.2 — Shorts: separate YouTube and TikTok cuts (8 Oct)
+- After week 1 of Shorts: YouTube ~1,200 views per Short (9.3k in 3 days), TikTok mostly 0. Likely TikTok throttles
+  crypto content and favours native sounds. Now every fight becomes **two videos**: the **YouTube cut** (full fight,
+  chiptune, "Every dog is an NFT on the XRP Ledger · Mint your fighter" end card) and a **TikTok/Reels cut** (only the
+  last 4 rounds, ~8–10 s, faster, no music — add a trending sound in the TikTok app — no crypto words or wallet tags on
+  screen, end card "Follow for daily fights · Play free · link in bio"). TikTok/Instagram texts without #XRP/#NFT etc.
+- Hook line no longer cut off by the apps' icons (padded right, smaller font for long hooks).
+- The factory now favours underdog wins and close fights (best performers); exhibitions mostly pit a star against a
+  small dog. `/admin` → "📱 Clips" shows two download buttons and texts per platform.
+- Upload: game ZIP → Node.js app, restart (the factory on GitHub already uses the new version).
+
 ## Hotfix v31.1 — ready (bug found by the owner on 5 Oct)
 - **New players got only 5 ranked fights on day one** (should be 5 starting + the daily grant, and +1 per extra
   Scrappy). Two causes: since v26 a brand-new save was treated like a week start, which replaced the starting tickets;

@@ -196,13 +196,20 @@ hand over one combined package for the week start; don't tell the owner to uploa
 - **Shorts clips `/clip`** (`clipBoot`, `clipDry`, `clipDrama`, `clipHook`, `CLIP`): one fight in portrait 450×800 CSS px
   (recorded at 720×1280, encoded 1080×1920), hook line on top (from the fight: upset, comeback, Legendary, Club, final,
   big hit, KO), end card "Mint your fighter · scrappyxrp.fun/barkarena · link in bio". `?id=<replay>` or exhibitions
-  (best of 40 drawn ghost fights by `clipDrama`). `WAIT_K = .8` speeds it up. Apps' UI zones (top 8 %, bottom 20 %) kept free.
+  (best of 40 drawn ghost fights by `clipDrama`, +4 for an underdog win; 75 % star vs small dog). `WAIT_K = .8` speeds it up.
+  Apps' UI zones (top 8 %, bottom 20 %, top-right icons → hook padded right) kept free. **`&v=tt` = TikTok/Reels cut**:
+  only the last 4 rounds (earlier ones resolved off screen), `WAIT_K = .7`, no crypto words or wallet tags on screen,
+  end card "Follow for daily fights · Play free · link in bio"; YouTube cut keeps the NFT/XRPL end card.
 - **Shorts factory** (`public/kit/factory.mjs`): runs daily at 05:10 UTC on **GitHub Actions**
   (`.github/workflows/shorts.yml`, secret `ADMIN_KEY`, state of used fights in an actions cache; schedules only run from
   the default branch). VPS alternative: installer `public/kit/shorts.sh` (served at `/kit/*`, systemd timer). It picks the best replays of the last 36 h (else
   exhibitions), records via CDP screencast + WebAudio tap (headless, no X/Pulse), quiet chiptune bed (`MUSIC=0` off),
-  ffmpeg loudnorm −14 LUFS, uploads mp4/jpg/json to `/api/admin/clips/upload`. Captions per clip: YouTube title/text
-  (`?src=yt` link), TikTok + Instagram text ("link in bio"), a question as pinned comment. The owner posts by hand.
+  ffmpeg loudnorm −14 LUFS, uploads mp4/jpg/json to `/api/admin/clips/upload`. **Two cuts per fight**: `<tag>.mp4`
+  (YouTube, chiptune) and `<tag>-tt.mp4` (TikTok/Reels, no music so the owner adds a trending sound). Selection favours
+  underdog wins (+6), close fights, one Legendary vs a smaller dog; Club and Legendary-vs-Legendary rank lower (week-1
+  YouTube data: underdog clips ~1.2k views, L-vs-L/Club 270–390). Captions: YouTube title/text with the NFT/XRPL pitch
+  (`?src=yt`), TikTok + Instagram texts **without crypto words** (TikTok throttles finance/crypto), comment per platform.
+  The owner posts by hand.
 - **Funnel**: website `barkarena/index.html` reads `?src=`, shows a welcome banner, a "Get your fighter" section with
   the xrp.cafe mint embed (public mint is live), pings `/api/public/hit` (sendBeacon, text/plain = no preflight),
   appends `src` to game links; the game stores the first `?src=` (`ba_src`) and posts it once per wallet (`/api/src`).

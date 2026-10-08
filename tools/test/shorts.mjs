@@ -12,7 +12,7 @@ setTimeout(() => { console.log("TIMEOUT"); bye(1); }, 600000);
 await new Promise(r => setTimeout(r, 1300));
 const call = async (who, path, body) => (await fetch(U + "/api" + path, {method: body ? "POST" : "GET", headers:{authorization:"Bearer " + tok(who), "content-type":"application/json"}, body: body && JSON.stringify(body)})).json();
 const realFetch = globalThis.fetch;    // the server closes idle keep-alive sockets during the long factory run: retry once
-globalThis.fetch = async (u, o = {}) => { try { return await realFetch(u, o); } catch (e) { return realFetch(u, o); } };
+globalThis.fetch = async (u, o = {}) => { for (let i = 0; ; i++) { try { return await realFetch(u, o); } catch (e) { if (i >= 4) throw e; await new Promise(r => setTimeout(r, 300)); } } };
 const ok = (c, m) => console.log((c ? "PASS " : "FAIL ") + m);
 await call(A, "/profile", {name: "Alpha"}); await call(B, "/profile", {name: "BarkBoss"});
 const kA = await call(A, "/me/kennel"), kB = await call(B, "/me/kennel");
@@ -41,6 +41,16 @@ fs.writeFileSync(S + "/clip0.mp4", Buffer.from(await v.arrayBuffer()));
 const probe = execFileSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type,width,height", "-show_entries", "format=duration", "-of", "compact", S + "/clip0.mp4"]).toString();
 console.log(probe.trim());
 ok(/width=1080\|height=1920/.test(probe) && /codec_type=audio/.test(probe), "MP4 is 1080×1920 with sound");
+// the TikTok cut: own file, shorter, captions without crypto words
+for (const c of list){
+  ok(!!c.tt && c.tt.seconds > 3, `${c.name}: TikTok cut ${c.tt && c.tt.seconds}s vs YouTube ${c.seconds}s ("${c.tt && c.tt.hook}")`);
+  ok(!/xrp|nft|crypto|ledger|mint|web3/i.test(c.tiktok + c.instagram + c.commentTT), `${c.name}: TikTok/Instagram texts free of crypto words`);
+  ok(/xrp ledger/i.test(c.youtube.description), `${c.name}: YouTube text keeps the NFT/XRPL pitch`);
+}
+const tv = await fetch(U + `/api/admin/clips/file?key=adm&name=${list[0].name}-tt.mp4`);
+fs.writeFileSync(S + "/clip0-tt.mp4", Buffer.from(await tv.arrayBuffer()));
+const ptt = execFileSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type,width,height", "-of", "compact", S + "/clip0-tt.mp4"]).toString();
+ok(/width=1080\|height=1920/.test(ptt) && /codec_type=audio/.test(ptt), "TikTok MP4 is 1080×1920 with sound");
 const rg = await fetch(U + `/api/admin/clips/file?key=adm&name=${list[0].name}.mp4`, {headers: {range: "bytes=0-99"}});
 ok(rg.status === 206 && (await rg.arrayBuffer()).byteLength === 100, "range requests for the video player");
 ok((await fetch(U + `/api/admin/clips?key=wrong`)).status === 403, "clips need the admin key");
@@ -65,5 +75,15 @@ ok(hits.some(h => /"ev":"view"/.test(h) && /"src":"tt"/.test(h)), "website count
 await web.screenshot({path: S + "/web-welcome.png"});
 console.log("page errors:", errs.length ? errs : "none");
 await br.close();
+// what the TikTok cut shows on screen: no crypto words, no wallet tags
+{ const br2 = await chromium.launch({executablePath: process.env.CHROMIUM || undefined});
+  const pt = await br2.newPage({viewport: {width: 450, height: 800}}); await pt.route(u => !u.href.startsWith(U), r => r.abort());
+  await pt.goto(U + "/clip?v=tt&id=" + list.find(c => c.replay).replay); await pt.waitForFunction(() => typeof CLIP === "object" && CLIP.state === "ready", null, {timeout: 60000});
+  const txt = await pt.locator("#app").innerText();
+  ok(!/xrp|ledger|nft|…/i.test(txt), "TikTok cut on screen: no crypto words, no wallet tags (" + txt.replace(/\s+/g, " ").slice(0, 120) + ")");
+  await pt.evaluate(() => CLIP.go()); await pt.waitForFunction(() => CLIP.state === "done", null, {timeout: 120000});
+  const end = await pt.locator(".clipend").innerText();
+  ok(/Follow for daily fights/.test(end) && !/NFT|XRP/.test(end), "TikTok end card asks for a follow");
+  await pt.screenshot({path: S + "/clip-tt-end.png"}); await br2.close(); }
 const kit = await fetch(U + "/kit/shorts.sh"); ok(kit.status === 200 && (await kit.text()).includes("barkarena-shorts"), "installer served at /kit/shorts.sh");
 bye(0);
