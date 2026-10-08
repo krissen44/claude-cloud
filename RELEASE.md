@@ -13,6 +13,10 @@ with v30). The Shorts factory runs on GitHub Actions (first run 5 Oct 16:05 UTC:
 - Hook line no longer cut off by the apps' icons (padded right, smaller font for long hooks).
 - The factory now favours underdog wins and close fights (best performers); exhibitions mostly pit a star against a
   small dog. `/admin` → "📱 Clips" shows two download buttons and texts per platform.
+- Clips stay **real players' fights of the day** (if the day was quiet: unused real fights of the last week; an
+  exhibition only when there is nothing else). Titles, texts, hashtags and the pinned-comment question are now written
+  from the fight itself, e.g. "Alpha's Scrappy #3821 (Uncommon, Bond 1) took down BarkBoss's Scrappy #4344 (Mythic)" ·
+  "An Uncommon just beat a Mythic 🤯 Would you have bet on Alpha's Scrappy #3821? 👇" · #underdog #plottwist …
 - Upload: game ZIP → Node.js app, restart (the factory on GitHub already uses the new version).
 
 ## Hotfix v31.1 — ready (bug found by the owner on 5 Oct)

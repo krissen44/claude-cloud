@@ -209,7 +209,10 @@ hand over one combined package for the week start; don't tell the owner to uploa
   underdog wins (+6), close fights, one Legendary vs a smaller dog; Club and Legendary-vs-Legendary rank lower (week-1
   YouTube data: underdog clips ~1.2k views, L-vs-L/Club 270–390). Captions: YouTube title/text with the NFT/XRPL pitch
   (`?src=yt`), TikTok + Instagram texts **without crypto words** (TikTok throttles finance/crypto), comment per platform.
-  The owner posts by hand.
+  Owner's wish: **real players' fights** — today's best, else unused real fights of the last 7 days, exhibitions last.
+  Texts are written from the fight (`story()`: upset / comeback / final / club / big bite / KO / Legendary / fight / draw →
+  "<winner> took down <loser>", HP, round, rarity, bond) with matching hashtags (`STORY_TAGS`, Legendary name as a tag)
+  and a question for the pinned comment about that very fight. The owner posts by hand.
 - **Funnel**: website `barkarena/index.html` reads `?src=`, shows a welcome banner, a "Get your fighter" section with
   the xrp.cafe mint embed (public mint is live), pings `/api/public/hit` (sendBeacon, text/plain = no preflight),
   appends `src` to game links; the game stores the first `?src=` (`ba_src`) and posts it once per wallet (`/api/src`).

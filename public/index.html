@@ -4350,7 +4350,8 @@ async function clipBoot(){
     }
     rep = Object.assign(best.c, {rounds: best.d.rec}); s = clipDry(rep);
   }
-  CLIP.rep = rep; CLIP.stats = {v: s.v, w: s.w, ko: s.ko, winLow: s.winLow, big: s.big, rounds: s.rounds, drama: clipDrama(s)};
+  CLIP.rep = rep; CLIP.stats = {v: s.v, w: s.w, ko: s.ko, winLow: s.winLow, winLowHp: s.winLowHp, big: s.big, rounds: s.rounds,
+    upset: !!clipUpset(rep, s), drama: clipDrama(s)};
   CLIP.hook = q.get('hook') || clipHook(rep, s, TT);
   CLIP.variant = TT ? 'tt' : 'yt';
   TV.theme = rep.kind === 'club' ? 'club' : rep.kind === 'arena' ? 'arena' : ['meadow', 'arena', 'club'][Math.floor(Math.random() * 3)];

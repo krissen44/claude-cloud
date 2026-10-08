@@ -35,7 +35,8 @@ try {
 console.log("factory took", Math.round((Date.now() - t0) / 1000), "s");
 const list = (await (await fetch(U + "/api/admin/clips?key=adm")).json()).clips;
 ok(list.length === 2, "two clips listed in /admin (" + list.map(c => c.name + " " + c.kind + " " + c.seconds + "s " + c.fps + "fps").join(", ") + ")");
-for (const c of list) console.log(" ·", c.name, "|", c.hook, "|", c.youtube.title, "|", c.mb, "MB");
+for (const c of list) console.log(" ·", c.name, "|", c.story, "|", c.mb, "MB\n   YT:", JSON.stringify(c.youtube), "\n   TT:", JSON.stringify(c.tiktok), "\n   IG:", JSON.stringify(c.instagram), "\n   comments:", c.comment, "|", c.commentTT);
+for (const c of list) ok(!/undefined|null|NaN|\[object| a [AEIOU]/.test(JSON.stringify([c.youtube, c.tiktok, c.instagram, c.comment, c.commentTT])), c.name + ": no broken placeholders or 'a Uncommon' in the texts");
 const v = await fetch(U + `/api/admin/clips/file?key=adm&name=${list[0].name}.mp4`);
 fs.writeFileSync(S + "/clip0.mp4", Buffer.from(await v.arrayBuffer()));
 const probe = execFileSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type,width,height", "-show_entries", "format=duration", "-of", "compact", S + "/clip0.mp4"]).toString();
@@ -80,7 +81,7 @@ await br.close();
   const pt = await br2.newPage({viewport: {width: 450, height: 800}}); await pt.route(u => !u.href.startsWith(U), r => r.abort());
   await pt.goto(U + "/clip?v=tt&id=" + list.find(c => c.replay).replay); await pt.waitForFunction(() => typeof CLIP === "object" && CLIP.state === "ready", null, {timeout: 60000});
   const txt = await pt.locator("#app").innerText();
-  ok(!/xrp|ledger|nft|…/i.test(txt), "TikTok cut on screen: no crypto words, no wallet tags (" + txt.replace(/\s+/g, " ").slice(0, 120) + ")");
+  ok(!/xrp|ledger|nft|r[1-9A-Za-z]{3,}…/i.test(txt), "TikTok cut on screen: no crypto words, no wallet tags (" + txt.replace(/\s+/g, " ").slice(0, 120) + ")");
   await pt.evaluate(() => CLIP.go()); await pt.waitForFunction(() => CLIP.state === "done", null, {timeout: 120000});
   const end = await pt.locator(".clipend").innerText();
   ok(/Follow for daily fights/.test(end) && !/NFT|XRP/.test(end), "TikTok end card asks for a follow");

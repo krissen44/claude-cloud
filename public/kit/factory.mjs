@@ -26,37 +26,82 @@ const upset = r => { const w = winner(r), l = w === r.P ? r.E : r.P; return !!w 
 const score = r => (upset(r) ? 6 : 0) + (r.close ? 3 : 0) + Math.max(RK[r.P.def.rarity] || 0, RK[r.E.def.rarity] || 0) / 2
   + ((r.P.def.legendary ? 1 : 0) + (r.E.def.legendary ? 1 : 0) === 1 ? 2 : 0)        // one Legendary against a smaller dog
   + (r.kind === "club" ? 1 : 0) + (r.kind === "arena" ? 1 + (r.stage === 2 ? 2 : 0) : 0) + (r.rounds.length >= 6 ? 1 : 0);
+// Real players' fights only: today's best first; if the day was quiet, unused real fights of the last week;
+// an exhibition only when there are no real fights left at all.
 let picks = [];
 try {
   const j = await (await fetch(`${GAME}/api/public/replays?n=40`)).json();
-  picks = (j.replays || []).filter(r => Date.now() - r.at < 36 * 3600e3 && !state.used.includes(r.id) && r.rounds.length >= 3)
-    .sort((a, b) => score(b) - score(a)).slice(0, N).map(r => ({id: r.id}));
+  const fresh = (j.replays || []).filter(r => !state.used.includes(r.id) && r.rounds.length >= 3);
+  const best = h => fresh.filter(r => Date.now() - r.at < h * 3600e3).sort((a, b) => score(b) - score(a));
+  for (const r of [...best(36), ...best(7 * 24)]) if (picks.length < N && !picks.some(p => p.id === r.id)) picks.push({id: r.id});
 } catch (e) { log("playlist:", e.message); }
 while (picks.length < N) picks.push({ghost: true});
 log("clips to make:", picks.map(p => p.id || "exhibition").join(", "));
 
-// ---- captions (a hook, a question, a few hashtags; the link goes in bio / description).
-// TikTok and Instagram throttle finance/crypto content: their texts are about a cute pixel game, no crypto words.
+// ---- captions: written from what happened in this very fight (who won, how, against whom), with hashtags that
+// fit it. YouTube keeps the NFT/XRPL pitch; TikTok and Instagram don't (they throttle crypto content).
 const pick = a => a[Math.floor(Math.random() * a.length)];
-const mix = (list, n, extra = []) => [...extra, ...list.slice().sort(() => Math.random() - .5)].slice(0, n).join(" ");
-const YT_TAGS = ["#PixelScrappy", "#XRPL", "#NFTgame", "#XRP", "#pixelart", "#indiegame", "#web3gaming", "#dogs"];
-const TT_TAGS = ["#pixelart", "#indiegame", "#gaming", "#cutedogs", "#retrogaming", "#dogsoftiktok", "#gamedev", "#pixelgame"];
-const IG_TAGS = ["#pixelart", "#indiegame", "#gaming", "#cutedogs", "#retrogaming", "#dogsofinstagram", "#gamedev", "#pixelartist", "#8bit"];
-const QUESTIONS = ["Which dog would you pick? 👇", "Would you have guarded there? 🤔", "Rate this fight 1–10 👇", "Team left or team right? 👇", "Name a better comeback 👇"];
+const uniq = a => [...new Set(a)];
+const camel = t => "#" + String(t).replace(/^#\d+\s*/, "").replace(/[^A-Za-z0-9 ]/g, "").split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join("");
 const wallet = w => /…/.test(w || "");
+function story(c, plain){
+  const st = c.stats || {}, r = c.rep, W = st.w === "P" ? r.P : st.w === "E" ? r.E : null, L = W === r.P ? r.E : r.P;
+  const dog = x => x.def.name.replace(/^Pixel Scrappy /, "Scrappy ");
+  const name = x => x.who && !(plain && wallet(x.who)) ? `${x.who}'s ${dog(x)}` : dog(x);
+  const leg = [r.P, r.E].find(x => /^#\d+ /.test(x.def.name) && x.def.rarity === "Legendary");
+  let kind = "fight";
+  if (!W) kind = "draw";
+  else if (st.upset) kind = "upset";
+  else if (st.winLowHp && st.winLow < .25) kind = "comeback";
+  else if (r.kind === "arena" && r.stage === 2) kind = "final";
+  else if (r.kind === "club") kind = "club";
+  else if (st.big >= 9) kind = "bigbite";
+  else if (st.ko) kind = "ko";
+  else if (leg) kind = "legendary";
+  // "<winner> <verb> <loser><tail>"
+  const verb = {upset: "took down", comeback: `came back from ${st.winLowHp} HP to beat`, final: "beat", club: "beat", bigbite: "beat",
+    ko: "knocked out", legendary: "beat", fight: "beat", draw: "drew with"}[kind];
+  const tail = {final: " in the arena final", club: " in a live duel", bigbite: ` with a ${st.big}-damage bite`, ko: ` in round ${st.rounds}`,
+    fight: ` in ${st.rounds} rounds`}[kind] || "";
+  return {kind, W, L, leg, name, verb, tail, st};
+}
+const an = w => (/^[aeiou]/i.test(w) ? "an " : "a ") + w;
+const STORY_TAGS = {upset: ["#underdog", "#plottwist", "#upset"], comeback: ["#comeback", "#nevergiveup", "#clutch"], final: ["#tournament", "#final", "#champion"],
+  club: ["#pvp", "#1v1", "#duel"], bigbite: ["#critical", "#onebite", "#oof"], ko: ["#knockout", "#ko", "#flawless"], legendary: ["#legendary", "#rare"],
+  fight: ["#battle", "#whowins"], draw: ["#draw", "#rematch"]};
+function comments(t, c, plain){
+  const W = t.W, L = t.L, n = x => t.name(x);
+  switch (t.kind){
+    case "upset": return pick([`${an(W.def.rarity)[0].toUpperCase() + an(W.def.rarity).slice(1)} just beat ${an(L.def.rarity)} 🤯 Would you have bet on ${n(W)}? 👇`, `${n(W)} had no business winning this… or did it? 👇 Rarity or skill?`]);
+    case "comeback": return pick([`${n(W)} was down to ${t.st.winLowHp} HP and still won 😤 Would you have guarded or gone all in? 👇`, `${t.st.winLowHp} HP left and still took it 💀➡️👑 Best comeback you've seen? 👇`]);
+    case "final": return `${n(W)} takes the arena final 👑 Who takes the crown next? 👇`;
+    case "club": return `${n(c.rep.P)} vs ${n(c.rep.E)} — two real players, picked live 🥊 Who should step in the ring next? 👇`;
+    case "bigbite": return `${t.st.big} damage in a single bite 🦷 Fair or broken? 👇`;
+    case "ko": return `KO in round ${t.st.rounds} 💀 Rematch or was it decided? 👇`;
+    case "legendary": return `${t.leg.def.name.replace(/^#\d+ /, "")} is one of only 20 hand-drawn Legendaries 🌟 Which one should fight next? 👇`;
+    case "draw": return `A draw?! 😳 Who deserved the win? 👇`;
+    default: return pick([`${n(W)} or ${n(L)} — who would you have picked? 👇`, `Rate ${n(W)}'s win 1–10 👇`]);
+  }
+}
 function captions(yt, tt){
-  const q = pick(QUESTIONS), qt = pick(QUESTIONS);
-  const who = (x, plain) => x.who && !(plain && wallet(x.who)) ? `${x.who}'s ${x.def.name}` : x.def.name;
-  const line = (c, plain) => `${who(c.rep.P, plain)} (${c.rep.P.def.rarity}) vs ${who(c.rep.E, plain)} (${c.rep.E.def.rarity})`;
+  const a = story(yt, false), b = story(tt, true);
+  const line = (t, c) => t.W ? `${t.name(t.W)} (${t.W.def.rarity}, Bond ${t.W.lvl}) ${t.verb} ${t.name(t.L)} (${t.L.def.rarity}, Bond ${t.L.lvl})${t.tail}`
+    : `${t.name(c.rep.P)} and ${t.name(c.rep.E)} fought to a draw`;
+  const real = yt.rep.kind !== "ghost";
+  const legTag = t => t.leg ? [camel(t.leg.def.name)] : [];
+  const ytTags = uniq(["#Shorts", ...STORY_TAGS[a.kind].slice(0, 2), ...legTag(a), "#PixelScrappy", "#pixelart", "#NFTgame", "#XRPL"]).slice(0, 7).join(" ");
+  const ttTags = uniq([...STORY_TAGS[b.kind].slice(0, 2), ...legTag(b), "#pixelart", "#indiegame", "#cutedogs", "#fyp"]).slice(0, 6).join(" ");
+  const igTags = uniq([...STORY_TAGS[b.kind], ...legTag(b), "#pixelart", "#indiegame", "#retrogaming", "#dogsofinstagram", "#8bit", "#gamedev"]).slice(0, 10).join(" ");
+  const cy = comments(a, yt, false), ct = comments(b, tt, true);
   return {
-    hook: yt.hook, line: line(yt), question: q,
+    hook: yt.hook, line: line(a, yt), question: cy, story: a.kind,
     youtube: {title: `${yt.hook} #Shorts`.slice(0, 100),
-      description: `${line(yt)} — Bark Arena, where every fighter is a Pixel Scrappy NFT on the XRP Ledger. 🐾\n${q}\n\nPlay free & get your fighter: ${SITE}?src=yt\n\n${mix(YT_TAGS, 5, ["#Shorts"])}`},
-    tiktok: `${tt.hook} ${qt}\nCute pixel dogs, real fights — play free, link in bio 🐾\n${mix(TT_TAGS, 5, ["#fyp"])}`,
-    instagram: `${tt.hook}\n${line(tt, true)}\n${qt}\nPlay free → link in bio 🐾\n.\n${mix(IG_TAGS, 8)}`,
-    comment: `${q} Play free → scrappyxrp.fun/barkarena 🐾`,
-    commentTT: qt,
-    tt: {hook: tt.hook, line: line(tt, true)},
+      description: `${line(a, yt)}. 🐾\n${cy}\n\n${real ? "A real fight from Bark Arena players" : "An exhibition fight in Bark Arena"} — every fighter is a Pixel Scrappy NFT on the XRP Ledger.\nPlay free & get your fighter: ${SITE}?src=yt\n\n${ytTags}`},
+    tiktok: `${tt.hook} ${line(b, tt)} 🐾\n${ct}\nPlay free — link in bio\n${ttTags}`,
+    instagram: `${tt.hook}\n${line(b, tt)}.\n${ct}\nPlay free → link in bio 🐾\n.\n${igTags}`,
+    comment: `${cy} Play free → scrappyxrp.fun/barkarena 🐾`,
+    commentTT: ct,
+    tt: {hook: tt.hook, line: line(b, tt), story: b.kind},
   };
 }
 
