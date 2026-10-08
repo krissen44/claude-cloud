@@ -1,10 +1,10 @@
 # Next release — upload at the week roll (Monday 00:00 UTC)
 
 Changes collect here during the week and go live together when the new week starts.
-Last version confirmed live: **game v31 + website** (uploaded by the owner on Mon 5 Oct 2026, ~16:00 UTC, together
-with v30). The Shorts factory runs on GitHub Actions (first run 5 Oct 16:05 UTC: success; clips posted by the owner).
+Last version confirmed live: **game v31.2** (uploaded by the owner on 8 Oct 2026; includes the v31.1 ticket hotfix and
+its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on GitHub Actions, daily 05:10 UTC.
 
-## v31.2 — Shorts: separate YouTube and TikTok cuts (8 Oct)
+## v31.2 — LIVE since 8 Oct: Shorts with separate YouTube and TikTok cuts
 - After week 1 of Shorts: YouTube ~1,200 views per Short (9.3k in 3 days), TikTok mostly 0. Likely TikTok throttles
   crypto content and favours native sounds. Now every fight becomes **two videos**: the **YouTube cut** (full fight,
   chiptune, "Every dog is an NFT on the XRP Ledger · Mint your fighter" end card) and a **TikTok/Reels cut** (only the
@@ -19,7 +19,7 @@ with v30). The Shorts factory runs on GitHub Actions (first run 5 Oct 16:05 UTC:
   "An Uncommon just beat a Mythic 🤯 Would you have bet on Alpha's Scrappy #3821? 👇" · #underdog #plottwist …
 - Upload: game ZIP → Node.js app, restart (the factory on GitHub already uses the new version).
 
-## Hotfix v31.1 — ready (bug found by the owner on 5 Oct)
+## Hotfix v31.1 — LIVE since 8 Oct (bug found by the owner on 5 Oct)
 - **New players got only 5 ranked fights on day one** (should be 5 starting + the daily grant, and +1 per extra
   Scrappy). Two causes: since v26 a brand-new save was treated like a week start, which replaced the starting tickets;
   and the daily grant was counted before the wallet's dogs were loaded (a holder of 17 got 5 instead of 10). Fixed:
