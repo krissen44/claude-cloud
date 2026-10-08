@@ -4,6 +4,14 @@ Changes collect here during the week and go live together when the new week star
 Last version confirmed live: **game v31.2** (uploaded by the owner on 8 Oct 2026; includes the v31.1 ticket hotfix and
 its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on GitHub Actions, daily 05:10 UTC.
 
+## v31.3 — for Monday 12 Oct (not live yet)
+- **Kennel/arena/club dog cards: the "BOND n" label was unreadable** — `.pick span` (grey text) overrode the white text of
+  `.lvl`, so it showed as an empty dark-blue pill. One CSS line in `public/index.html`: `.pick .lvl{color:#fff}`.
+  Found while recording the tutorial. Upload: `public/index.html` (part of the game ZIP).
+- **How-to-play tutorial video** for YouTube (not part of the upload): `tools/test/tutorial.mjs` records the real website
+  and game on a mock server (`tools/test/tut-mock.mjs`) with chapter cards, step cards for wallet + mint, captions and a
+  chiptune bed → `bark-arena-tutorial.mp4` (1920×1080) + `chapters.txt`.
+
 ## v31.2 — LIVE since 8 Oct: Shorts with separate YouTube and TikTok cuts
 - After week 1 of Shorts: YouTube ~1,200 views per Short (9.3k in 3 days), TikTok mostly 0. Likely TikTok throttles
   crypto content and favours native sounds. Now every fight becomes **two videos**: the **YouTube cut** (full fight,

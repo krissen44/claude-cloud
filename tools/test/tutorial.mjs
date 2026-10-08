@@ -160,7 +160,7 @@ let tStart = 0;
 const marks = [];
 const chapter = async (n, title, sub, ms = 2900) => {
   marks.push({t: (Date.now() - tStart) / 1000, title: (n ? n + ". " : "") + title});
-  await hush(); await spot(null);
+  await hush(); await spot(null); await tut("curOff");
   await tut("card", `<div><div class="k pop">${n ? "CHAPTER " + n : "BARK ARENA"}</div><div class="t pop2">${title.toUpperCase()}</div>${sub ? `<div class="s pop3">${sub}</div>` : ""}</div>`);
   await wait(ms); await tut("card", ""); await wait(450);
 };
