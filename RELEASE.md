@@ -8,6 +8,11 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
 - **Kennel/arena/club dog cards: the "BOND n" label was unreadable** — `.pick span` (grey text) overrode the white text of
   `.lvl`, so it showed as an empty dark-blue pill. One CSS line in `public/index.html`: `.pick .lvl{color:#fff}`.
   Found while recording the tutorial. Upload: `public/index.html` (part of the game ZIP).
+- **Joey Wallet first, everywhere (owner's wish):** game wallet chooser now lists Joey app (⭐ Recommended), Joey
+  extension, then Xaman; sign-in/demo/prize texts name Joey first. Website: hero, OG description, "Get your fighter"
+  step 1 (links joeywallet.xyz), how-to step 2, FAQ; `/pixelscrappy/` banner. Tutorial video re-recorded with Joey first.
+  Upload: `public/index.html` (game ZIP), `barkarena/index.html` → `public_html/barkarena/`, `pixelscrappy/index.html`
+  → `public_html/pixelscrappy/`.
 - **How-to-play tutorial video** for YouTube (not part of the upload): `tools/test/tutorial.mjs` records the real website
   and game on a mock server (`tools/test/tut-mock.mjs`) with chapter cards, step cards for wallet + mint, captions and a
   chiptune bed → `bark-arena-tutorial.mp4` (1920×1080) + `chapters.txt`.

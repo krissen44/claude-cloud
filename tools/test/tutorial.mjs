@@ -212,7 +212,7 @@ await say("This guide takes you from <b>zero</b> to your first <b>arena win</b>.
 // --- 1 wallet
 await chapter(1, "Get a wallet", "A free XRPL wallet on your phone");
 await steps("Step 1 · your wallet", "Get a free XRPL wallet", [
-  {icon: "📱", h: "Download Xaman", t: "Free app for iPhone and Android. <b>Joey Wallet</b> works too — as an app or a browser extension."},
+  {icon: "🦘", h: "Download Joey Wallet", t: "Our pick: free app for iPhone and Android, or a browser extension. <b>Xaman</b> works too."},
   {icon: "🔐", h: "Create your account", t: "Write your secret words on paper. <b>Never share them</b> — nobody from Bark Arena will ever ask."},
   {icon: "💧", h: "Add a little XRP", t: "Buy or send XRP to your new address — enough for the mint and the small XRPL reserve."},
 ], "💡 Already have an XRPL wallet? Skip to the next chapter.", [4600, 5200, 5000, 3600]);
@@ -231,7 +231,7 @@ await spot(null);
 await steps("Step 2 · your fighter", "Mint on xrp.cafe", [
   {icon: `<img src="${DOGS("2723")}">`, h: "Open the mint", t: "Right on the Bark Arena page, or the <b>Pixel Scrappy</b> collection on <b>xrp.cafe</b>."},
   {icon: "🔗", h: "Connect & mint", t: "Connect your wallet and press <b>Mint</b>. You get a random dog from the collection."},
-  {icon: "✅", h: "Approve in Xaman", t: "Check and sign the request. Seconds later the NFT is <b>in your wallet</b>."},
+  {icon: "✅", h: "Approve in your wallet", t: "Check and sign the request in Joey. Seconds later the NFT is <b>in your wallet</b>."},
 ], "🛒 Prefer a certain look? Buy one on xrp.cafe instead — any Pixel Scrappy can fight.", [4600, 4600, 4800, 4400]);
 await tut("steps", "");
 await wait(300);
@@ -253,8 +253,8 @@ const tAudio = await p.evaluate(() => new Promise(res => {
 await say("Open the game and press <b>Connect wallet</b>.", 2600);
 await click("#connectLive");
 await spot("#app .card:has(#pickXaman)", 10);
-await say("Choose your wallet: <b>Xaman</b> (scan a QR code), the <b>Joey app</b> or the <b>Joey extension</b>.", 4800);
-await point("#pickXaman");
+await say("Choose your wallet. We recommend <b>Joey Wallet</b>: the <b>Joey app</b> (scan a QR code) or the <b>Joey extension</b>. Xaman works too.", 5400);
+await point("#pickJoeyM");
 await say("Signing in only proves the wallet is yours — <b>no transaction, no fee</b>, nothing leaves your wallet.", 5000);
 await spot(null); await tut("curOff");
 await p.evaluate(([t, a]) => { lsSet('ba_session', {token: t, account: a}); WALLET.login = null; walletSignedIn(t, a); }, [tok(ME), ME]);
@@ -451,7 +451,7 @@ await hush();
 await chapter(0, "Quick recap", "", 1);
 marks.pop();
 await steps("Recap", "From zero to the arena", [
-  {icon: "📱", h: "Wallet + mint", t: "Xaman or Joey, then mint a <b>Pixel Scrappy</b> on xrp.cafe."},
+  {icon: "🦘", h: "Wallet + mint", t: "Joey Wallet (or Xaman), then mint a <b>Pixel Scrappy</b> on xrp.cafe."},
   {icon: "🥊", h: "Fight every day", t: "5+ ranked fights, 3 arena tournaments, quests and your pack."},
   {icon: "🏆", h: "Climb the ladder", t: "Top 3 every week win a <b>Pixel Scrappy NFT</b>."},
 ], null, [2600, 2600, 3200]);

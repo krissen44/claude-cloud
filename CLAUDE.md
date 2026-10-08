@@ -31,8 +31,8 @@ hand over one combined package for the week start; don't tell the owner to uploa
 ## Bark Arena (the game)
 
 ### Architecture
-- **Wallets**: "Connect wallet" in the game opens a chooser: **Xaman** (QR / deeplink), **Joey app** (WalletConnect v2,
-  QR on desktop / `wc:` link on phones) or **Joey extension** (provider `window.joey`, npm `@joeywallet/wallet-sdk`,
+- **Wallets** (owner's wish: **Joey Wallet is named first and marked recommended everywhere** — game, website, videos): "Connect wallet" in the game opens a chooser: **Joey app** ⭐ Recommended (WalletConnect v2,
+  QR on desktop / `wc:` link on phones), **Joey extension** or **Xaman** (QR / deeplink) (provider `window.joey`, npm `@joeywallet/wallet-sdk`,
   `signIn` → CAIP-122). WalletConnect project ID (Reown, not secret, domain-allowlisted to game.scrappyxrp.fun):
   `CONFIG.WC_PROJECT_ID` in `public/index.html`. `public/wc.js` = esbuild bundle of `@walletconnect/sign-client` +
   `qrcode` (recipe in `tools/wc/`), loaded only on demand. Joey app has no WC sign-in method, so it signs
