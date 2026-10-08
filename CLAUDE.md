@@ -232,7 +232,22 @@ v19 cloud saves + `/admin` · v20 real arena rivals + player names · v21 arena 
 v23 server fight engine + Fight Club beta · v24 week close: results hash on the XRPL + treasury prizes · v25 lending · v26 no tickets into a new week · v27 animated backdrops + fight effects · v28 bites, signature-move effects, Mythic/Legendary entrances · v29 sounds for all of it ·
 v30 (after week-2 data: players won 76 %, top players 95 %) learning opponent AI scaled by bond, team wallets out of prizes/packs,
 in-game chat, open Club challenges, borrow requests, kennel bond ranking, name nudge, prizes pre-picked by rarity ·
-v31 fight replays, Bark Arena TV page, Shorts clips + daily factory on a VPS, website funnel (welcome, mint section, source tracking).
+v31 fight replays, Bark Arena TV page, Shorts clips + daily factory (GitHub Actions), website funnel (welcome, mint section, source tracking) ·
+v31.1 hotfix: new holders got only 5 tickets on day one → `SAVE.registerDogs` tops up + automatic day-one bonus (`bonusAuto`) ·
+v31.2 Shorts in two cuts (YouTube + TikTok/Reels without crypto words), real players' fights first, captions written from the fight ·
+v31.3 (package for Mon 12 Oct) Joey Wallet first + "⭐ Recommended" in game/website, "BOND n" label on dog cards readable again
+(`.pick span` had overridden `.lvl`'s white text), link page `/links/`.
+
+### Where things stand
+- **Live:** game v31.2 (uploaded 8 Oct), website v31 (5 Oct), Shorts factory daily on GitHub Actions.
+- **Next package:** `RELEASE.md` (top section = what goes up at the next Monday, with upload steps). `HANDOFF.md` = how
+  to run the test harness.
+- **Videos:** how-to-play tutorial (7:00, 1080p) recorded by `tools/test/tutorial.mjs` on `tools/test/tut-mock.mjs`
+  (real game + website on a mocked ledger, chapter cards, captions, chiptune) → `bark-arena-tutorial.mp4` +
+  `chapters.txt`. Re-record after UI changes: `CHROMIUM=… FONTS_DIR=<woff2 dir> node tools/test/tutorial.mjs <outdir> ffmpeg`.
+- **Socials:** YouTube `@Scrappyxrp` (Shorts + tutorial), TikTok `@scrappy_xrp` (bio: "Cute pixel dogs. Real fights. 🐾
+  New battle every day · Play free ⬇️", no crypto words), X `@scrappyxrp`, Discord. Bio links point at
+  `scrappyxrp.fun/links/?src=<tt|yt|x|dc>`.
 
 ### Testing locally
 Offline harness with mocked XRPL/IPFS/Xaman + Playwright lives in **`tools/test/`** (see `HANDOFF.md` for usage). ```bash
