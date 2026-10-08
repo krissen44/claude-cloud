@@ -276,7 +276,7 @@ Always syntax-check the inline game script after editing `public/index.html`.
 - **`website/links/`** — link page (linktree alternative) at `https://scrappyxrp.fun/links/`: website, Bark Arena, both
   xrp.cafe collections (`scrappy`, `pixel-scrappy`), $SCRAP (issuer `rGHtYnnigyuaHehWGfAdoEhkoirkGNdZzo`, currency hex
   `7363726170…` = "scrap") on FirstLedger + DexScreener + the SCRAP/XRP AMM pool, Discord, YouTube `@Scrappyxrp`,
-  TikTok `@scrappy_xrp`. `?src=` is passed on to the Bark Arena link.
+  TikTok `@scrappy_xrp`, X `@scrappyxrp`. Logo = the original (real) Scrappy, `links/scrappy.jpg`. `?src=` is passed on to the Bark Arena link.
 - The `/whitelist/` folder on Hostinger should be deleted (no longer used).
 
 ### Open questions for the owner
