@@ -22,7 +22,10 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
   offers carry a Borrow button (hidden while they already borrow one). Borrowed dogs don't add tickets, can't go into
   the Club or arena defence (unchanged). The “I'm looking for a dog” list stays for players without a Scrappy.
   Website FAQ updated. Tests: `market.mjs` (holder borrows, fights, kennel 4 own + 1 borrowed), `lend.mjs`.
-- Upload: `bark-arena-game-v32.1.zip` → Node app folder (replaces `public/index.html` and `worker.js`), restart the app.
+- Upload: Hostinger's Node.js deploy (“Neue Dateien hochladen”) needs the **full project ZIP** — a ZIP with only
+  changed files is refused (“Nicht unterstütztes Framework oder ungültige Projektstruktur”). Use
+  `bark-arena-game-v32.1-komplett.zip` (package.json, server.js, worker.js, fight-engine.js, public/, node_modules/).
+  `-nur-dateien.zip` is only for the file manager.
   `scrappyxrp-website-v32.1.zip` → `public_html/` (replaces `barkarena/index.html`).
   (`bark-arena-game-v32.zip` was rebuilt with it, for a full redeploy.)
 
