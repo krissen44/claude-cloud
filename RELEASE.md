@@ -16,7 +16,14 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
 - **Lending market visible to holders:** the market card (with “Borrow”) is only for players without a Pixel Scrappy,
   so a holder (e.g. the owner testing with a second wallet) saw nothing and thought the listings were gone. The lend
   card now shows “On the market now” — every open offer, view only. Test: `tools/test/market.mjs`.
-- Upload: `bark-arena-game-v32.1.zip` → Node app folder (replaces `public/index.html`), restart the app.
+- **Holders can borrow too** (owner: “shouldn't players who have Scrappys be able to borrow as well?”): the
+  `borrower_holds` check is gone from `/lend` (lend by name) and `/lend/take` (market); still max **1 borrowed dog**
+  per player (`borrower_busy`), max 3 lent out per owner. A holder's lend card is now “🤝 LEND & BORROW”: the market
+  offers carry a Borrow button (hidden while they already borrow one). Borrowed dogs don't add tickets, can't go into
+  the Club or arena defence (unchanged). The “I'm looking for a dog” list stays for players without a Scrappy.
+  Website FAQ updated. Tests: `market.mjs` (holder borrows, fights, kennel 4 own + 1 borrowed), `lend.mjs`.
+- Upload: `bark-arena-game-v32.1.zip` → Node app folder (replaces `public/index.html` and `worker.js`), restart the app.
+  `scrappyxrp-website-v32.1.zip` → `public_html/` (replaces `barkarena/index.html`).
   (`bark-arena-game-v32.zip` was rebuilt with it, for a full redeploy.)
 
 ## v32 — LIVE since 9 Oct (owner uploaded early; was planned for Monday 19 Oct) (built 9 Oct, owner's go: "the rest sounds good, build it" — everything except $SCRAP)

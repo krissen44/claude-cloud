@@ -1134,8 +1134,7 @@ async function marketTake(env, account, b) {
   if (!x || !((hold[x.owner] || {}).dogs || []).some(d => d.id === x.dog.id)) return json({error: "no_such_listing"}, 404);
   if (x.owner === account) return json({error: "your_own"}, 409);
   if (!names[account]) return json({error: "need_name"}, 409);
-  if (((hold[account] || {}).tokens || []).length) return json({error: "borrower_holds"}, 409);
-  if (loans.some(l => l.borrower === account)) return json({error: "borrower_busy"}, 409);
+  if (loans.some(l => l.borrower === account)) return json({error: "borrower_busy"}, 409);   // holders may borrow too (v32.1), 1 at a time
   if (loans.some(l => l.dog.id === x.dog.id)) return json({error: "dog_lent"}, 409);
   if (loans.filter(l => l.owner === x.owner).length >= LEND_MAX_OUT) return json({error: "owner_full"}, 429);
   const loan = {id: rid(), owner: x.owner, borrower: account, dog: x.dog, start: Date.now(), end: Date.now() + x.days * 864e5, xp: {}, market: x.id};
@@ -1435,7 +1434,6 @@ async function lendStart(env, account, b) {
   const names = await st.profiles(), want = String(b.to || "").trim().toLowerCase();
   const to = Object.keys(names).find(a => names[a].name.toLowerCase() === want);
   if (!to || to === account) return json({error: "no_such_player"}, 404);
-  if (((hold[to] || {}).tokens || []).length) return json({error: "borrower_holds"}, 409);
   if (loans.some(l => l.borrower === to)) return json({error: "borrower_busy"}, 409);
   if (loans.some(l => l.dog.id === dog.id)) return json({error: "dog_lent"}, 409);
   if (loans.filter(l => l.owner === account).length >= LEND_MAX_OUT) return json({error: "too_many_loans"}, 429);

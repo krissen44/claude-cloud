@@ -31,8 +31,9 @@ await call(OWNER2, "/me/kennel");
 r = await call(OWNER2, "/lend");
 ok(r.market.length === 1 && r.market[0].ownerName === "Barkley" && !r.market[0].owner, "everyone sees the market (no wallets in it)");
 ok(r.market[0].rarity && r.market[0].lvl >= 1, "listing shows rarity " + r.market[0].rarity + " and bond " + r.market[0].lvl);
-r = await call(OWNER2, "/lend/take", {id: r.market[0].id});
-ok(r.error === "need_name" || r.error === "borrower_holds", "a holder can't borrow (" + r.error + ")");
+const mid = r.market[0].id;
+r = await call(OWNER2, "/lend/take", {id: mid});
+ok(r.error === "need_name", "borrowing needs a name");
 // the browser: a new player without a dog borrows from the market
 const br = await chromium.launch({executablePath: process.env.CHROMIUM || undefined});
 const p = await (await br.newContext({viewport: {width: 1100, height: 900}})).newPage();
@@ -51,9 +52,24 @@ await h.route(u => !u.href.startsWith("http://127.0.0.1"), r => r.abort());
 await h.goto(U + "/"); await h.evaluate(([t, a]) => localStorage.setItem("ba_session", JSON.stringify({token: t, account: a})), [tok(OWNER2), OWNER2]);
 await h.goto(U + "/"); await h.waitForFunction(() => typeof LEND !== "undefined" && LEND.market && LEND.market.length && !WALLET.loading, null, {timeout: 30000});
 await h.waitForTimeout(800);
-ok(await h.locator(".mkview > div").count() === 1 && await h.locator("[data-take]").count() === 0, "a holder sees the offer (view only, no borrow button)");
+ok(await h.locator(".mkview > div").count() === 1 && await h.locator(".mkview [data-take]").count() === 1, "a holder sees the offer with a Borrow button");
 await h.locator(".mkview").screenshot({path: S + "/shots/market-holder.png"});
 await h.close();
+// a holder borrows (then gives it back so the newbie can take it below)
+await call(OWNER2, "/profile", {name: "Holdy"});
+r = await call(OWNER2, "/lend/take", {id: mid});
+ok(r.ok && r.in.some(l => !l.starter && l.dog.id === k[0].nft_id), "a holder borrows a dog from the market");
+ok((await call(OWNER2, "/fight/start", {kind: "ranked", dog: k[0].nft_id, opp: {token: 1234}, lvl: 1, oppLvl: 1})).fid, "the holder fights with the borrowed dog");
+{ const h2 = await (await br.newContext({viewport: {width: 1100, height: 900}})).newPage();
+  await h2.route(u => !u.href.startsWith("http://127.0.0.1"), r => r.abort());
+  await h2.goto(U + "/"); await h2.evaluate(([t, a]) => localStorage.setItem("ba_session", JSON.stringify({token: t, account: a})), [tok(OWNER2), OWNER2]);
+  await h2.goto(U + "/"); await h2.waitForFunction(() => (OWNED || []).some(f => f.borrowed && !f.borrowed.starter), null, {timeout: 30000});
+  const hv = await h2.evaluate(() => ({own: OWNED.filter(f => !f.borrowed).length, tix: SAVE.data.tickets}));
+  ok(hv.own === 4 && await h2.locator("[data-lendend]").count() === 1 && await h2.locator(".mkview [data-take]").count() === 0, "holder's kennel: 4 own + the borrowed dog, Give back, no more Borrow buttons (tickets " + hv.tix + ")");
+  await h2.screenshot({path: S + "/shots/market-holder-borrowed.png", fullPage: true}); await h2.close(); }
+const k2 = (await call(OWNER2, "/me/kennel")).nfts;
+ok((await call(OWNER, "/lend", {dogId: k[1].nft_id, to: "Holdy", days: 3})).error === "borrower_busy", "still one borrowed dog at a time");
+await call(OWNER2, "/lend/end", {id: r.in.find(l => !l.starter).id});
 await p.click("[data-take]");
 await p.waitForFunction(() => (OWNED || []).some(f => f.borrowed && !f.borrowed.starter), null, {timeout: 15000});
 ok(true, "borrowed dog joined the kennel");

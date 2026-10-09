@@ -1612,12 +1612,12 @@ const LEND_ERR = {no_such_player:'No player with that name.', borrower_holds:'Th
   need_name:'Set a player name first (✏️ above).', already_listed:'That Scrappy is already on the market.', too_many_listings:'You can list up to 3 Scrappys.',
   no_such_listing:'That offer is gone — someone was faster, or the owner took it back.', owner_full:'Its owner has 3 dogs out already — try another one.',
   your_own:"That's your own listing."};
-/* The lending market: every dog holders offer, for players without a Pixel Scrappy — borrow with one tap. */
+/* The lending market: every dog holders offer — anyone (holder or not) borrows one with a tap, 1 at a time. */
 function marketCard(){
   const list = LEND.market || [];
   const img = t => CONFIG.WORKER_URL.replace(/\/$/, '') + '/public/dogimg?t=' + t;
   return `<div class="card"><h3 class="h3">🏪 LENDING MARKET</h3>
-    <p class="mini" style="margin:0 0 10px">Holders offer these Scrappys to players without one. Borrow one with a tap: it joins your kennel for the days shown, you fight ranked and arena with it, its bond grows, and its owner gets a share of your XP. The NFT never leaves their wallet.</p>
+    <p class="mini" style="margin:0 0 10px">Holders offer these Scrappys to other players. Borrow one with a tap: it joins your kennel for the days shown, you fight ranked and arena with it, its bond grows, and its owner gets a share of your XP. The NFT never leaves their wallet.</p>
     ${!WALLET.name ? `<p class="mini" style="margin:0 0 8px"><b>Set a player name first</b> (✏️ above) — owners see who borrows their dog.</p>` : ''}
     ${list.length ? `<div class="mkt">${list.map(x => `<div><img src="${img(x.dog.t)}" alt="" loading="lazy">
         <b>#${x.dog.t}</b> <span class="lvl">BOND ${x.lvl}</span>
@@ -1654,8 +1654,9 @@ function lendCard(){
       <div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap;margin-top:6px">${LEND.seekers.map(x =>
         `<button class="ghost sm" data-seekto="${esc(x.name)}" ${canLend ? '' : 'disabled'}>${esc(x.name)}</button>`).join('')}</div>
       <p class="mini" style="margin:6px 0 0">${canLend ? 'Tap a name to fill it in below.' : 'You have no free Scrappy to lend right now.'}</p></div>` : '';
-  return note + `<div class="card"><h3 class="h3">🤝 LEND A SCRAPPY</h3>
-    <p class="mini" style="margin:0 0 8px">Let a player without a Pixel Scrappy fight with one of yours. The NFT never leaves your wallet. Its bond XP stays with the dog, and you get <b>25 %</b> of the trainer XP they earn with it — plus a share if they win a weekly prize with it.</p>
+  const busy = !!inn;                                  // holders may borrow one dog too (v32.1)
+  return note + `<div class="card"><h3 class="h3">🤝 LEND &amp; BORROW</h3>
+    <p class="mini" style="margin:0 0 8px">Let another player fight with one of yours. The NFT never leaves your wallet. Its bond XP stays with the dog, and you get <b>25 %</b> of the trainer XP they earn with it — plus a share if they win a weekly prize with it.</p>
     ${out}${seek}
     ${canLend ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">
       <select id="lendDog" style="padding:8px 12px">${free.map(f => `<option value="${esc(f.id)}">${esc(f.name)} · Bond ${SAVE.dog(f.id).lvl}</option>`).join('')}</select>
@@ -1665,7 +1666,7 @@ function lendCard(){
     ${LEND.err ? `<p class="mini" style="margin:8px 0 0"><b>${esc(LEND.err)}</b></p>` : ''}
     ${inn}
     <div style="margin-top:14px;border-top:2px dashed var(--panelB);padding-top:12px">
-      <div class="mini"><b>🏪 Lending market</b> — offer a dog to everyone without a Scrappy; the first to tap “Borrow” gets it for the days you set. It stays listed: after a loan it's back on the market.</div>
+      <div class="mini"><b>🏪 Lending market</b> — offer a dog to every player; the first to tap “Borrow” gets it for the days you set. It stays listed: after a loan it's back on the market.</div>
       ${(LEND.listings || []).map(x => `<div class="wal" style="margin-top:8px"><div><b>Pixel Scrappy #${x.dog.t}</b> <span class="lvl">BOND ${x.lvl}</span>
           <div class="mini">${x.days} day${x.days === 1 ? '' : 's'}${x.note ? ' · “' + esc(x.note) + '”' : ''} · ${x.lent ? `🤝 lent to <b>${esc(x.lent.to)}</b> until ${until(x.lent.end)}` : '🟢 on offer'}</div></div>
         <button class="ghost sm" data-unlist="${esc(x.id)}">Remove</button></div>`).join('')}
@@ -1675,11 +1676,13 @@ function lendCard(){
         <select id="mkDays" style="padding:8px 12px"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select>
         <input id="mkNote" type="text" maxlength="80" placeholder="Note (optional), e.g. great guard" style="flex:1;min-width:140px;padding:9px 14px">
         <button id="mkList">🏪 List it</button></div>` : ''; })()}
-      ${(LEND.market || []).length ? `<div class="mini" style="margin-top:12px"><b>On the market now</b> (${LEND.market.length}) — players without a Pixel Scrappy see these with a “Borrow” button:</div>
+      ${(LEND.market || []).length ? `<div class="mini" style="margin-top:12px"><b>On the market now</b> (${LEND.market.length}) — ${busy ? 'you are borrowing a dog already; give it back to borrow another one.' : 'borrow one with a tap (1 at a time). It joins your kennel for ranked and arena fights; its owner gets 25 % of your trainer XP with it.'}</div>
         <div class="mkt mkview">${LEND.market.map(x => `<div><img src="${CONFIG.WORKER_URL.replace(/\/$/, '')}/public/dogimg?t=${x.dog.t}" alt="" loading="lazy">
           <b>#${x.dog.t}</b> <span class="lvl">BOND ${x.lvl}</span>
           <small>${esc(x.rarity || '')}${x.rarity ? ' · ' : ''}${x.days} day${x.days === 1 ? '' : 's'} · from ${esc(x.ownerName)}${x.team ? ' <span class="tag">TEAM</span>' : ''}</small>
-          ${x.note ? `<small><i>“${esc(x.note)}”</i></small>` : ''}</div>`).join('')}</div>`
+          ${x.note ? `<small><i>“${esc(x.note)}”</i></small>` : ''}
+          ${busy ? '' : `<button class="sm" data-take="${esc(x.id)}" ${WALLET.name ? '' : 'disabled'}>🤝 Borrow</button>`}</div>`).join('')}</div>
+        ${!busy && !WALLET.name ? `<p class="mini" style="margin:6px 0 0"><b>Set a player name first</b> (✏️ above) to borrow.</p>` : ''}`
         : `<div class="mini" style="margin-top:12px"><i>No other dogs on the market right now.</i></div>`}
     </div></div>`;
 }

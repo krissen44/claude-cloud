@@ -166,8 +166,8 @@ hand over one combined package for the week start; don't tell the owner to uploa
   (wins+losses) of the winning pack who isn't already top 3. Winners see a card in the kennel (`PRIZE`, `prizeCards`,
   `prizeClaim`) → Xaman NFTokenAcceptOffer, or accept in any wallet (claim then detects ownership). The website shows
   prizes + tx + hash under "Last week — final". No key on the server — every ledger write is a Xaman signature.
-- **Lending** (Season 1): a holder lends a dog (by player name, 1–14 days, max 3 out) to a player who holds **no**
-  Pixel Scrappy (max 1 borrowed). NFT never moves; `db.loans`. Ends early by either side, or when the owner no longer
+- **Lending** (Season 1): a holder lends a dog (by player name, 1–14 days, max 3 out) to any other player — since
+  v32.1 holders may borrow too (max 1 borrowed per player). NFT never moves; `db.loans`. Ends early by either side, or when the owner no longer
   holds the dog. Borrower's kennel shows it (`f.borrowed`, bond level from the owner's cloud save via `SAVE.setBond`);
   `SAVE.award` → `lendGain` → `/lend/report`: the bond XP goes to the dog, **25 %** of the borrower's trainer XP to the
   owner (cap 150/day), queued in `db.lendq`, collected on the owner's next kennel load (`loadLending`). Borrowed dogs
@@ -244,7 +244,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 - **Lending market (v32)**: blob `lendmarket` {id: {id, owner, dog, days, note, at}}, max 3 per owner (`MARKET_MAX`);
   `marketOf` drops sold dogs and hides lent ones (listing stays, back after the loan); `marketTake` = a normal loan
   (`market: <listing id>`). Client `marketCard` (non-holders without a borrowed dog, also over a starter), listing row
-  in `lendCard` + view-only “On the market now” list for holders (v32.1, `.mkview`), wiring `data-take` / `data-unlist` / `#mkList`. Images via `/public/dogimg?t=`.
+  in `lendCard` + “On the market now” list with Borrow buttons for holders (v32.1, `.mkview`, hidden while borrowing), wiring `data-take` / `data-unlist` / `#mkList`. Images via `/public/dogimg?t=`.
 - **Starter dog (v32)**: `starterOf(env, a, create)` — no own tokens → a treasury piece (`treasuryList`, issuer's
   non-Legendaries, shared by hash) or a collection token, 7 days, once (blob `starters`); shown as a borrowed dog
   (`lendInfo.in` with `starter: true`, `ownerName` "the Scrappy team"); `buildResults` marks `starter` and skips them

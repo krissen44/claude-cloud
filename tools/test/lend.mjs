@@ -30,9 +30,9 @@ async function player(acct){
 }
 const pa = await player(A);
 await pa.waitForSelector("#lendGo");
-await pa.fill("#lendTo", "hodler"); await pa.click("#lendGo"); await pa.waitForTimeout(700);
-console.log("lend to a holder:", (await pa.locator(".card:has(#lendGo)").innerText()).split("\n").filter(l => /hold/.test(l)).join(" | "));
 await pa.fill("#lendTo", "newbie"); await pa.click("#lendGo"); await pa.waitForTimeout(700);
+await pa.fill("#lendTo", "hodler"); await pa.click("#lendGo"); await pa.waitForTimeout(700);
+console.log("lend to a holder (allowed since v32.1):", (await call(A, "/lend")).out.map(l => l.borrowerName).join(", "));
 console.log("A lend card:", (await pa.locator(".card:has([data-lendend])").innerText()).replace(/\s+/g, " ").slice(0, 330));
 console.log("same dog again (API):", (await call(A, "/lend", {dogId: "N2931", to: "Cub"})).error);
 const pb = await player(B);
