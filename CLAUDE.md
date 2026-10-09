@@ -200,7 +200,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
   not in use — the owner chose Shorts.
 - **Shorts clips `/clip`** (`clipBoot`, `clipDry`, `clipDrama`, `clipHook`, `CLIP`): one fight in portrait 450×800 CSS px
   (recorded at 720×1280, encoded 1080×1920), hook line on top (from the fight: upset, comeback, Legendary, Club, final,
-  big hit, KO), end card "Mint your fighter · scrappyxrp.fun/barkarena · link in bio". `?id=<replay>` or exhibitions
+  big hit, KO), end card "Mint your fighter · scrappyxrp.fun/barkarena · link in bio". Opened by a person (Discord highlight link) it shows a "▶ Watch the fight" button first and "Watch again" / "Play Bark Arena" on the end card; the recorder (`navigator.webdriver`) calls `CLIP.go()` and sees neither (v32.1). `?id=<replay>` or exhibitions
   (best of 40 drawn ghost fights by `clipDrama`, +4 for an underdog win; 75 % star vs small dog). `WAIT_K = .8` speeds it up.
   Apps' UI zones (top 8 %, bottom 20 %, top-right icons → hook padded right) kept free. **`&v=tt` = TikTok/Reels cut**:
   only the last 4 rounds (earlier ones resolved off screen), `WAIT_K = .7`, no crypto words or wallet tags on screen,
@@ -278,7 +278,7 @@ v31.3 (package for Mon 12 Oct) Joey Wallet first + "⭐ Recommended" in game/web
 (`.pick span` had overridden `.lvl`'s white text), link page `/links/`.
 
 ### Where things stand
-- **Live:** game **v32** (uploaded early by the owner on 9 Oct, incl. v31.3 + lending market + Discord channels); the stats
+- **Live:** game **v32** + v32.1 clip-link hotfix once uploaded (uploaded early by the owner on 9 Oct, incl. v31.3 + lending market + Discord channels); the stats
   cap (`FAIR_SINCE`) only starts with the week of 2026-10-19, the referee already books verified fights. Shorts factory daily on GitHub Actions.
 - **Next package:** `RELEASE.md` (top section = what goes up at the next Monday, with upload steps). `HANDOFF.md` = how
   to run the test harness.

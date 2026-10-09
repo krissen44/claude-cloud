@@ -4,6 +4,15 @@ Changes collect here during the week and go live together when the new week star
 Last version confirmed live: **game v31.2** (uploaded by the owner on 8 Oct 2026; includes the v31.1 ticket hotfix and
 its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on GitHub Actions, daily 05:10 UTC.
 
+## v32.1 hotfix — upload right away (only `public/index.html`), fixes a live link
+- **Discord "▶️ Watch the fight" link (`/clip?id=…`) showed both dogs but never started.** The /clip page was built for
+  the Shorts recorder, which starts playback itself (`CLIP.go()`). Now a person who opens the link gets a big
+  "▶ Watch the fight" button (it also unlocks the sound); the end card adds "↻ Watch again" and "🐾 Play Bark Arena"
+  (`scrappyxrp.fun/barkarena/?src=clip`). The recorder (headless, `navigator.webdriver`) sees neither, so the Shorts
+  look the same. Test: `tools/test/clipview.mjs` (seeded v32 replay plays to the end; recorder path unchanged).
+- Upload: `bark-arena-game-v32.1-clip.zip` → Node app folder (replaces `public/index.html`), restart the app.
+  (`bark-arena-game-v32.zip` was rebuilt with it, for a full redeploy.)
+
 ## v32 — LIVE since 9 Oct (owner uploaded early; was planned for Monday 19 Oct) (built 9 Oct, owner's go: "the rest sounds good, build it" — everything except $SCRAP)
 - **Fair play — the server referees ranked and arena fights.** `/api/fight/start` rebuilds both dogs on the server
   (ledger + metadata + the owners' cloud saves, bond ≤ save + 1), `/api/fight/round` takes both moves and only then
