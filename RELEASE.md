@@ -10,7 +10,10 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
   "▶ Watch the fight" button (it also unlocks the sound); the end card adds "↻ Watch again" and "🐾 Play Bark Arena"
   (`scrappyxrp.fun/barkarena/?src=clip`). The recorder (headless, `navigator.webdriver`) sees neither, so the Shorts
   look the same. Test: `tools/test/clipview.mjs` (seeded v32 replay plays to the end; recorder path unchanged).
-- Upload: `bark-arena-game-v32.1-clip.zip` → Node app folder (replaces `public/index.html`), restart the app.
+- **Ladder tags fixed:** the TEAM and 🏅 achievement tags in the ladder rows were squeezed and overlapping —
+  `.lb span:nth-child(…)` (meant for the rank and name columns) also hit the tags inside the name. Now `.lb>span`,
+  rows centred, tags sized for the row.
+- Upload: `bark-arena-game-v32.1.zip` → Node app folder (replaces `public/index.html`), restart the app.
   (`bark-arena-game-v32.zip` was rebuilt with it, for a full redeploy.)
 
 ## v32 — LIVE since 9 Oct (owner uploaded early; was planned for Monday 19 Oct) (built 9 Oct, owner's go: "the rest sounds good, build it" — everything except $SCRAP)
