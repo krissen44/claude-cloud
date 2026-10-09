@@ -512,7 +512,7 @@ async function arenaRivals(env, account) {
     const r = reg[owner] && reg[owner].day === day ? reg[owner].ids : [];
     for (const d of h.dogs || []) {
       const g = (save.dogs || {})[d.id] || {};
-      const x = {token: d.t, id: d.id, uri: d.uri, lvl: Math.max(1, Math.min(10, g.lvl | 0 || 1)), owner: displayName(names, owner), squad: r.includes(d.id)};
+      const x = {token: d.t, id: d.id, uri: d.uri, lvl: Math.max(1, Math.min(10, g.lvl | 0 || 1)), path: cleanPath(g.path), owner: displayName(names, owner), squad: r.includes(d.id)};
       (x.squad ? squads : others).push(x);
     }
   }
@@ -568,7 +568,7 @@ async function clubFighter(env, account, dogId) {
   const def = env.ENGINE.defFromMeta({nft_id: dog.id}, meta);
   const save = (await storeOf(env).saveGet(account) || {}).data || {};
   const lvl = Math.max(1, Math.min(10, ((save.dogs || {})[dog.id] || {}).lvl | 0 || 1));
-  return {acct: account, name: displayName(await storeOf(env).profiles(), account), def, lvl, img: meta.image, uri: dog.uri};
+  return {acct: account, name: displayName(await storeOf(env).profiles(), account), def, lvl, path: cleanPath(((save.dogs || {})[dog.id] || {}).path), img: meta.image, uri: dog.uri};
 }
 function clubTick(env, d) {
   const now = Date.now();
@@ -595,14 +595,14 @@ function clubFinish(env, d, winner, why) {
   d.status = "done"; d.ended = Date.now(); d.result = {winner, why};
   const st = storeOf(env);
   if (d.rounds.length >= 3) replayKeep(env, {kind: "club", by: d.a.acct, vs: d.b.acct,
-    P: {def: slimDef(d.a.def), lvl: d.a.lvl, who: d.a.name}, E: {def: slimDef(d.b.def), lvl: d.b.lvl, who: d.b.name},
+    P: {def: slimDef(d.a.def), lvl: d.a.lvl, who: d.a.name, path: d.a.path || null}, E: {def: slimDef(d.b.def), lvl: d.b.lvl, who: d.b.name, path: d.b.path || null},
     rounds: d.rounds.map(r => ({a: r.a, b: r.b, seed: r.seed})), result: winner === "a" ? "W" : winner === "b" ? "L" : "D"}).catch(() => {});
   if (winner) { st.clubAdd(d[winner].acct, "w"); st.clubAdd(d[winner === "a" ? "b" : "a"].acct, "l"); }
   else { st.clubAdd(d.a.acct, "d"); st.clubAdd(d.b.acct, "d"); }
 }
 function clubView(d, me) {
   const side = d.a.acct === me ? "a" : d.b && d.b.acct === me ? "b" : null;
-  const pub = f => f && {name: f.name, def: f.def, lvl: f.lvl, img: f.img, uri: f.uri};
+  const pub = f => f && {name: f.name, def: f.def, lvl: f.lvl, path: f.path || null, img: f.img, uri: f.uri};
   return {id: d.id, status: d.status, side, a: pub(d.a), b: pub(d.b), invite: d.inviteName || null, open: !!d.open,
     turn: d.st ? d.st.turn : 0, left: d.status === "active" ? Math.max(0, d.deadline - Date.now()) : 0,
     moved: {you: !!(side && d.moves[side]), them: !!(side && d.moves[side === "a" ? "b" : "a"])},
@@ -634,7 +634,14 @@ async function clubRoute(env, account, p, req, url) {
     const d = {id: rid(), created: Date.now(), status: "open", a: me, b: null, inviteAcct, inviteName, open,
                st: null, moves: {a: null, b: null}, misses: {a: 0, b: 0}, rounds: [], result: null, deadline: 0};
     DUELS.set(d.id, d);
-    if (open) await chatSystem(env, `🥊 ${me.name} posted an open Fight Club challenge with ${me.def.name} (Bond ${me.lvl}) — accept it in the Club tab.`);
+    if (open) {
+      await chatSystem(env, `🥊 ${me.name} posted an open Fight Club challenge with ${me.def.name} (Bond ${me.lvl}) — accept it in the Club tab.`);
+      const k = "dc:club:" + account;
+      if (!env.KV || !(await env.KV.get(k))) {
+        if (env.KV) await env.KV.put(k, "1", {expirationTtl: 1800});
+        discord(env, `🥊 **${me.name}** wants a fight! Open Fight Club challenge with ${me.def.name} (Bond ${me.lvl}) — first one to accept takes it: ${GAME_URL(env)}`);
+      }
+    }
     return json({duel: clubView(d, account)});
   }
   const d = DUELS.get(String(body.id || url.searchParams.get("id") || ""));
@@ -646,7 +653,7 @@ async function clubRoute(env, account, p, req, url) {
     if (d.inviteAcct && d.inviteAcct !== account) return json({error: "not_invited"}, 403);
     const me = await clubFighter(env, account, body.dogId);
     if (!me) return json({error: "not_your_dog"}, 400);
-    d.b = me; d.status = "active"; d.st = env.ENGINE.start(d.a.def, d.a.lvl, d.b.def, d.b.lvl); d.deadline = Date.now() + CLUB_TURN_MS;
+    d.b = me; d.status = "active"; d.st = env.ENGINE.start(d.a.def, d.a.lvl, d.b.def, d.b.lvl, {pathA: d.a.path, pathB: d.b.path}); d.deadline = Date.now() + CLUB_TURN_MS;
     return json({duel: clubView(d, account)});
   }
   if (p === "/club/cancel") {
@@ -671,6 +678,371 @@ async function clubRoute(env, account, p, req, url) {
   return json({error: "not_found"}, 404);
 }
 
+/* ------------------------------------------------------------------ fair play: the server referees */
+/* Ranked fights and live arena fights are refereed by the server, like the Fight Club: the page opens a fight
+   (/fight/start — the server rebuilds both dogs itself from the ledger, the metadata and the owners' saves),
+   then sends both moves of each round (/fight/round) and gets that round's dice seed back, so nobody can pick
+   their dice. The server runs the same engine, so it knows every result; arena ghost tournaments run on the
+   server altogether (/fight/ghost). The week's verified XP, wins and streak are kept per player, and the stats
+   a page posts can never exceed them (plus a small tolerance): a faked ladder row no longer sticks.
+   Node only (fights live in memory, like the Club); FAIRPLAY=off switches the cap off. */
+const FIGHTS = new Map(), FIGHT_TTL = 2 * 3600e3, FAIR_TOL = {xp: 60, wins: 2, streak: 1};
+const RARITY_LIST = ["Common", "Uncommon", "Rare", "Epic", "Mythic", "Legendary"];
+const ARENA_XP = [0, 35, 60, 100];
+const BEATS = {bite: "taunt", taunt: "guard", guard: "bite"};            // a beats BEATS[a]
+const cleanPath = p => p && typeof p === "object" ? {4: p[4] === "b" ? "b" : "a", 8: p[8] === "b" ? "b" : "a"} : null;
+const fairOn = env => String(env.FAIRPLAY || "").toLowerCase() !== "off" && !!env.ENGINE;
+/* The dogs a player may fight with: their own, one borrowed from a holder, or their starter dog. */
+async function fighterDog(env, account, dogId) {
+  const st = storeOf(env), id = String(dogId || "");
+  const own = (((await st.allHoldings())[account] || {}).dogs || []).find(d => d.id === id);
+  if (own) return {id, uri: own.uri};
+  const loan = (await activeLoans(env)).find(l => l.borrower === account && l.dog.id === id);
+  if (loan) return {id, uri: loan.dog.uri, owner: loan.owner};
+  const sd = await starterOf(env, account);
+  if (sd && sd.dog.id === id) return {id, uri: sd.dog.uri, starter: true};
+  return null;
+}
+const legendaryDef = n => ({id: "L" + n, token: n, name: "", rarity: "Legendary", set: null, setMatch: 0, legendary: String(n), traits: [], unknown: [], bg: ""});
+async function defOfUri(env, id, uri) { return env.ENGINE.defFromMeta({nft_id: id}, await metaFor(env, uri)); }
+/* The rival, rebuilt on the server: another player's dog (arena, their real bond), a Legendary or a collection dog. */
+async function rivalOf(env, account, o, lvl, kind, stage) {
+  o = o || {};
+  const st = storeOf(env), near = x => Math.max(1, Math.min(10, Math.max(lvl - 1, Math.min(lvl + 1, x | 0 || lvl))));
+  if (o.rid) {
+    for (const [owner, h] of Object.entries(await st.allHoldings())) {
+      if (owner === account) continue;
+      const d = (h.dogs || []).find(x => x.id === String(o.rid));
+      if (!d) continue;
+      const g = (((await st.saveGet(owner)) || {}).data || {}).dogs || {}, mine = g[d.id] || {};
+      return {def: await defOfUri(env, d.id, d.uri), lvl: Math.max(1, Math.min(10, mine.lvl | 0 || 1)), path: cleanPath(mine.path), owner};
+    }
+    return null;
+  }
+  // a wild rival: ranked fights are matched ±1 bond; wild arena dogs grow with the round
+  const wildLvl = x => kind === "arena" ? Math.max(1, Math.min(10, x | 0 || 1, 3 + (stage | 0))) : near(x);
+  if (o.legendary) {
+    const n = o.legendary | 0;
+    return n >= 1 && n <= 20 ? {def: legendaryDef(n), lvl: wildLvl(o.lvl), path: null} : null;
+  }
+  const t = o.token | 0;
+  if (!(t >= 1 && t <= 5000)) return null;
+  if (t <= 20) return {def: legendaryDef(t), lvl: wildLvl(o.lvl), path: null};
+  return {def: await defOfUri(env, "opp" + t, (env.COLLECTION_BASE || COLLECTION_BASE) + t + ".json"), lvl: wildLvl(o.lvl), path: null};
+}
+/* The verified week of every player: blob fair:<week> = {account: {xp, wins, losses, cur, streak, fights, rounds, throws, …}}. */
+async function fairLoad(env, wk) { return (await storeOf(env).blobGet("fair:" + wk)) || {}; }
+async function fairSave(env, wk, f) { await storeOf(env).blobSet("fair:" + wk, f); }
+async function fairRow(env, f, account, wk) {
+  if (f[account]) return f[account];
+  // the first verified fight of the week: whatever the ladder already holds (e.g. fights before this update) is kept
+  const row = (await storeOf(env).weekRows(wk)).find(r => r.account === account) || {};
+  return f[account] = {xp: row.xp | 0, wins: row.wins | 0, losses: row.losses | 0, cur: 0, streak: row.streak | 0,
+    base: {xp: row.xp | 0, wins: row.wins | 0}, fights: 0, rounds: 0, throws: 0, desync: 0, started: 0, ghosts: 0, runs: {}, at: Date.now()};
+}
+function fightSweep() {
+  const now = Date.now();
+  for (const [k, f] of FIGHTS) if (now - f.at > FIGHT_TTL) FIGHTS.delete(k);
+}
+async function fightStart(env, account, b) {
+  if (!fairOn(env)) return json({error: "off"}, 503);
+  fightSweep();
+  const kind = b.kind === "arena" ? "arena" : "ranked";
+  const dog = await fighterDog(env, account, b.dog);
+  if (!dog) return json({error: "not_your_dog"}, 400);
+  const save = (((await storeOf(env).saveGet(account)) || {}).data || {}).dogs || {};
+  // the page's bond level, but never more than one above what its cloud save last said
+  const saved = Math.max(1, (save[dog.id] || {}).lvl | 0 || 1), lvl = Math.max(1, Math.min(10, b.lvl | 0 || 1, saved + 1));
+  const opp = await rivalOf(env, account, {...(b.opp || {}), lvl: b.oppLvl}, lvl, kind, b.stage).catch(() => null);
+  if (!opp) return json({error: "bad_rival"}, 400);
+  let def;
+  try { def = await defOfUri(env, dog.id, dog.uri); } catch (e) { return json({error: "meta_unavailable"}, 503); }
+  const bonus = ["fang", "hide", "spirit"].includes(b.bonus) && kind === "ranked" ? b.bonus : null;
+  const pathA = cleanPath(b.path);
+  const state = env.ENGINE.start(def, lvl, opp.def, opp.lvl, {bonusA: bonus, pathA, pathB: opp.path});
+  const fid = rid(), wk = weekOf();
+  FIGHTS.set(fid, {fid, account, kind, wk, state, at: Date.now(), rounds: 0, run: String(b.run || "").slice(0, 24) || null,
+    stage: Math.max(0, Math.min(2, b.stage | 0)), rarer: RARITY_LIST.indexOf(opp.def.rarity) > RARITY_LIST.indexOf(def.rarity), starter: !!dog.starter});
+  const f = await fairLoad(env, wk), me = await fairRow(env, f, account, wk);
+  me.started++; await fairSave(env, wk, f);
+  return json({fid, hp: {P: state.P.maxHp, E: state.E.maxHp}, lvl: {P: lvl, E: opp.lvl}});
+}
+async function fightRound(env, account, b) {
+  const F = FIGHTS.get(String(b.fid || ""));
+  if (!F || F.account !== account || F.state.over) return json({error: "no_such_fight"}, 404);
+  const a = String(b.a || ""), e = String(b.b || "");
+  if (!MOVE_RE.test(a) || !MOVE_RE.test(e)) return json({error: "bad_move"}, 400);
+  const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+  const r = env.ENGINE.round(F.state, a, e, seed);
+  F.state = r.state; F.rounds++; F.at = Date.now();
+  F.throws = (F.throws || 0) + (BEATS[a] === e ? 1 : 0);
+  const out = {seed, hp: {P: r.state.P.hp, E: r.state.E.hp}, over: !!r.verdict};
+  if (r.verdict) { out.verdict = r.verdict; out.dealt = Math.max(0, r.state.E.maxHp - r.state.E.hp); out.boss = await fightDone(env, F, r.verdict, out.dealt); }
+  return json(out);
+}
+async function fightDone(env, F, verdict, dealt) {
+  FIGHTS.delete(F.fid);
+  const f = await fairLoad(env, F.wk), me = await fairRow(env, f, F.account, F.wk), win = verdict === "YOU WIN";
+  me.fights++; me.rounds += F.rounds; me.throws += F.throws || 0;
+  me.cur = win ? me.cur + 1 : 0; me.streak = Math.max(me.streak, me.cur);
+  if (F.kind === "ranked") {
+    me.xp += win ? 30 + (F.rarer ? 10 : 0) : 12 + (F.rarer ? 10 : 0);
+    win ? me.wins++ : me.losses++;
+  } else {
+    // arena: a knockout of three; the run's XP is booked when it ends, its wins and losses per fight
+    const run = me.runs[F.run || F.fid] = me.runs[F.run || F.fid] || {won: 0, done: false};
+    if (!run.done && F.stage === run.won) {
+      if (win) { run.won++; me.wins++; } else me.losses++;
+      if (!win || run.won >= 3) { run.done = true; me.xp += ARENA_XP[run.won]; }
+    }
+  }
+  me.at = Date.now();
+  await fairSave(env, F.wk, f);
+  const champ = F.kind === "arena" && win && F.stage === 2 && (me.runs[F.run || F.fid] || {}).won === 3;
+  await dailyCount(env, F.account, champ ? "live" : null).catch(() => {});
+  if (champ) await achGrant(env, F.account, "champ").catch(() => {});
+  return await bossHit(env, F.account, win, dealt, F.kind).catch(() => null);
+}
+async function fightAbort(env, account, b) {
+  const F = FIGHTS.get(String(b.fid || ""));
+  if (F && F.account === account) {
+    FIGHTS.delete(F.fid);
+    if (b.why === "desync") { const f = await fairLoad(env, F.wk), me = await fairRow(env, f, account, F.wk); me.desync++; await fairSave(env, F.wk, f); }
+  }
+  return json({ok: true});
+}
+/* An arena tournament fought by ghosts (the player isn't signed up): the server runs it, AI against AI. */
+async function fightGhost(env, account, b) {
+  if (!fairOn(env)) return json({error: "off"}, 503);
+  const sq = Array.isArray(b.squad) ? b.squad.slice(0, 3) : [], opps = Array.isArray(b.opps) ? b.opps.slice(0, 3) : [];
+  if (!sq.length || opps.length < 3) return json({error: "bad_ghost"}, 400);
+  const save = (((await storeOf(env).saveGet(account)) || {}).data || {}).dogs || {};
+  const mine = [];
+  for (const x of sq) {
+    const dog = await fighterDog(env, account, x.id);
+    if (!dog) return json({error: "not_your_dog"}, 400);
+    const saved = Math.max(1, (save[dog.id] || {}).lvl | 0 || 1);
+    mine.push({def: await defOfUri(env, dog.id, dog.uri), lvl: Math.max(1, Math.min(10, x.lvl | 0 || 1, saved + 1)), path: cleanPath(x.path)});
+  }
+  const lines = [];
+  let won = 0;
+  for (let r = 0; r < 3; r++) {
+    const me = mine[r % mine.length], o = await rivalOf(env, account, {...opps[r], lvl: opps[r].lvl}, me.lvl, "arena", r).catch(() => null);
+    if (!o) return json({error: "bad_rival"}, 400);
+    const w = env.ENGINE.ghost(me.def, me.lvl, me.path, o.def, o.lvl, o.path, crypto.getRandomValues(new Uint32Array(1))[0]) === "YOU WIN";
+    lines.push({r, w});
+    if (!w) break;
+    won++;
+  }
+  const wk = weekOf(), f = await fairLoad(env, wk), row = await fairRow(env, f, account, wk);
+  row.ghosts++; row.wins += won; row.losses += won < 3 ? 1 : 0; row.xp += Math.round(ARENA_XP[won] / 2); row.at = Date.now();
+  await fairSave(env, wk, f);
+  await dailyCount(env, account, won === 3 ? "ghost" : null).catch(() => {});
+  return json({won, lines});
+}
+/* What a page may post: never more than the verified week plus a little slack. */
+async function fairCap(env, account, wk, b) {
+  if (!fairOn(env) || wk < (env.FAIR_SINCE || "2026-10-19")) return b;
+  const f = await fairLoad(env, wk), fresh = !f[account], me = await fairRow(env, f, account, wk);
+  if (fresh) await fairSave(env, wk, f);
+  const capped = {...b, xp: Math.min(b.xp, me.xp + FAIR_TOL.xp), wins: Math.min(b.wins, me.wins + FAIR_TOL.wins), streak: Math.min(b.streak, me.streak + FAIR_TOL.streak)};
+  if (capped.xp < b.xp || capped.wins < b.wins) {
+    me.over = {xp: b.xp, wins: b.wins, at: Date.now()};
+    await fairSave(env, wk, f);
+  }
+  return capped;
+}
+/* The admin's view: per player the claimed week next to the verified one. */
+async function adminFair(env, week) {
+  const wk = /^\d{4}-\d{2}-\d{2}$/.test(week || "") ? week : weekOf(), f = await fairLoad(env, wk);
+  const rows = await storeOf(env).weekRows(wk), names = await storeOf(env).profiles();
+  return json({week: wk, on: fairOn(env), players: rows.filter(r => (r.xp | 0) + (r.wins | 0) > 0).map(r => {
+    const v = f[r.account] || null;
+    return {account: r.account, name: displayName(names, r.account), xp: r.xp | 0, wins: r.wins | 0,
+      vxp: v ? v.xp : 0, vwins: v ? v.wins : 0, fights: v ? v.fights : 0, ghosts: v ? v.ghosts : 0, desync: v ? v.desync : 0,
+      abandoned: v ? Math.max(0, v.started - v.fights) : 0, throwRate: v && v.rounds ? Math.round(100 * v.throws / v.rounds) : null,
+      over: v && v.over ? v.over : null, flag: !v ? "no verified fights" : v.over ? "posted more than verified" : (v.rounds >= 60 && v.throws / v.rounds > .6) ? "rival throws too often" : null};
+  }).sort((x, y) => y.xp - x.xp)});
+}
+
+/* ------------------------------------------------------------------ Discord */
+/* DISCORD_WEBHOOK (a channel webhook URL) gets the game's news: week results, the boss, open Club
+   challenges, the day's arena champions. Fire and forget — Discord being slow never slows the game. */
+function discord(env, text) {
+  const url = String(env.DISCORD_WEBHOOK || "");
+  if (!/^https:\/\/(?:\w+\.)?discord(?:app)?\.com\/api\/webhooks\//.test(url)) return Promise.resolve(false);
+  return fetch(url, {method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify({username: "Bark Arena", content: String(text).slice(0, 1900), allowed_mentions: {parse: []}})})
+    .then(r => r.ok).catch(() => false);
+}
+const GAME_URL = env => (env.RETURN_URL || "https://game.scrappyxrp.fun/").replace(/\/?$/, "/");
+
+/* ------------------------------------------------------------------ extra ranked fights for a player */
+/* Adds to whatever bonus is waiting (boss reward, invites, …); collected on the next kennel load. */
+async function bonusAdd(env, account, n, note) {
+  const st = storeOf(env), m = (await st.blobGet("tixbonus")) || {}, t = today(), b = m[account];
+  const live = b && !b.claimed && t <= b.until;
+  m[account] = live ? {...b, n: Math.min(15, b.n + n), note: String(note).slice(0, 160), from: b.from <= t ? b.from : t}
+    : {n: Math.min(15, n), note: String(note).slice(0, 160), from: t, until: isoDay(Date.now() + BONUS_DAYS * 864e5), at: Date.now()};
+  await st.blobSet("tixbonus", m);
+}
+
+/* ------------------------------------------------------------------ the weekly boss */
+/* Every week one of the 20 hand-built Legendaries is the boss, with one health bar for everybody. Every
+   refereed ranked or arena fight hits it with the damage the player's dog dealt in that fight (up to
+   BOSS_DAY_CAP a player a day). Bring it down before Monday and everyone who hit it gets +3 ranked fights;
+   the top three are named in the chat and on Discord. Its health grows with how hard the last one was hit. */
+const BOSS_FIRST_HP = 4000, BOSS_DAY_CAP = 500, BOSS_REWARD = 3;
+const weekIndex = wk => Math.round(Date.parse(wk + "T00:00:00Z") / (7 * 864e5));
+async function bossGet(env, wk) {
+  wk = wk || weekOf();
+  const st = storeOf(env), k = "boss:" + wk;
+  let b = await st.blobGet(k);
+  if (!b) {
+    const prev = await st.blobGet("boss:" + weekOf(new Date(Date.parse(wk + "T12:00:00Z") - 7 * 864e5)));
+    const max = prev ? Math.round(Math.max(2500, Math.min(60000, (prev.dealt || 0) * 1.1)) / 50) * 50 : BOSS_FIRST_HP;
+    const n = ((weekIndex(wk) % 20) + 20) % 20 + 1;
+    b = {week: wk, n, name: env.ENGINE ? env.ENGINE.legName(n) : null, max, hp: max, dealt: 0, by: {}, day: {}, down: null, killer: null};
+    await st.blobSet(k, b);
+  }
+  return b;
+}
+async function bossHit(env, account, win, dealt, kind) {
+  const n = Math.max(0, Math.min(40, dealt | 0));
+  if (!n) return null;
+  const st = storeOf(env), b = await bossGet(env), dk = account + "|" + today();
+  const room = Math.max(0, BOSS_DAY_CAP - (b.day[dk] || 0)), hit = Math.min(n, room);
+  if (!hit) return {hit: 0, hp: b.hp, max: b.max};
+  b.day[dk] = (b.day[dk] || 0) + hit;
+  for (const k of Object.keys(b.day)) if (!k.endsWith(today())) delete b.day[k];
+  b.by[account] = (b.by[account] || 0) + hit;
+  b.dealt += hit;
+  const was = b.hp;
+  b.hp = Math.max(0, b.hp - hit);
+  let fell = false;
+  if (was > 0 && b.hp === 0) { b.down = Date.now(); b.killer = account; fell = true; }
+  await st.blobSet("boss:" + b.week, b);
+  if (fell) { await achGrant(env, account, "bossfall").catch(() => {}); await bossDown(env, b).catch(() => {}); }
+  return {hit, hp: b.hp, max: b.max, fell};
+}
+async function bossDown(env, b) {
+  const names = await storeOf(env).profiles(), name = a => displayName(names, a);
+  const top = Object.entries(b.by).sort((x, y) => y[1] - x[1]).slice(0, 3);
+  for (const a of Object.keys(b.by)) await bonusAdd(env, a, BOSS_REWARD, `The boss is down! Thanks for the bites: +${BOSS_REWARD} ranked fights.`);
+  const who = b.name ? `${b.name} (Legendary #${b.n})` : `Legendary #${b.n}`;
+  await chatSystem(env, `👹 The boss ${who} is DOWN — final blow by ${name(b.killer)}! Everyone who hit it gets +${BOSS_REWARD} ranked fights. Top damage: ${top.map(([a, d]) => name(a) + " " + d).join(", ")}.`);
+  await discord(env, `👹 **The weekly boss is down!** ${who} fell after ${Object.keys(b.by).length} trainers dealt ${b.dealt} damage.\n` +
+    `🗡️ Final blow: **${name(b.killer)}**\n🏅 Top damage: ${top.map(([a, d], i) => `${["🥇", "🥈", "🥉"][i]} ${name(a)} (${d})`).join(" · ")}\n` +
+    `Everyone who hit it gets +${BOSS_REWARD} ranked fights. ${GAME_URL(env)}`);
+}
+async function bossPublic(env, account) {
+  const b = await bossGet(env), names = await storeOf(env).profiles();
+  return {week: b.week, n: b.n, name: b.name, max: b.max, hp: b.hp, dealt: b.dealt, players: Object.keys(b.by).length,
+    top: Object.entries(b.by).sort((x, y) => y[1] - x[1]).slice(0, 5).map(([a, d]) => ({name: displayName(names, a), dmg: d, ...(isTeam(env, a) ? {team: true} : {})})),
+    down: b.down, killer: b.killer ? displayName(names, b.killer) : null, reward: BOSS_REWARD, ...(account ? {mine: b.by[account] || 0} : {})};
+}
+
+/* ------------------------------------------------------------------ starter dogs */
+/* A player who signs in without a Pixel Scrappy gets a starter dog for STARTER_DAYS: one of the treasury's
+   (the issuer wallet's) non-Legendary pieces, shared — every starter trainer keeps their own bond with it.
+   The NFT never moves. They fight ranked and arena and climb the ladder like everyone, only the weekly NFT
+   prizes are for players with a Scrappy of their own. Once only; it ends early when they get their own. */
+const STARTER_DAYS = 7;
+async function treasuryList(env) {
+  const k = "treasury:list", c = env.KV ? await env.KV.get(k, "json") : null;
+  if (c) return c;
+  let list = [];
+  try { list = (await accountNfts(env, env.ISSUER)).map(n => ({id: n.nft_id, uri: n.uri, t: +((n.uri.match(/(\d+)\.json$/) || [])[1]) || 0}))
+    .filter(n => n.t > 20); } catch (e) {}
+  if (env.KV) await env.KV.put(k, JSON.stringify(list), {expirationTtl: 3600});
+  return list;
+}
+const hashOf = s => { let h = 2166136261 >>> 0; for (const ch of s) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; } return h; };
+async function starterOf(env, account, create) {
+  const st = storeOf(env), m = (await st.blobGet("starters")) || {}, hold = ((await st.allHoldings())[account] || {}).tokens || [];
+  if (hold.length) return null;                                              // their own dog: no starter needed
+  let s = m[account];
+  if (!s && create && !isTeam(env, account)) {
+    const list = await treasuryList(env), h = hashOf(account);
+    const t = list.length ? null : 21 + (h % 4980);
+    const dog = list.length ? list[h % list.length] : {id: "starter-" + t, uri: (env.COLLECTION_BASE || COLLECTION_BASE) + t + ".json", t};
+    s = m[account] = {dog: {id: dog.id, uri: dog.uri, t: dog.t}, start: Date.now(), end: Date.now() + STARTER_DAYS * 864e5};
+    await st.blobSet("starters", m);
+  }
+  return s && !s.ended && Date.now() < s.end ? s : null;
+}
+async function starterInfo(env, account) {
+  const m = (await storeOf(env).blobGet("starters")) || {}, s = m[account];
+  return s ? {had: true, end: s.end, t: s.dog.t, active: !!(await starterOf(env, account))} : {had: false};
+}
+const starterWeek = (s, wk) => !!s && s.start < Date.parse(wk + "T00:00:00Z") + 7 * 864e5 && s.end > Date.parse(wk + "T00:00:00Z");
+
+/* ------------------------------------------------------------------ achievements */
+/* Badges a trainer earns. The page knows most of them (first win, giant killer, streaks, bond …) and reports
+   them; a few only the server can see (a podium week, a recruited friend). Shown in the kennel, and the
+   count next to the name on the ladder. */
+const ACH_IDS = ["first", "upset", "legend", "streak5", "streak10", "champ", "bond5", "bond10", "fights50", "fights250",
+  "club", "pack", "boss", "bossfall", "kennel3", "recruiter", "podium"];
+async function achGrant(env, account, id) {
+  const st = storeOf(env), m = (await st.blobGet("ach")) || {};
+  const me = m[account] = m[account] || {};
+  if (me[id]) return false;
+  me[id] = Date.now(); await st.blobSet("ach", m);
+  return true;
+}
+async function achPost(env, account, b) {
+  const st = storeOf(env), m = (await st.blobGet("ach")) || {}, me = m[account] = m[account] || {};
+  const serverOnly = new Set(["recruiter", "podium", "bossfall"]);
+  for (const id of (Array.isArray(b && b.ids) ? b.ids : []).slice(0, 40)) if (ACH_IDS.includes(id) && !serverOnly.has(id) && !me[id]) me[id] = Date.now();
+  await st.blobSet("ach", m);
+  return json({ach: me});
+}
+async function achCounts(env) {
+  const m = (await storeOf(env).blobGet("ach")) || {};
+  return Object.fromEntries(Object.entries(m).map(([a, x]) => [a, Object.keys(x).length]));
+}
+
+/* ------------------------------------------------------------------ invites */
+/* A trainer shares scrappyxrp.fun/barkarena/?ref=<their name>. A new player who arrives that way is linked
+   to them (/ref, once); when that friend holds a Pixel Scrappy of their own and has fought 5 ranked or arena
+   fights, both get +3 ranked fights and the inviter the Recruiter badge. Up to INVITE_MAX rewards each. */
+const INVITE_FIGHTS = 5, INVITE_REWARD = 3, INVITE_MAX = 20;
+async function refSet(env, account, b) {
+  const st = storeOf(env), refs = (await st.blobGet("refs")) || {}, names = await st.profiles();
+  if (refs[account]) return json({ok: true, already: true});
+  const want = String((b && b.name) || "").trim().toLowerCase();
+  const by = Object.keys(names).find(a => names[a].name.toLowerCase() === want);
+  if (!by || by === account) return json({error: "no_such_player"}, 404);
+  const fought = (await st.dump()).weekly.some(r => r.account === account && (r.wins | 0) + (r.losses | 0) > 0);
+  if (fought) return json({error: "not_new"}, 409);                        // only brand-new players can be invited
+  refs[account] = {by, at: Date.now(), done: false};
+  await st.blobSet("refs", refs);
+  return json({ok: true, by: names[by].name});
+}
+async function refCheck(env, account) {
+  const st = storeOf(env), refs = (await st.blobGet("refs")) || {}, x = refs[account];
+  if (!x || x.done) return;
+  if (!(((await st.allHoldings())[account] || {}).tokens || []).length) return;   // their own Scrappy first
+  const fights = (await st.dump()).weekly.filter(r => r.account === account).reduce((n, r) => n + (r.wins | 0) + (r.losses | 0), 0);
+  if (fights < INVITE_FIGHTS) return;
+  x.done = Date.now();
+  const paid = Object.values(refs).filter(y => y.by === x.by && y.done && y.paid).length;
+  if (paid < INVITE_MAX) {
+    x.paid = true;
+    const names = await st.profiles();
+    await bonusAdd(env, x.by, INVITE_REWARD, `${displayName(names, account)} joined Bark Arena with your invite: +${INVITE_REWARD} ranked fights!`);
+    await bonusAdd(env, account, INVITE_REWARD, `Welcome to the pack! Your invite from ${displayName(names, x.by)} earned you +${INVITE_REWARD} ranked fights.`);
+    await achGrant(env, x.by, "recruiter");
+  }
+  await st.blobSet("refs", refs);
+}
+async function refInfo(env, account) {
+  const refs = (await storeOf(env).blobGet("refs")) || {}, names = await storeOf(env).profiles();
+  const mine = Object.entries(refs).filter(([, y]) => y.by === account);
+  return json({invited: mine.length, joined: mine.filter(([, y]) => y.paid).length, by: refs[account] ? displayName(names, refs[account].by) : null,
+    name: names[account] ? names[account].name : null, fights: INVITE_FIGHTS, reward: INVITE_REWARD});
+}
+
 /* ------------------------------------------------------------------ lending */
 /* A holder lends one of their Scrappys to a player without one. The NFT never
    moves — this is a record here. The borrower fights with it like their own;
@@ -689,13 +1061,17 @@ async function lendInfo(env, account) {
   const view = l => ({id: l.id, dog: l.dog, owner: l.owner, ownerName: displayName(names, l.owner),
     borrower: l.borrower, borrowerName: displayName(names, l.borrower), end: l.end});
   const inn = loans.filter(l => l.borrower === account).map(l => view(l));
+  if (!inn.length) {
+    const sd = await starterOf(env, account, true);
+    if (sd) inn.push({id: "starter", starter: true, dog: sd.dog, owner: null, ownerName: "the Scrappy team", borrower: account, end: sd.end});
+  }
   for (const l of inn) {                                                     // the dog's real bond, from its owner's save
-    const g = (((await st.saveGet(l.owner)) || {}).data || {}).dogs || {};
+    const g = (((await st.saveGet(l.owner || account)) || {}).data || {}).dogs || {};
     l.lvl = Math.max(1, (g[l.dog.id] || {}).lvl | 0 || 1); l.xp = (g[l.dog.id] || {}).xp | 0;
   }
   const seek = await seekersOf(env, loans), mine = seek.find(x => x.account === account);
   return {out: loans.filter(l => l.owner === account).map(view), in: inn, rewards: await st.lendGet(account),
-    seeking: !!mine, seekers: seek.filter(x => x.account !== account).map(x => ({name: x.name, since: x.at}))};
+    seeking: !!mine, seekers: seek.filter(x => x.account !== account).map(x => ({name: x.name, since: x.at})), starter: await starterInfo(env, account)};
 }
 /* "Looking for a dog": players without a Scrappy can put their name on a list
    every holder sees in the lending card (a week, or until they borrow one). */
@@ -762,7 +1138,8 @@ async function replayPost(env, account, b) {
   if (!b || typeof b !== "object" || !b.P || !b.E || !Array.isArray(b.rounds)) return json({error: "bad_replay"}, 400);
   if (JSON.stringify(b).length > 40000) return json({error: "too_large"}, 413);
   if (!["ranked", "arena", "casual"].includes(b.kind) || b.rounds.length < 1 || b.rounds.length > 12) return json({error: "bad_replay"}, 400);
-  for (const r of b.rounds) if (!MOVE_RE.test(r.a) || !MOVE_RE.test(r.b) || !Array.isArray(r.r) || r.r.length > 120 || !r.r.every(x => Number.isInteger(x) && x >= 0 && x < 1e6))
+  for (const r of b.rounds) if (!MOVE_RE.test(r.a) || !MOVE_RE.test(r.b) || (r.seed != null ? !(Number.isInteger(r.seed) && r.seed >= 0 && r.seed < 2 ** 32)
+      : !Array.isArray(r.r) || r.r.length > 120 || !r.r.every(x => Number.isInteger(x) && x >= 0 && x < 1e6)))
     return json({error: "bad_replay"}, 400);
   if (env.KV) {
     const k = `replays:${account}:${today()}`, n = +(await env.KV.get(k) || 0);
@@ -775,9 +1152,9 @@ async function replayPost(env, account, b) {
   const lvl = x => Math.max(1, Math.min(10, x | 0 || 1));
   const id = await replayKeep(env, {kind: b.kind, stage: b.kind === "arena" ? Math.max(0, Math.min(2, b.stage | 0)) : null,
     by: account, vs: vs && vs !== account ? vs : null, close: !!b.close,
-    P: {def: slimDef(b.P.def || {}), lvl: lvl(b.P.lvl), bonus: ["fang", "hide", "spirit"].includes(b.P.bonus) ? b.P.bonus : null},
-    E: {def: slimDef(b.E.def || {}), lvl: lvl(b.E.lvl), who: null},
-    rounds: b.rounds.map(r => ({a: r.a, b: r.b, r: r.r})), result: ["W", "L", "D"].includes(b.result) ? b.result : null});
+    P: {def: slimDef(b.P.def || {}), lvl: lvl(b.P.lvl), bonus: ["fang", "hide", "spirit"].includes(b.P.bonus) ? b.P.bonus : null, path: cleanPath(b.P.path)},
+    E: {def: slimDef(b.E.def || {}), lvl: lvl(b.E.lvl), who: null, path: cleanPath(b.E.path)},
+    rounds: b.rounds.map(r => r.seed != null ? {a: r.a, b: r.b, seed: r.seed} : {a: r.a, b: r.b, r: r.r}), result: ["W", "L", "D"].includes(b.result) ? b.result : null});
   return json({ok: true, kept: !!id});
 }
 /* The TV's playlist: the best of the last day first, then the newest. */
@@ -1017,21 +1394,22 @@ async function sha256hex(s) {
   return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
 }
 async function buildResults(env, wk) {
-  const st = storeOf(env), names = await st.profiles();
+  const st = storeOf(env), names = await st.profiles(), starters = (await st.blobGet("starters")) || {}, hold = await st.allHoldings();
+  const starterOnly = a => starterWeek(starters[a], wk) && !((hold[a] || {}).tokens || []).length;
   const rows = (await st.weekRows(wk)).filter(r => (r.xp | 0) > 0 || (r.wins | 0) + (r.losses | 0) > 0)
     .sort((a, b) => (b.xp | 0) - (a.xp | 0) || (b.wins | 0) - (a.wins | 0) || (a.account < b.account ? -1 : 1));
   const players = rows.map((r, i) => ({rank: i + 1, account: r.account, name: displayName(names, r.account),
     xp: r.xp | 0, wins: r.wins | 0, losses: r.losses | 0, streak: r.streak | 0, pack: r.pack || null,
-    ...(isTeam(env, r.account) ? {team: true} : {})}));
+    ...(isTeam(env, r.account) ? {team: true} : {}), ...(starterOnly(r.account) ? {starter: true} : {})}));
   const packs = (await packRows(env, wk)).filter(p => p.members > 0)
     .map(p => ({id: p.id, members: p.members, wins: p.wins, losses: p.losses, xp: p.xp, perMember: Math.round(100 * p.wins / p.members) / 100}))
     .sort((a, b) => b.perMember - a.perMember || b.wins - a.wins || (a.id < b.id ? -1 : 1))
     .map((p, i) => ({rank: i + 1, ...p}));
-  const prizes = players.filter(p => p.xp > 0 && !p.team).slice(0, 3).map((p, i) => ({place: String(i + 1), account: p.account, name: p.name}));
+  const prizes = players.filter(p => p.xp > 0 && !p.team && !p.starter).slice(0, 3).map((p, i) => ({place: String(i + 1), account: p.account, name: p.name}));
   const win = packs[0];
   if (win && win.wins > 0) {
     const taken = new Set(prizes.map(p => p.account));
-    const active = players.filter(p => p.pack === win.id && !p.team && !taken.has(p.account))
+    const active = players.filter(p => p.pack === win.id && !p.team && !p.starter && !taken.has(p.account))
       .sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses) || b.xp - a.xp)[0];
     if (active) prizes.push({place: "pack", account: active.account, name: active.name, pack: win.id});
   }
@@ -1053,7 +1431,51 @@ async function weekResult(env, wk) {
   const data = JSON.stringify(await buildResults(env, wk));
   rec = {week: wk, json: data, sha256: await sha256hex(data), frozen: Date.now(), anchor: null, prizes: {}};
   await st.resultSet(wk, rec);
+  await weekFrozen(env, rec).catch(() => {});
   return rec;
+}
+/* A week was just frozen: podium badges, and the results on Discord (with this week's new boss). */
+async function weekFrozen(env, rec) {
+  const d = JSON.parse(rec.json), top = d.players.filter(p => !p.team).slice(0, 3);
+  for (const p of top) await achGrant(env, p.account, "podium");
+  const pack = d.packs[0], boss = await storeOf(env).blobGet("boss:" + rec.week), now = await bossGet(env);
+  const names = {ledger: "⛓️ Ledger Hounds", moon: "🌙 Moon Diggers", bone: "🦴 Bone Collectors", static: "⚡ Static Pack"};
+  const lines = [`🏆 **Bark Arena — week of ${rec.week} is final!**`,
+    ...top.map((p, i) => `${["🥇", "🥈", "🥉"][i]} **${p.name}** · ${p.xp} XP · ${p.wins} wins`),
+    pack ? `🐾 Best pack: ${names[pack.id] || pack.id} (${pack.perMember} wins per member)` : "",
+    boss ? (boss.down ? `👹 Boss ${boss.name || "#" + boss.n} was taken down by ${Object.keys(boss.by).length} trainers.` : `👹 Boss ${boss.name || "#" + boss.n} survived with ${boss.hp} HP — this week it's personal.`) : "",
+    `🎁 NFT prizes go out today. Results sealed on the XRPL: sha256 \`${rec.sha256.slice(0, 16)}…\``,
+    `🆕 New week, new boss: **${now.name || "Legendary #" + now.n}** (${now.max} HP). Tickets are fresh — ${GAME_URL(env)}`];
+  if (rec.week === weekOf(new Date(Date.now() - 7 * 864e5))) await discord(env, lines.filter(Boolean).join("\n"));   // old weeks frozen late stay quiet
+}
+/* The day's numbers, for the Discord morning post. */
+async function dailyCount(env, account, champ) {
+  const st = storeOf(env), k = "daily:" + today(), d = (await st.blobGet(k)) || {fights: 0, players: {}, champs: []};
+  d.fights++; d.players[account] = 1;
+  if (champ) d.champs.push({a: account, ghost: champ === "ghost"});
+  await st.blobSet(k, d);
+}
+/* Called every few minutes by the host (server.js; on Cloudflare a cron trigger): freezes a finished week
+   on time and posts yesterday's summary once. */
+async function tick(env) {
+  const st = storeOf(env), done = (await st.blobGet("posted")) || {};
+  const last = weekOf(new Date(Date.now() - 7 * 864e5));
+  if (closable(last)) await weekResult(env, last);
+  const y = isoDay(Date.now() - 864e5);
+  if (!done["day:" + y] && new Date().getUTCHours() >= 0 && Date.now() - Date.parse(today() + "T00:00:00Z") > 5 * 60e3) {
+    done["day:" + y] = Date.now();
+    for (const k of Object.keys(done)) if (k < "day:" + isoDay(Date.now() - 30 * 864e5) && k.startsWith("day:")) delete done[k];
+    await st.blobSet("posted", done);
+    const d = await st.blobGet("daily:" + y);
+    if (d && d.fights) {
+      const names = await st.profiles(), boss = await bossGet(env);
+      const champs = [...new Set(d.champs.filter(c => !c.ghost).map(c => displayName(names, c.a)))];
+      await discord(env, [`📊 **Yesterday in Bark Arena:** ${d.fights} refereed fights by ${Object.keys(d.players).length} trainers.`,
+        champs.length ? `🏆 Arena champions: ${champs.map(n => "**" + n + "**").join(", ")}` : "",
+        boss.down ? `👹 The boss is down — see you next week.` : `👹 Boss ${boss.name || "#" + boss.n}: **${boss.hp}** / ${boss.max} HP left (${Math.round(100 * boss.hp / boss.max)} %).`,
+        `New tickets are in: ${GAME_URL(env)}`].filter(Boolean).join("\n"));
+    }
+  }
 }
 const lastWeeks = n => Array.from({length: n}, (_, i) => weekOf(new Date(Date.now() - (i + 1) * 7 * 864e5)));
 function publicResult(rec) {
@@ -1355,9 +1777,11 @@ async function joeyVerify(env, req, b) {
 
 async function postStats(env, account, b) {
   const wk = weekOf();
-  const wins = Math.max(0, Math.min(500, b.wins|0)), xp = Math.max(0, Math.min(20000, b.xp|0)), streak = Math.max(0, Math.min(200, b.streak|0));
+  const c = await fairCap(env, account, wk, {wins: Math.max(0, Math.min(500, b.wins|0)), xp: Math.max(0, Math.min(20000, b.xp|0)), streak: Math.max(0, Math.min(200, b.streak|0))});
+  const wins = c.wins, xp = c.xp, streak = c.streak;
   const losses = Math.max(0, Math.min(500, b.losses|0));
   await storeOf(env).weekly(account, wk, wins, xp, streak, Date.now(), losses);
+  await refCheck(env, account).catch(() => {});
   const rec = await myPack(env, account);
   await storeOf(env).weeklyPack(account, wk, rec.pack);
   return json({ok:true, week:wk});
@@ -1369,7 +1793,8 @@ async function ladder(env, me, week) {
   const st = storeOf(env);
   const [x, w, s] = await Promise.all([st.top(wk, "xp"), st.top(wk, "wins"), st.top(wk, "streak")]);
   const names = await st.profiles();
-  const fmt = (rows) => rows.map(r => ({who: displayName(names, r.account), v: r.v, you: r.account === me, ...(isTeam(env, r.account) ? {team: true} : {})}));
+  const ach = await achCounts(env);
+  const fmt = (rows) => rows.map(r => ({who: displayName(names, r.account), v: r.v, you: r.account === me, ...(ach[r.account] ? {ach: ach[r.account]} : {}), ...(isTeam(env, r.account) ? {team: true} : {})}));
   const mine = me ? {xp: await st.rank(wk, "xp", me), wins: await st.rank(wk, "wins", me), streak: await st.rank(wk, "streak", me)} : null;
   return json({week:wk, players: await st.count(wk), xp: fmt(x), wins: fmt(w), streak: fmt(s), mine});
 }
@@ -1473,6 +1898,10 @@ function withCors(res, cors) {
 }
 
 export default {
+  async scheduled(event, env) {
+    env = {...env, ISSUER: String(env.ISSUER || "").trim(), TAXON: String(env.TAXON ?? "").trim()};
+    await tick(env).catch(e => console.error("tick", e && e.message));
+  },
   async fetch(req, env) {
     env = {...env, ISSUER: String(env.ISSUER || "").trim(), TAXON: String(env.TAXON ?? "").trim()};
     const url = new URL(req.url), cors = corsFor(req, env);
@@ -1511,6 +1940,7 @@ export default {
         if (p === "/admin/prize" && req.method === "POST") r = await adminPrize(env, b);
         if (p === "/admin/xaman") r = await xamanResolve(env, url.searchParams.get("uuid"));
         if (p === "/admin/funnel") r = await adminFunnel(env);
+        if (p === "/admin/fair") r = await adminFair(env, url.searchParams.get("week"));
         if (p === "/admin/tickets" || p === "/admin/tickets/scan" || (p === "/admin/tickets/grant" && req.method === "POST")) r = await adminBonus(env, p, b, url);
         if (p === "/admin/chat" || ((p === "/admin/chat/del" || p === "/admin/chat/mute") && req.method === "POST")) r = await adminChat(env, p, b);
         r.headers.set("cache-control", "no-store");
@@ -1536,6 +1966,11 @@ export default {
           r.headers.set("access-control-allow-origin", "*");
           return r;
         } catch (e) { return json({error: String(e.message)}, 502); }
+      }
+      if (p === "/public/boss") {
+        const r = json(await bossPublic(env, null));
+        r.headers.set("access-control-allow-origin", "*"); r.headers.set("cache-control", "public, max-age=30");
+        return r;
       }
       if (p === "/public/nft") return withCors(await nftLookup(env, url.searchParams.get("t")), cors);
       if (p === "/check") return withCors(await check(env, url.searchParams.get("account")), cors);
@@ -1588,6 +2023,15 @@ export default {
       if (p === "/meta") return withCors(json(await metaFor(env, url.searchParams.get("uri") || "")), cors);
       if (p === "/img") return withCors(await serveImg(env, url.searchParams.get("u") || ""), cors);
       if (p === "/stats" && req.method === "POST") return withCors(await postStats(env, account, await req.json()), cors);
+      if (p === "/boss") return withCors(json(await bossPublic(env, account)), cors);
+      if (p === "/ach" && req.method === "GET") return withCors(json({ach: ((await storeOf(env).blobGet("ach")) || {})[account] || {}}), cors);
+      if (p === "/ach" && req.method === "POST") return withCors(await achPost(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/ref" && req.method === "GET") return withCors(await refInfo(env, account), cors);
+      if (p === "/ref" && req.method === "POST") return withCors(await refSet(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/fight/start" && req.method === "POST") return withCors(await fightStart(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/fight/round" && req.method === "POST") return withCors(await fightRound(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/fight/abort" && req.method === "POST") return withCors(await fightAbort(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/fight/ghost" && req.method === "POST") return withCors(await fightGhost(env, account, await req.json().catch(() => ({}))), cors);
       return withCors(json({error:"not_found"}, 404), cors);
     } catch (e) {
       return withCors(json({error: String(e.message || e)}, 500), cors);

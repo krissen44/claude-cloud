@@ -19,16 +19,30 @@ export function loadEngine(htmlPath) {
     "let clubMode = true; const SAVE = { bump(){} };\n" +
     parts.join("\n") +
     "\nsimulating = true;\n" +
-    "({ build, resolveSeeded, moveOf, verdict, defFromMeta, LBL," +
+    // a ghost fight (AI against AI) with every die seeded, for the server-run arena ghosts
+    "function ghostFight(dA, lA, pA, dB, lB, pB, seed){\n" +
+    "  const r = Math.random; Math.random = mulberry32(seed >>> 0);\n" +
+    "  try { P = build(dA, lA, null, pA); E = build(dB, lB, null, pB); turn = 1; log = []; ev = []; over = false;\n" +
+    "    let k = 0; while (!over && k < 40){ const ea = ai(E, P, null); resolve(ai(P, E, ea), ea); k++; }\n" +
+    "    return verdict(); } finally { Math.random = r; }\n" +
+    "}\n" +
+    "({ build, resolveSeeded, moveOf, verdict, defFromMeta, LBL, ghostFight, legName: n => (LEG[n] || {}).name || null," +
     "   get: () => ({ P, E, turn, over, log, ev })," +
     "   set: (s) => { P = s.P; E = s.E; turn = s.turn; over = s.over; log = []; ev = []; } })";
   const api = vm.runInContext(code, vm.createContext({ console }), { filename: "engine (public/index.html)" });
   const copy = (o) => JSON.parse(JSON.stringify(o));
   return {
     defFromMeta: (nft, meta) => api.defFromMeta(nft, meta),
-    /** Start state of a duel: A on the left (P), B on the right (E). */
-    start(defA, lvlA, defB, lvlB) {
-      return copy({ P: api.build(defA, lvlA, null), E: api.build(defB, lvlB, null), turn: 1, over: false });
+    /** Start state of a duel: A on the left (P), B on the right (E). Optional pack bonus (A only) and bond paths. */
+    start(defA, lvlA, defB, lvlB, opt = {}) {
+      return copy({ P: api.build(defA, lvlA, opt.bonusA ? { key: opt.bonusA } : null, opt.pathA || null),
+                    E: api.build(defB, lvlB, null, opt.pathB || null), turn: 1, over: false });
+    },
+    /** The name of hand-built Legendary #n (1–20). */
+    legName: (n) => api.legName(String(n)),
+    /** AI against AI with seeded dice: 'YOU WIN' = A won. */
+    ghost(defA, lvlA, pathA, defB, lvlB, pathB, seed) {
+      return api.ghostFight(defA, lvlA, pathA || null, defB, lvlB, pathB || null, seed);
     },
     /** One round from a stored state, both moves and a seed → the next state and its result. */
     round(state, moveA, moveB, seed) {

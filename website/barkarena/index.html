@@ -150,6 +150,13 @@ section{margin-top:56px}
 .kv dd{margin:0;color:var(--fg)}
 .tip{margin-top:16px;padding:14px 16px;border-radius:14px;background:#fff4d6;border:2px solid var(--ink);box-shadow:0 2px 0 0 var(--ink);font-size:15px}
 details.card{padding:0}
+.bosscard{display:flex;gap:16px;align-items:center;flex-wrap:wrap;background:linear-gradient(135deg,#2b1430,#4a1a3a);color:#fff}
+.bosscard img{width:96px;height:96px;border-radius:14px;image-rendering:pixelated;border:2px solid #ffd54a;background:#1b0d1e}
+.bosscard .bb{flex:1;min-width:220px}
+.bosscard .bar{height:16px;border-radius:9px;background:#1b0d1e;border:2px solid #ffd54a;overflow:hidden;margin:8px 0}
+.bosscard .bar i{display:block;height:100%;background:linear-gradient(90deg,#ff4d6d,#ff9a3c);transition:width .8s}
+.bosscard .tops{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.bosscard .tops span{background:rgba(255,255,255,.12);border-radius:999px;padding:3px 10px;font-size:13px}
 details.card summary{cursor:pointer;list-style:none;padding:16px 18px;font:800 17px var(--display);display:flex;justify-content:space-between;gap:12px}
 details.card summary::-webkit-details-marker{display:none}
 details.card summary::after{content:"+";font-size:22px;line-height:1;color:var(--sky-ink)}
@@ -231,6 +238,7 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
 
   <nav class="toc" aria-label="On this page">
     <a href="#mint">🐾 Get a fighter</a>
+    <a href="#boss">👹 Boss</a>
     <a href="#leaderboard">🏆 Leaderboard</a>
     <a href="#how">📖 How to play</a>
     <a href="#fight">🥊 Fighting</a>
@@ -238,6 +246,20 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
     <a href="#packs">🐾 Packs</a>
     <a href="#faq">❓ FAQ</a>
   </nav>
+
+  <!-- ===================================================== weekly boss -->
+  <section id="boss" hidden>
+    <p class="kicker">Weekly boss</p>
+    <h2 id="bossH">Boss of the week</h2>
+    <p class="lead">One Legendary, one health bar for every trainer. Every ranked and arena fight hits it with the damage your dog deals — bring it down before Monday and everyone who hit it gets +3 ranked fights.</p>
+    <div class="card bosscard" style="margin-top:16px">
+      <img id="bossImg" alt="" width="96" height="96">
+      <div class="bb"><b id="bossName" style="font-size:18px"></b>
+        <div class="bar"><i id="bossBar" style="width:100%"></i></div>
+        <div id="bossTxt" class="meta" style="color:#ffd9e2"></div>
+        <div class="tops" id="bossTop"></div></div>
+    </div>
+  </section>
 
   <!-- ===================================================== leaderboard -->
   <section id="leaderboard">
@@ -317,9 +339,12 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
         <dl class="kv"><dt>Per day</dt><dd>5 tickets, +1 for every extra Scrappy you hold (max 10)</dd><dt>Banked</dt><dd>up to 15, into the next day — not into a new week</dd><dt>Win</dt><dd>30 XP</dd><dt>Loss</dt><dd>12 XP</dd><dt>Rarer rival</dt><dd>+10 XP</dd></dl></div>
       <div class="card"><h3>💞 Bond levels</h3>
         <p>Every Scrappy levels its own bond, up to level 10 — and the bond stays with the NFT. Sell it and the new owner inherits the training.</p>
-        <dl class="kv"><dt>Bond 2</dt><dd>+1 starting energy</dd><dt>Bond 4</dt><dd>+2 max health</dd><dt>Bond 6</dt><dd>Second Wind — heal 3 once, below a quarter health</dd><dt>Bond 8</dt><dd>+2 max health</dd><dt>Bond 10</dt><dd>abilities cost 1 less</dd></dl></div>
+        <p>At bond 4 and 8 you pick a path for each dog (🧭 Bond paths in the kennel) — switch any time between fights.</p>
+        <dl class="kv"><dt>Bond 2</dt><dd>+1 starting energy</dd><dt>Bond 4</dt><dd>+2 max health <i>or</i> Iron Guard (a guard snaps back for 3)</dd><dt>Bond 6</dt><dd>Second Wind — heal 3 once, below a quarter health</dd><dt>Bond 8</dt><dd>+2 max health <i>or</i> Quick Start (+1 starting energy)</dd><dt>Bond 10</dt><dd>abilities cost 1 less</dd></dl></div>
       <div class="card"><h3>📋 Daily quests</h3>
         <p>Three quests a day for extra trainer XP, for example: win 2 fights (60 XP), land a hit of 8+ (40 XP), use 3 abilities (40 XP), fight 3 times (30 XP).</p></div>
+      <div class="card"><h3>🏅 Achievements</h3>
+        <p>17 badges to collect — first win, beating a rarer dog or a Legendary, streaks of 5 and 10, arena champion, bond 5 and 10, Fight Club wins, the weekly boss, a podium week and more. Your count shows next to your name on the ladder.</p></div>
       <div class="card"><h3>🔥 Streak & trainer level</h3>
         <p>Your streak counts wins in a row in ranked fights and live arena fights. Casual fights and ghosts don't touch it. Your trainer level rises every 250 XP.</p></div>
     </div>
@@ -377,8 +402,11 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
       <details class="card"><summary>When do things reset?</summary><div class="body"><p>Tickets, quests and arena tournaments: every day at 00:00 UTC. Leaderboard, pack standings and pack moves: every Monday at 00:00 UTC.</p></div></details>
       <details class="card"><summary>Why do I keep losing when I always bite?</summary><div class="body"><p>Rivals learn your habits — within a fight and across fights — and get sharper as your bond grows. A fixed pattern gets countered, and a guard that blocks your bite snaps back for 2. Vary your moves and watch what the opponent does.</p></div></details>
       <details class="card"><summary>Is there a chat?</summary><div class="body"><p>Yes — once you're signed in, the 💬 button opens one room for all players. Plain text only: links are blocked (except scrappyxrp.fun and xrp.cafe), one message every few seconds. It also tells you when someone posts an open Fight Club challenge or is looking for a dog to borrow. Never share your wallet secret — the chat refuses anything that looks like one.</p></div></details>
-      <details class="card"><summary>I don't own a Pixel Scrappy — can I still play for real?</summary><div class="body"><p>Yes: a holder can lend you one. Set a player name (✏️ next to your wallet) and tap <b>“I'm looking for a dog”</b> in your kennel — every holder sees the list, and the chat announces it. Once someone lends you one, the dog appears in your kennel for the loan period and fights ranked and arena with you. The NFT stays in the holder's wallet. Its bond XP stays with the dog, and the holder gets 25 % of the trainer XP you earn with it — and a share if you win a weekly prize with it.</p></div></details>
+      <details class="card"><summary>I don't own a Pixel Scrappy — can I still play for real?</summary><div class="body"><p>Yes. The first time you sign in without one, the Scrappy team lends you a <b>starter dog</b> for 7 days: fight ranked and in the arena, level its bond, climb the ladder and hit the boss like everyone (the weekly NFT prizes are for trainers with a Scrappy of their own). After that — or any time — a holder can lend you one. Set a player name (✏️ next to your wallet) and tap <b>“I'm looking for a dog”</b> in your kennel — every holder sees the list, and the chat announces it. Once someone lends you one, the dog appears in your kennel for the loan period and fights ranked and arena with you. The NFT stays in the holder's wallet. Its bond XP stays with the dog, and the holder gets 25 % of the trainer XP you earn with it — and a share if you win a weekly prize with it.</p></div></details>
       <details class="card"><summary>Are there prizes?</summary><div class="body"><p>Yes. Every week the top 3 of the XP ladder and the most active member of the winning pack win a Pixel Scrappy from the treasury. Team wallets (marked TEAM on the boards) play for testing only — they never take a prize or count for a pack. It arrives as a free offer (0 XRP) that only your wallet can accept — the game shows it in your kennel with an Accept button, or accept it in any XRPL wallet.</p></div></details>
+      <details class="card"><summary>Can players fake their ranking?</summary><div class="body"><p>No. Ranked and arena fights are refereed by the game server: it rebuilds both dogs from the ledger and the metadata, gets both moves and only then rolls each round's dice. It books every result itself, and the leaderboard never shows more XP, wins or streak than it verified.</p></div></details>
+      <details class="card"><summary>What is the weekly boss?</summary><div class="body"><p>Each week one of the 20 hand-built Legendaries is the boss, with one health bar for everybody. Every ranked and arena fight hits it with the damage your dog deals (up to 500 a day per player). If it falls before Monday 00:00 UTC, everyone who hit it gets +3 ranked fights, and the top three are named in the chat and on Discord. The stronger the last boss was hit, the more health the next one has.</p></div></details>
+      <details class="card"><summary>How do invites work?</summary><div class="body"><p>In your kennel (📣 Invite friends) you get a link with your player name. When a friend comes in through it, gets a Pixel Scrappy of their own and fights 5 times, you both get +3 ranked fights — and you the 📣 Recruiter badge.</p></div></details>
       <details class="card"><summary>How do I know the results weren't changed?</summary><div class="body"><p>When a week ends its final standings and prize winners are frozen and hashed (SHA-256). That hash is written into a transaction memo on the XRP Ledger, where it can never be edited. Anyone can download the raw results, hash them, and compare — the link is under “Last week — final”.</p></div></details>
       <details class="card"><summary>How does a Fight Club duel stay fair?</summary><div class="body"><p>Both moves go to the game server, which only reveals them once both are in and then rolls the dice with the same fight engine the game uses. Nobody sees your move first, and both screens replay exactly the server's fight. It's a beta for Season 1: it pays no XP and keeps its own win/loss record. Matchmaking and a Club ladder follow in Season 2.</p></div></details>
       <details class="card"><summary>Can I play without a Pixel Scrappy?</summary><div class="body"><p>Yes, in the demo with sample dogs. Demo fights don't count for the leaderboard or packs.</p></div></details>
@@ -399,7 +427,8 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
 /* Where visitors come from (a Short: ?src=tt|yt|ig) and what they do — counted on the game server, no cookies,
    nothing personal. The source rides along to the game, which credits new players to it. */
 (function(){
-  var HIT = "https://game.scrappyxrp.fun/api/public/hit", q = new URLSearchParams(location.search), src = (q.get("src") || "").toLowerCase();
+  var HIT = "https://game.scrappyxrp.fun/api/public/hit", q = new URLSearchParams(location.search), src = (q.get("src") || "").toLowerCase(), ref = q.get("ref") || "";
+  try { if (/^[A-Za-z0-9 _.\-]{3,16}$/.test(ref)) { localStorage.setItem("ba_web_ref", ref); if (!src) src = "invite"; } else ref = localStorage.getItem("ba_web_ref") || ""; } catch(e){}
   try { if (/^[a-z0-9_-]{1,24}$/.test(src)) localStorage.setItem("ba_web_src", src); else src = localStorage.getItem("ba_web_src") || ""; } catch(e){}
   var sent = {};
   function hit(ev){ if (sent[ev] && ev !== "play" && ev !== "demo") return; sent[ev] = 1;
@@ -410,10 +439,11 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
   document.addEventListener("DOMContentLoaded", function(){
     var names = {tt: "TikTok", yt: "YouTube", ig: "Instagram", x: "X"};
     if (src && src !== "direct"){ var w = document.getElementById("welcome"); if (w){ w.hidden = false;
-      if (names[src]) document.getElementById("welcomeT").textContent = "👋 Hi from " + names[src] + "! Here's how you get your own dog in the ring."; } }
+      if (names[src]) document.getElementById("welcomeT").textContent = "👋 Hi from " + names[src] + "! Here's how you get your own dog in the ring.";
+      if (ref) document.getElementById("welcomeT").textContent = "👋 " + ref + " invited you to Bark Arena! Here's how you get your own dog in the ring."; } }
     // every link into the game carries the source
     document.querySelectorAll('a[href^="https://game.scrappyxrp.fun"]').forEach(function(a){
-      if (src){ var u = new URL(a.href); u.searchParams.set("src", src); a.href = u.toString(); }
+      if (src || ref){ var u = new URL(a.href); if (src) u.searchParams.set("src", src); if (ref) u.searchParams.set("ref", ref); a.href = u.toString(); }
       a.addEventListener("click", function(){ hit(a.getAttribute("data-ev") === "demo" ? "demo" : "play"); });
     });
     document.querySelectorAll('[data-ev="mint"]').forEach(function(a){ a.addEventListener("click", function(){ hit("mint"); }); });
@@ -427,6 +457,21 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
 </script>
 <script>
 /* Live leaderboard from the game server's public endpoint. */
+(function(){   // the weekly boss
+  fetch("https://game.scrappyxrp.fun/api/public/boss", {cache: "no-store"}).then(function(r){ return r.ok ? r.json() : null; }).then(function(b){
+    if (!b || !b.max) return;
+    var esc = function(t){ return String(t).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };
+    var name = (b.name || "Legendary") + " · Legendary #" + b.n;
+    document.getElementById("bossH").textContent = "👹 Boss of the week: " + (b.name || "Legendary #" + b.n);
+    document.getElementById("bossName").textContent = name;
+    document.getElementById("bossImg").src = "/pixelscrappy/nfts/" + b.n + ".png";
+    document.getElementById("bossBar").style.width = Math.round(100 * b.hp / b.max) + "%";
+    document.getElementById("bossTxt").textContent = b.down ? "💥 Defeated" + (b.killer ? " — final blow by " + b.killer : "") + ". Everyone who hit it gets +" + b.reward + " ranked fights."
+      : b.hp + " / " + b.max + " HP · " + b.players + " trainer" + (b.players === 1 ? "" : "s") + " on it · resets Monday 00:00 UTC";
+    document.getElementById("bossTop").innerHTML = (b.top || []).slice(0, 3).map(function(x, i){ return "<span>" + ["🥇","🥈","🥉"][i] + " " + esc(x.name) + " · " + x.dmg + "</span>"; }).join("");
+    document.getElementById("boss").hidden = false;
+  }).catch(function(){});
+})();
 (function(){
   var API = "https://game.scrappyxrp.fun/api/public/board";
   var PACKS = {ledger:"⛓️ Ledger Hounds", moon:"🌙 Moon Diggers", bone:"🦴 Bone Collectors", static:"⚡ Static Pack"};

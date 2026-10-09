@@ -47,7 +47,7 @@ console.log("club duel:", st.status, JSON.stringify(st.hp), JSON.stringify(st.re
 let pl = await (await fetch(U + "/api/public/replays?n=10")).json();
 ok(pl.total === 2 && pl.replays.some(r => r.kind === "ranked") && pl.replays.some(r => r.kind === "club"), "both fights in the playlist (" + pl.replays.map(r => r.kind).join(",") + ")");
 const rk = pl.replays.find(r => r.kind === "ranked");
-ok(rk.P.who === "Alpha" && rk.rounds.length >= 1 && rk.rounds.every(r => Array.isArray(r.r)), "ranked replay carries name, moves and dice");
+ok(rk.P.who === "Alpha" && rk.rounds.length >= 1 && rk.rounds.every(r => Array.isArray(r.r) || Number.isInteger(r.seed)), "ranked replay carries name, moves and dice (or the server's seeds)");
 await call(B, "/tv", {off: true});
 const d2 = (await call(A, "/club/create", {dogId: kA.nfts[0].nft_id, opponent: "BarkBoss"})).duel;
 await call(B, "/club/join", {id: d2.id, dogId: kB.nfts[1].nft_id});

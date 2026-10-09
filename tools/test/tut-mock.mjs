@@ -15,6 +15,8 @@ const HOLD = {
   rRiva1OneXXXXXXXXXXXXXXXXXXXXX: [3101, 3102, 3103],
   rRiva1TwoXXXXXXXXXXXXXXXXXXXXX: [12, 3201],
   rRiva1ThreeXXXXXXXXXXXXXXXXXXX: [3301, 3302],
+  rFriendWithDogXXXXXXXXXXXXXXXX: [3401],
+  rI: [4101, 4102, 4103, 7],                     // the treasury (issuer wallet): starter dogs come from here
 };
 const FIX = {2723: "2723", 2715: "2715", 2724: "2724", 2719: "2719", 2721: "2721"};
 const look = t => t <= 20 ? DATA.fighters.find(f => f.id === "L" + t) : FIX[t] ? REG.find(f => f.id === FIX[t]) : REG[t % REG.length];
@@ -51,6 +53,10 @@ globalThis.fetch = async (u, o = {}) => {
       return Response.json({result: {account_nfts: ts.map(t => ({Issuer: "rI", NFTokenTaxon: 369, NFTokenID: "000800" + String(t).padStart(6, "0"), URI: hex(`ipfs://bafyX/${t}.json`)}))}});
     }
     return Response.json({result: {error: "objectNotFound"}});
+  }
+  if (u.includes("discord.com/api/webhooks/")) {          // the Discord webhook: written to a file for the tests
+    fs.appendFileSync((process.env.DATA_DIR || "/tmp") + "/discord.log", JSON.parse(o.body).content + "\n----\n");
+    return new Response(null, {status: 204});
   }
   if (u.includes("/ipfs/")) {
     const t = +u.match(/(\d+)\.(json|png)/)[1];

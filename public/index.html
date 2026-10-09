@@ -308,6 +308,20 @@ button.act:disabled{opacity:.4;cursor:not-allowed}
 .mini{font-size:10.5px;color:var(--ink2);line-height:1.65}
 .lvl{display:inline-block;font-family:'Press Start 2P',monospace;font-size:8px;padding:3px 5px;border-radius:5px;
   background:var(--accent);color:#fff;letter-spacing:.5px}
+.achs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}
+.achs div{border:2px solid var(--panelB);border-radius:9px;padding:8px;display:grid;grid-template-columns:30px 1fr;gap:0 8px;opacity:.45;filter:grayscale(1)}
+.achs div.got{opacity:1;filter:none;border-color:var(--accent)}
+.achs span{grid-row:span 2;font-size:22px;line-height:30px;text-align:center}
+.achs b{font-size:11px}.achs small{font-size:9.5px;color:var(--ink2)}
+#achToast{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:60;display:grid;gap:8px;pointer-events:none}
+#achToast>div{display:flex;gap:10px;align-items:center;background:#1b2030;color:#fff;border:2px solid #ffd54a;border-radius:12px;padding:9px 14px;
+  font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.3);animation:achIn .4s cubic-bezier(.2,1.4,.4,1);transition:opacity .5s}
+#achToast>div.out{opacity:0}#achToast span{font-size:26px}
+@keyframes achIn{from{transform:translateY(-20px) scale(.8);opacity:0}to{transform:none;opacity:1}}
+.bossbar{height:12px;border:2px solid #2b1d3a;border-radius:7px;background:#3a1730;overflow:hidden;margin:6px 0 4px}
+.bossbar i{display:block;height:100%;background:linear-gradient(90deg,#ff4d6d,#ff9a3c);transition:width .6s}
+.boss img{width:64px;height:64px;image-rendering:pixelated;flex:none;filter:drop-shadow(0 0 6px rgba(255,77,109,.6))}
+.boss .top{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .xp{height:7px;border:1px solid var(--panelB);border-radius:5px;background:var(--panel);overflow:hidden;margin:5px 0 3px}
 .xp i{display:block;height:100%;background:linear-gradient(90deg,#6fc3ff,#4f8ce0);transition:width .8s ease-out}
 .pnl{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -505,6 +519,11 @@ const BOND = {
     6: {id:'wind',    txt:'Second Wind — heal 3 once, when you drop below a quarter'},
     8: {id:'hp2b',    txt:'+2 max health'},
     10:{id:'cheap',   txt:'Abilities cost 1 less'}
+  },
+  // bond paths: at 4 and 8 the trainer picks one of two perks for each dog ('a' = the classic one, the default)
+  alt: {
+    4: {id:'snap',  txt:'Iron Guard — a guard snaps back for 3 instead of 2'},
+    8: {id:'swift', txt:'Quick Start — +1 starting energy'}
   }
 };
 /* A piece carries eight traits, one per layer. If all eight fired, a fight would
@@ -527,8 +546,9 @@ function kitFrom(ids){
   }
   return kit;
 }
-const perksAt = l => Object.entries(BOND.perks).filter(([k]) => +k <= l).map(([,v]) => v);
-const hasPerk = (l, id) => perksAt(l).some(p => p.id === id);
+const perksAt = (l, path) => Object.entries(BOND.perks).filter(([k]) => +k <= l)
+  .map(([k, v]) => path && path[k] === 'b' && BOND.alt[k] ? BOND.alt[k] : v);
+const hasPerk = (l, id, path) => perksAt(l, path).some(p => p.id === id);
 //@/engine
 
 const SAVE = (() => {
@@ -845,6 +865,7 @@ async function packAction(action, id){
     const r = await api('/pack', {method:'POST', body:{action, id}}); const j = await r.json();
     if (!r.ok) throw new Error(j.error === 'pack_full' ? 'That pack is full.' : (j.error || 'pack'));
     applyPacks(j);
+    achScan();
   } catch(e){ alert(e.message); }
   menu();
 }
@@ -877,14 +898,16 @@ function setBonus(def){
            passives: s[tier].map(p => ({...p, kind:'passive', id:'set-'+p.effect, value:'Set: '+def.set})) };
 }
 
-function build(def, lvl, bonus){
+function build(def, lvl, bonus, path){
   lvl = lvl || 1;
+  path = path && typeof path === 'object' ? path : null;
   let hp = C.base_hp + (C.rarity_hp_bonus[def.rarity]||0);
-  if (hasPerk(lvl,'hp2')) hp += 2;
-  if (hasPerk(lvl,'hp2b')) hp += 2;
+  if (hasPerk(lvl,'hp2',path)) hp += 2;
+  if (hasPerk(lvl,'hp2b',path)) hp += 2;
   let en = C.start_energy;
-  if (hasPerk(lvl,'energy')) en += 1;
-  const cheap = hasPerk(lvl,'cheap');
+  if (hasPerk(lvl,'energy',path)) en += 1;
+  if (hasPerk(lvl,'swift',path)) en += 1;
+  const cheap = hasPerk(lvl,'cheap',path);
   const ts = kitOf(def).map(t => cheap && t.kind==='active' ? {...t, cost: Math.max(1, t.cost-1)} : t);
   const sb = setBonus(def);
   const passives = ts.filter(t => t.kind==='passive').concat(sb ? sb.passives : []);
@@ -896,7 +919,7 @@ function build(def, lvl, bonus){
   return {def, lvl, hp, maxHp:hp, energy:en, set: sb,
           fang: !!(bonus && bonus.key==='fang'), hide: !!(bonus && bonus.key==='hide'),
           actives: ts.filter(t => t.kind==='active'), passives,
-          wind: hasPerk(lvl,'wind'), phoenix: passives.some(p => p.effect==='phoenix'),
+          wind: hasPerk(lvl,'wind',path), snap: hasPerk(lvl,'snap',path), phoenix: passives.some(p => p.effect==='phoenix'),
           hexed:false, hexTurns:0, counter:false, shield:0, hold:false,
           run:0, extra:0, boon:0, seen:{bite:0, guard:0, taunt:0}, hist:[], idle:0};
 }
@@ -961,7 +984,7 @@ function bite(f, g, ga, who, base){
   if (ga.type==='guard' && !g.hexFail){
     // guard beats bite: the bite is blocked AND the guard snaps back, as a taunt chips through a guard
     say(`${who} bites — <b>blocked</b>.`); push({t:'float',who:sideOf(g),cls:'missN',txt:'BLOCK'}); f.run=0;
-    damage(f, C.guard.snap_vs_bite ?? 2, `&nbsp;&nbsp;↳ the guard snaps back for`, 'counter');
+    damage(f, (C.guard.snap_vs_bite ?? 2) + (g.snap ? 1 : 0), `&nbsp;&nbsp;↳ the guard snaps back for`, 'counter');
     return;
   }
 
@@ -1427,7 +1450,7 @@ function ghostOpp(round, used){
   const pool = sq.length ? sq : fresh.length ? fresh : RIVALS.ready;
   if (pool.length){
     const x = pool[rint(0, pool.length - 1)]; used.add(x.token);
-    return {def: x.def, lvl: x.lvl, who: x.owner, rid: x.id, squad: !!x.squad};
+    return {def: x.def, lvl: x.lvl, path: x.path || null, who: x.owner, rid: x.id, squad: !!x.squad};
   }
   // nobody else has played yet: a wild collection dog, no owner to show
   return {def: pickOpponent(null), lvl: Math.min(BOND.maxLevel, 1 + round + rint(0,2)), who: null};
@@ -1523,15 +1546,16 @@ async function loadLending(){
   if (!LIVE() || !WALLET.token || WALLET.demo) return;
   let j;
   try { const r = await api('/lend'); j = await r.json(); if (!r.ok) return; } catch(e){ return; }
-  LEND.out = j.out || []; LEND.in = j.in || []; LEND.seeking = !!j.seeking; LEND.seekers = j.seekers || [];
+  LEND.out = j.out || []; LEND.in = j.in || []; LEND.seeking = !!j.seeking; LEND.seekers = j.seekers || []; LEND.starter = j.starter || null;
   // borrowed dogs join the kennel, at their real bond level
   for (const l of LEND.in){
     if ((OWNED || []).some(f => f.id === l.dog.id)) continue;
     try {
       const def = await loadDef({nft_id: l.dog.id, uri: l.dog.uri});
-      def.borrowed = {loan: l.id, from: l.ownerName, end: l.end};
+      def.borrowed = {loan: l.id, from: l.ownerName, end: l.end, starter: !!l.starter};
       SAVE.setBond(l.dog.id, l.lvl, l.xp);
       OWNED = (OWNED || []).concat(def);
+      if (!OPP.base){ oppLearnBase([{uri: l.dog.uri}]); oppTopUp(); }      // a starter trainer's rivals: the same collection
     } catch(e){}
   }
   // loans that ended: the dog leaves the kennel again
@@ -1565,7 +1589,7 @@ async function loadBonus(){
 /* called by SAVE.award: a ranked or arena fight with a borrowed dog */
 function lendGain(id, xp){
   const f = (OWNED || []).find(x => x.id === id && x.borrowed);
-  if (!f || !xp || !LIVE() || !WALLET.token) return;
+  if (!f || f.borrowed.starter || !xp || !LIVE() || !WALLET.token) return;
   api('/lend/report', {method:'POST', body:{id: f.borrowed.loan, bond: xp, trainer: Math.round(xp / 2)}}).catch(() => {});
 }
 const LEND_ERR = {no_such_player:'No player with that name.', borrower_holds:'They hold Pixel Scrappys themselves — lending is for players without one.',
@@ -1576,9 +1600,13 @@ function lendCard(){
   const note = LEND.note ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🤝 Lending</b>
       <div class="mini">${esc(LEND.note)}</div></div><button id="lendOk" class="sm">OK</button></div></div>` : '';
   const until = t => new Date(t).toISOString().slice(0, 10);
-  const inn = LEND.in.map(l => `<div class="wal" style="margin-top:8px"><div><div class="mini">🤝 Borrowed from <b>${esc(l.ownerName)}</b> until ${until(l.end)}</div>
+  const inn = LEND.in.filter(l => !l.starter).map(l => `<div class="wal" style="margin-top:8px"><div><div class="mini">🤝 Borrowed from <b>${esc(l.ownerName)}</b> until ${until(l.end)}</div>
       <b>Pixel Scrappy #${l.dog.t}</b> <span class="lvl">BOND ${l.lvl}</span></div><button class="ghost sm" data-lendend="${l.id}">Give back</button></div>`).join('');
-  if (!own.length) return note + (inn ? `<div class="card"><h3 class="h3">BORROWED</h3>${inn}
+  const st = LEND.in.find(l => l.starter);
+  const starter = st ? `<div class="card"><h3 class="h3">🎓 YOUR STARTER DOG</h3>
+      <p class="mini" style="margin:0 0 8px">The Scrappy team lends you <b>Pixel Scrappy #${st.dog.t}</b> until <b>${until(st.end)}</b>. Fight ranked and in the arena, level its bond, climb the weekly ladder and hit the boss — like everyone. The weekly NFT prizes are for trainers with a Pixel Scrappy of their own.</p>
+      <div class="row" style="justify-content:flex-start"><a class="btn" href="https://scrappyxrp.fun/barkarena/?src=starter#mint" target="_blank" rel="noopener">🐾 Get your own fighter</a></div></div>` : '';
+  if (!own.length) return note + starter + (inn ? `<div class="card"><h3 class="h3">BORROWED</h3>${inn}
       <p class="mini" style="margin:8px 0 0">Fight with it like your own — ranked and arena. Its bond XP goes to the dog, and its owner gets a share of your XP.</p></div>`
     : `<div class="card"><h3 class="h3">🙋 BORROW A SCRAPPY</h3>
       <p class="mini" style="margin:0 0 8px">No Pixel Scrappy yet? Holders can lend you one of theirs for 1–14 days — the NFT stays in their wallet, you fight ranked and arena with it like your own, and its owner gets a share of your XP. Put your name on the list every holder sees.</p>
@@ -1654,10 +1682,10 @@ function shopLink(def){
 }
 const rivalLabel = (dogName, who) => who ? `${dogName} from ${who}` : `a wild ${dogName}`;
 /* Ghost vs ghost, no animation: the same engine, both sides on the AI. */
-function simFight(defA, lvlA, defB, lvlB){
+function simFight(defA, lvlA, defB, lvlB, pathA, pathB){
   const keep = {P, E, turn, log, ev, over};
   simulating = true;
-  P = build(defA, lvlA); E = build(defB, lvlB); turn = 1; log = []; ev = []; over = false;
+  P = build(defA, lvlA, null, pathA); E = build(defB, lvlB, null, pathB); turn = 1; log = []; ev = []; over = false;
   let k = 0;
   while (!over && k < 40){ const ea = ai(E, P, null); resolve(ai(P, E, ea), ea); k++; }
   const v = verdict();
@@ -1668,12 +1696,19 @@ function simFight(defA, lvlA, defB, lvlB){
 function squadDefs(){
   return SAVE.data.arena.squad.map(id => ROSTER().find(f => f.id === id)).filter(Boolean);
 }
-function runGhostArena(){
+async function runGhostArena(){
   const sq = squadDefs(), lines = [], used = new Set();
+  const opps = [0, 1, 2].map(r => ghostOpp(r, used));
+  let srv = null;
+  if (LIVE() && WALLET.token && !WALLET.demo) try {      // the server runs the ghosts (fair play), the page shows them
+    const r = await api('/fight/ghost', {method:'POST', body:{squad: sq.map(d => ({id: d.id, lvl: SAVE.dog(d.id).lvl, path: SAVE.dog(d.id).path || null})),
+      opps: opps.map(o => ({...vfOpp(o.def, o), lvl: o.lvl}))}});
+    const j = await r.json(); if (r.ok && Array.isArray(j.lines)) srv = j.lines;
+  } catch(e){}
   let won = 0;
   for (let r = 0; r < 3; r++){
-    const me = sq[r % sq.length], o = ghostOpp(r, used);
-    const w = simFight(me, SAVE.dog(me.id).lvl, o.def, o.lvl);
+    const me = sq[r % sq.length], o = opps[r];
+    const w = srv ? !!(srv[r] && srv[r].w) : simFight(me, SAVE.dog(me.id).lvl, o.def, o.lvl, SAVE.dog(me.id).path, o.path);
     if (o.rid) arenaReport(o.rid, w);
     lines.push({r, me: me.name, opp: o.def.name, who: o.who, w});
     if (!w) break;
@@ -1693,7 +1728,7 @@ function untilUtcMidnight(){
 }
 function startLiveArena(){
   const sq = squadDefs();
-  arenaRun = {round:0, won:0, sq, lines:[], used:new Set()};
+  arenaRun = {round:0, won:0, sq, lines:[], used:new Set(), id: randSalt()};
   arenaNext();
 }
 function arenaNext(){
@@ -2144,7 +2179,7 @@ async function scEnter(v){
     if (!img) try { img = (await loadDef({nft_id: 'fc' + f.def.id, uri: f.uri})).img; } catch(e){}
     return Object.assign({}, f.def, {img: img || f.img});
   }));
-  P = build(defs[0], v.a.lvl, null); E = build(defs[1], v.b.lvl, null);
+  P = build(defs[0], v.a.lvl, null, v.a.path); E = build(defs[1], v.b.lvl, null, v.b.path);
   turn = 1; log = []; ev = []; over = false;
   LBL.P = v.a.name; LBL.E = v.b.name;              // names on both sides; the HUD marks yours with YOU
   say(`<span class="turn">🥊 Fight Club — ${esc(v.a.name)} with ${esc(defs[0].name)} (Bond ${v.a.lvl}) vs ${esc(v.b.name)} with ${esc(defs[1].name)} (Bond ${v.b.lvl}).</span>`);
@@ -2203,6 +2238,7 @@ function scEnd(res){
     : res.why === 'left the ring' ? (won ? 'Your opponent left the ring — you win by forfeit.' : 'You left the ring.')
     : res.why === 'both players stopped answering' ? 'Both of you stopped answering.' : (draw ? 'A draw.' : null);
   CLUB.result = {won, draw, why};
+  if (won) achUnlock(['club']);
   koFx(res.winner === 'a' ? 'l' : res.winner === 'b' ? 'r' : null);
   if (won) confetti(mine === 'a' ? 'l' : 'r');
   const b = document.querySelector('.banner'); if (b){ b.textContent = draw ? 'DRAW' : (won ? 'YOU WIN' : 'YOU LOSE'); b.classList.remove('on'); void b.offsetWidth; b.classList.add('on'); }
@@ -2657,11 +2693,15 @@ async function loadKennel(fresh){
   if (SC.linkId) scRefresh();
   oppTopUp(); loadPacks(); claimDefense(); arenaRegister(); loadPrizes(); loadLending();
   if (SAVE.data.tvOff) api('/tv', {method:'POST', body:{off: true}}).catch(() => {});   // also covers Club duels (recorded on the server)
-  loadBonus();
+  loadBonus(); bossLoad(true); achSync(); refLoad();
   const src = lsGet('ba_src');
   if (src && src.src && lsGet('ba_src_sent') !== WALLET.account)
     api('/src', {method:'POST', body: src}).then(r => { if (r.ok) lsSet('ba_src_sent', WALLET.account); }).catch(() => {});
 }
+try {   // invited by a friend: ?ref=<their player name> (first one wins)
+  const rf = new URLSearchParams(location.search).get('ref');
+  if (rf && /^[A-Za-z0-9 _.\-]{3,16}$/.test(rf) && !lsGet('ba_ref')) lsSet('ba_ref', rf);
+} catch(e){}
 try {   // where a new player came from (a Short on TikTok/YouTube/Instagram → the website → here); first touch wins
   const sp = new URLSearchParams(location.search).get('src');
   if (sp && /^[a-z0-9_-]{1,24}$/i.test(sp) && !lsGet('ba_src')) lsSet('ba_src', {src: sp.toLowerCase(), at: Date.now()});
@@ -2677,7 +2717,7 @@ async function fillLadder(){
   try {
     const r = await api('/ladder'); const j = await r.json();
     const board = (rows, label, sfx) => `<div><h3>${label}</h3>${rows.length ? rows.map((x,i) =>
-      `<p class="lb ${x.you?'you':''}"><span>${i+1}.</span><span>${esc(x.you ? 'YOU' : x.who)}${x.team ? ' <span class="tag">TEAM</span>' : ''}</span><b>${x.v}${sfx||''}</b></p>`).join('')
+      `<p class="lb ${x.you?'you':''}"><span>${i+1}.</span><span>${esc(x.you ? 'YOU' : x.who)}${x.team ? ' <span class="tag">TEAM</span>' : ''}${x.ach ? ` <span class="tag" title="achievements">🏅${x.ach}</span>` : ''}</span><b>${x.v}${sfx||''}</b></p>`).join('')
       : '<p class="mini">Nobody yet.</p>'}</div>`;
     box.innerHTML = `<p class="mini" style="margin:0 0 10px"><b>Week of ${esc(j.week)}</b> · ${j.players} player${j.players===1?'':'s'} on the board · resets Monday 00:00 UTC</p>
       <div class="pnl3">${board(j.xp,'MOST XP')}${board(j.wins,'MOST WINS')}${board(j.streak,'LONGEST STREAK','🔥')}</div>`;
@@ -3417,6 +3457,7 @@ async function play(){
       if (isRanked){ SAVE.bump('f3'); if (win) SAVE.bump('w2'); }
       lastGain = SAVE.award(P.def.id, win, xp, isRanked);
     }
+    if (isRanked || arenaRun) achScan({win, rarer: rk.indexOf(E.def.rarity) > rk.indexOf(P.def.rarity), legendary: !!E.def.legendary});
     await wait(700);
   }
   busy = false;
@@ -3508,6 +3549,7 @@ function renderControls(){
       <div class="mini">🏟️ Arena · ${r.done ? (r.won===3 ? '<b>CHAMPION</b>' : 'out after '+r.won+' win'+(r.won===1?'':'s')) : 'round '+(r.round+1)+' of 3 next'}</div>
       <div style="text-align:left;margin:10px auto;max-width:420px">${arenaLines(r.lines)}</div>
       ${r.done ? `<div class="mini">+${r.xp} XP shared across your squad — full XP, because you fought it live.</div>` : ''}
+      ${bossLine()}
       ${r.done ? nameNudge(r.won > 0) : ''}
       <div class="row" style="margin-top:12px">
         ${r.done ? `<button id="menu">Back to the arena</button>` : `<button id="again">Next round →</button>`}</div>
@@ -3521,14 +3563,14 @@ function renderControls(){
     const g = SAVE.dog(P.def.id), v = verdict();
     const need = BOND.need(g.lvl), pct = g.lvl>=BOND.maxLevel ? 100 : Math.round(100*g.xp/need);
     const ups = (lastGain && lastGain.levels.length)
-      ? lastGain.levels.map(l => `<div class="up">BOND LEVEL ${l}${BOND.perks[l] ? ' — ' + esc(BOND.perks[l].txt) : ''}</div>`).join('')
+      ? lastGain.levels.map(l => `<div class="up">BOND LEVEL ${l}${BOND.alt[l] ? ' — pick a bond path in your kennel 🧭' : BOND.perks[l] ? ' — ' + esc(BOND.perks[l].txt) : ''}</div>`).join('')
       : '';
     c.innerHTML = `<div class="card res">
       <div class="big">${v}</div>
       <div class="mini">${esc(P.def.name)} · <span class="lvl">BOND ${g.lvl}</span> &nbsp;${isRanked ? '+'+(lastGain?lastGain.xp:0)+' XP' : 'casual — no XP'}</div>
       <div class="xp"><i style="width:${pct}%"></i></div>
       <div class="mini">${g.lvl>=BOND.maxLevel ? 'Bond maxed' : g.xp+' / '+need+' to the next level'} · ${g.w}W ${g.l}L${SAVE.data.streak>1?' · '+SAVE.data.streak+' win streak 🔥':''}</div>
-      ${ups}
+      ${ups}${isRanked ? bossLine() : ''}
       ${isRanked ? nameNudge(v === 'YOU WIN') : ''}
       <div class="row" style="margin-top:12px">
         <button id="again">${SAVE.data.tickets>0 ? 'Fight again ('+SAVE.data.tickets+' left)' : 'Casual fight'}</button><button id="menu">Back to the kennel</button></div>
@@ -3564,6 +3606,7 @@ function renderControls(){
   c.querySelectorAll('[data-a]').forEach(b => b.onclick = () => go({type:b.dataset.a}));
   c.querySelectorAll('[data-ab]').forEach(b => b.onclick = () => go({type:'ability', a:P.actives[+b.dataset.ab]}));
 }
+const bossLine = () => VF.boss && VF.boss.hit ? `<div class="mini" style="margin-top:6px">👹 <b>+${VF.boss.hit}</b> damage to the boss${VF.boss.fell ? ' — <b>and it fell! 💥</b>' : ` · ${VF.boss.hp} HP left`}</div>` : '';
 function shell(){
   chatSync(false);
   app.innerHTML = stage() + `<div id="ctrl"></div>
@@ -3582,27 +3625,79 @@ function startFight(a,b,ranked,oppLvl){
   const el = SAVE.dog(a.id).lvl;
   const eo = oppLvl || Math.max(1, Math.min(BOND.maxLevel, el + rint(-1,1)));   // matched, not random
   const mb = isRanked ? myBonus() : null;
-  P = build(a, el, mb); E = build(b, eo, null); turn = 1; log = []; ev = []; over = false;
+  P = build(a, el, mb, SAVE.dog(a.id).path); E = build(b, eo, null, arenaRun && arenaRun.opp ? arenaRun.opp.path || null : null); turn = 1; log = []; ev = []; over = false;
   hist = {bite:0, guard:0, taunt:0}; plannedE = null;
   // the opponent remembers this trainer's style across fights (kept in the save, synced)
   const ad = SAVE.data; if (!ad.ai || ad.ai.v !== 1) ad.ai = aimNew(); AIM = ad.ai;
   // Bark Arena TV: the fight is recorded (moves + dice) and replayed on the stream unless the player opted out
   REC.cur = LIVE() && WALLET.token && !WALLET.demo && !ad.tvOff ? {kind: arenaRun ? 'arena' : (isRanked ? 'ranked' : 'casual'),
-    stage: arenaRun ? arenaRun.round : null, P: {def: slimDefC(a), lvl: el, bonus: mb ? mb.key : null},
-    E: {def: slimDefC(b), lvl: eo, who: arenaRun && arenaRun.opp ? arenaRun.opp.who || null : null}, rounds: []} : null;
+    stage: arenaRun ? arenaRun.round : null, P: {def: slimDefC(a), lvl: el, bonus: mb ? mb.key : null, path: SAVE.dog(a.id).path || null},
+    E: {def: slimDefC(b), lvl: eo, who: arenaRun && arenaRun.opp ? arenaRun.opp.who || null : null, path: arenaRun && arenaRun.opp ? arenaRun.opp.path || null : null}, rounds: []} : null;
+  vfStart(a, b, el, eo, mb);
   if (mb) say(`<span class="turn">${mb.emoji} Pack bonus active — <b>${mb.name}</b>: ${mb.txt}.</span>`);
   if (!isRanked && !arenaRun) say(`<span class="turn">Casual fight — no XP, nothing counts towards the ladder.</span>`);
   say(`<span class="turn">The bell rings — ${esc(a.name)} (Bond ${el}) vs ${esc(b.name)} (Bond ${eo}).</span>`);
   shell();
 }
-function go(pa){
-  if (busy || over) return;
+async function go(pa){
+  if (busy || over || VF.busy) return;
   S.unlock(); S.click();
   if (pa.type==='ability' && pa.a.cost > P.energy) return;
   const ea = plannedE || ai(E, P, pa);
-  const rolls = recRolls(() => resolve(pa, ea));
-  if (REC.cur) REC.cur.rounds.push({a: mvKey(P, pa), b: mvKey(E, ea), r: rolls});
+  const a = mvKey(P, pa), b = mvKey(E, ea);
+  const seed = await vfRound(a, b);
+  if (seed != null){
+    resolveSeeded(pa, ea, seed);
+    if (REC.cur) REC.cur.rounds.push({a, b, seed});
+    if (VF.hp && (VF.hp.P !== P.hp || VF.hp.E !== E.hp)) vfAbort('desync');     // should never happen: same engine, same dice
+  } else {
+    const rolls = recRolls(() => resolve(pa, ea));
+    if (REC.cur) REC.cur.rounds.push({a, b, r: rolls});
+  }
   play();
+}
+/* ---- Fair play: ranked fights and live arena fights are refereed by the server. It rebuilds both dogs itself
+   and hands out each round's dice seed only after both moves are in, so the page can't pick its dice; the
+   server runs the same engine and books the result (the ladder can't go above what it verified). Without
+   the server (demo, offline, an older host) the page falls back to its own dice. ---- */
+const VF = {on: false, fid: null, wait: null, busy: false, hp: null};
+function vfOpp(def, opp){
+  if (opp && opp.rid) return {rid: opp.rid};
+  if (def.legendary) return {legendary: +def.legendary};
+  return {token: tokenOf(def)};
+}
+function vfStart(a, b, el, eo, mb){
+  Object.assign(VF, {on: false, fid: null, wait: null, busy: false, hp: null, boss: null});
+  if (!LIVE() || !WALLET.token || WALLET.demo || clubMode || tvMode || (!isRanked && !arenaRun)) return;
+  const body = {kind: arenaRun ? 'arena' : 'ranked', dog: a.id, opp: vfOpp(b, arenaRun && arenaRun.opp), lvl: el, oppLvl: eo,
+    bonus: mb ? mb.key : null, path: SAVE.dog(a.id).path || null, run: arenaRun ? arenaRun.id : null, stage: arenaRun ? arenaRun.round : null};
+  const pathE = arenaRun && arenaRun.opp ? arenaRun.opp.path || null : null;
+  VF.wait = (async () => {
+    if (cloudTimer) await cloudPush();                 // the server reads the bond levels from the cloud save
+    const r = await api('/fight/start', {method: 'POST', body}), j = await r.json();
+    if (!j.fid) return;
+    // the server builds both dogs itself; if it saw other bond levels (an old cloud save), the fight uses its levels
+    if (j.lvl && (j.lvl.P !== P.lvl || j.lvl.E !== E.lvl) && turn === 1){
+      P = build(a, j.lvl.P, mb, SAVE.dog(a.id).path); E = build(b, j.lvl.E, null, pathE); setBars();
+    }
+    if (j.hp && j.hp.P === P.maxHp && j.hp.E === E.maxHp){ VF.on = true; VF.fid = j.fid; }
+    else { VF.fid = j.fid; vfAbort('desync'); }
+  })().catch(() => {}).finally(() => { VF.wait = null; });
+}
+async function vfRound(a, b){
+  if (VF.wait){ VF.busy = true; await VF.wait; VF.busy = false; }
+  if (!VF.on) return null;
+  VF.busy = true;
+  try {
+    const r = await api('/fight/round', {method: 'POST', body: {fid: VF.fid, a, b}}), j = await r.json();
+    if (r.ok && Number.isInteger(j.seed)){ VF.hp = j.hp; if (j.over){ VF.on = false; VF.boss = j.boss || null; if (j.boss && BOSS.d){ BOSS.d.hp = j.boss.hp; BOSS.d.mine = (BOSS.d.mine || 0) + j.boss.hit; } } return j.seed; }
+    VF.on = false; return null;
+  } catch(e){ VF.on = false; return null; }
+  finally { VF.busy = false; }
+}
+function vfAbort(why){
+  const fid = VF.fid; VF.on = false;
+  if (fid) api('/fight/abort', {method: 'POST', body: {fid, why}}).catch(() => {});
 }
 /* ---- Bark Arena TV recording: the dice the engine rolled this round, rounded to 1e-6 and used as rounded,
    so a replay through the same engine lands on exactly the same fight. ---- */
@@ -3675,7 +3770,9 @@ function kennelView(){
   };
   if (needLogin()) return walletCard() + (WALLET.loading ? `<div class="card"><p class="mini" style="margin:0">🐾 ${esc(WALLET.progress)}</p></div>` : '') + introCard();
   const R = ROSTER();
-  if (!R.length) return walletCard() + `<div class="card"><p class="mini" style="margin:0"><b>No Pixel Scrappy in this wallet yet.</b> The kennel fills itself with the ones you hold — grab one on <a href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener">xrp.cafe</a>, then hit ↻ Refresh. Or try the demo dogs in the meantime. A holder can also <b>lend</b> you one — tell them your player name (✏️ above).</p>
+  if (!R.length) return walletCard() + (LEND.starter && LEND.starter.had && !LEND.starter.active ? `<div class="card"><h3 class="h3">🎓 YOUR STARTER DOG WENT HOME</h3>
+      <p class="mini" style="margin:0 0 8px">Pixel Scrappy #${LEND.starter.t} is back with the Scrappy team. Your trainer level, XP and records stay — get a Pixel Scrappy of your own to keep fighting (and to play for the weekly NFT prizes).</p>
+      <div class="row" style="justify-content:flex-start"><a class="btn" href="https://scrappyxrp.fun/barkarena/?src=starter-end#mint" target="_blank" rel="noopener">🐾 Get your own fighter</a></div></div>` : '') + `<div class="card"><p class="mini" style="margin:0"><b>No Pixel Scrappy in this wallet yet.</b> The kennel fills itself with the ones you hold — grab one on <a href="https://xrp.cafe/collection/pixel-scrappy" target="_blank" rel="noopener">xrp.cafe</a>, then hit ↻ Refresh. Or try the demo dogs in the meantime. A holder can also <b>lend</b> you one — tell them your player name (✏️ above).</p>
     <div class="row" style="justify-content:flex-start;margin-top:10px"><button id="demo">Try the demo</button></div></div>` + prizeCards() + lendCard();
   const bonusNote = WALLET.bonusNote ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🎟️ Bonus fights</b>
       <div class="mini">${esc(WALLET.bonusNote)}</div></div><button id="bonusOk" class="sm">OK</button></div></div>` : '';
@@ -3715,10 +3812,135 @@ function kennelView(){
     </div>
     <div class="pick">${dogs}</div>
     <p class="mini" style="margin:11px 0 0"><b>Kit rule.</b> Each Scrappy carries eight traits, one per layer — only the <b>three rarest</b> fight, and at most one of them is an active ability. That keeps a fight readable and makes the individual traits matter, not just the rarity tier. </p>
-    <p class="mini" style="margin:7px 0 0"><b>Bond unlocks:</b> ${Object.entries(BOND.perks).map(([l,p])=>`<b>L${l}</b> ${esc(p.txt)}`).join(' · ')}</p>
+    <p class="mini" style="margin:7px 0 0"><b>Bond unlocks:</b> ${Object.entries(BOND.perks).map(([l,p])=>`<b>L${l}</b> ${esc(p.txt)}${BOND.alt[l] ? ' <i>or</i> ' + esc(BOND.alt[l].txt) : ''}`).join(' · ')}</p>
     ${LIVE() && !WALLET.demo ? `<p class="mini" style="margin:7px 0 0">📺 <b>Bark Arena TV:</b> ${D.tvOff ? 'your fights are not shown on the stream.' : 'your fights can be replayed on our YouTube stream, with your player name.'}
       <button class="sm" id="tvOpt" style="margin:0 0 0 6px">${D.tvOff ? 'Show them again' : "Don't show my fights"}</button></p>` : ''}
-  </div>` + (LIVE() && !WALLET.demo ? lendCard() : '');
+  </div>` + pathCard(R) + achCard() + (LIVE() && !WALLET.demo ? refCard() + lendCard() : '');
+}
+/* ---- Achievements: badges for milestones. The page unlocks most of them; a podium week, a recruited friend
+   and the boss's final blow come from the server. The count shows next to the name on the ladder. ---- */
+const ACH = [
+  {id:'first',    e:'🐣', n:'First blood',    t:'Win a ranked fight'},
+  {id:'upset',    e:'⚡', n:'Giant killer',   t:'Beat a rarer dog'},
+  {id:'legend',   e:'👑', n:'Legend slayer',  t:'Beat a Legendary'},
+  {id:'streak5',  e:'🔥', n:'On fire',        t:'Win 5 in a row'},
+  {id:'streak10', e:'☄️', n:'Unstoppable',    t:'Win 10 in a row'},
+  {id:'champ',    e:'🏆', n:'Champion',       t:'Win an arena tournament'},
+  {id:'bond5',    e:'💞', n:'Best friends',   t:'Reach bond 5 with a dog'},
+  {id:'bond10',   e:'💎', n:'Soulmates',      t:'Reach bond 10 with a dog'},
+  {id:'fights50', e:'🥊', n:'Regular',        t:'Fight 50 ranked fights'},
+  {id:'fights250',e:'🎖️', n:'Veteran',        t:'Fight 250 ranked fights'},
+  {id:'club',     e:'🤜', n:'Fight Clubber',  t:'Win a Fight Club duel'},
+  {id:'pack',     e:'🐾', n:'Pack animal',    t:'Join a pack'},
+  {id:'boss',     e:'👹', n:'Boss hunter',    t:'Hit the weekly boss'},
+  {id:'bossfall', e:'🗡️', n:'Final blow',     t:'Bring a weekly boss down'},
+  {id:'kennel3',  e:'🏠', n:'Kennel keeper',  t:'Hold 3 Pixel Scrappys'},
+  {id:'recruiter',e:'📣', n:'Recruiter',      t:'Invite a friend who gets their own Scrappy'},
+  {id:'podium',   e:'🥇', n:'Podium',         t:'Finish a week in the top 3'}
+];
+const ACHD = {server: {}};
+const achLive = () => LIVE() && !!WALLET.token && !WALLET.demo;
+const achHave = id => !!((SAVE.data.ach || {})[id] || ACHD.server[id]);
+function achUnlock(ids){
+  if (!achLive()) return;
+  const d = SAVE.data; d.ach = d.ach || {};
+  const fresh = [...new Set(ids)].filter(id => !achHave(id) && ACH.some(a => a.id === id));
+  if (!fresh.length) return;
+  for (const id of fresh) d.ach[id] = Date.now();
+  SAVE.save();
+  achToast(fresh);
+  api('/ach', {method:'POST', body:{ids: fresh}}).catch(() => {});
+}
+function achScan(ctx){
+  if (!achLive()) return;
+  const d = SAVE.data, out = [];
+  if (ctx && ctx.win){ out.push('first'); if (ctx.rarer) out.push('upset'); if (ctx.legendary) out.push('legend'); }
+  if (d.best >= 5) out.push('streak5');
+  if (d.best >= 10) out.push('streak10');
+  if ((d.arena.best || 0) >= 3) out.push('champ');
+  const lv = Math.max(1, ...Object.values(d.dogs).map(g => g.lvl || 1));
+  if (lv >= 5) out.push('bond5');
+  if (lv >= 10) out.push('bond10');
+  if (d.fights >= 50) out.push('fights50');
+  if (d.fights >= 250) out.push('fights250');
+  if ((d.club.w || 0) >= 1) out.push('club');
+  if (d.pack) out.push('pack');
+  if (VF.boss && VF.boss.hit) out.push('boss');
+  if ((OWNED || []).filter(f => !f.borrowed).length >= 3) out.push('kennel3');
+  achUnlock(out);
+}
+async function achSync(){
+  if (!achLive()) return;
+  try {
+    const r = await api('/ach'), j = await r.json();
+    if (r.ok){
+      const fresh = Object.keys(j.ach || {}).filter(id => !achHave(id));   // earned on the server (podium, recruiter, final blow)
+      ACHD.server = j.ach || {};
+      if (fresh.length) achToast(fresh);
+      const local = Object.keys(SAVE.data.ach || {}).filter(id => !ACHD.server[id]);
+      if (local.length) api('/ach', {method:'POST', body:{ids: local}}).catch(() => {});
+    }
+  } catch(e){}
+  achScan();
+  if (tab === 'kennel' && !WALLET.loading && !document.querySelector('.stage')) menu();
+}
+function achToast(ids){
+  let box = document.getElementById('achToast');
+  if (!box){ box = document.createElement('div'); box.id = 'achToast'; document.body.appendChild(box); }
+  for (const id of ids){
+    const a = ACH.find(x => x.id === id); if (!a) continue;
+    const el = document.createElement('div');
+    el.innerHTML = `<span>${a.e}</span><div><b>Achievement unlocked</b><br>${esc(a.n)} — ${esc(a.t)}</div>`;
+    box.appendChild(el);
+    setTimeout(() => el.classList.add('out'), 4200); setTimeout(() => el.remove(), 4800);
+  }
+  try { S.fanfare(false); } catch(e){}
+}
+function achCard(){
+  if (!achLive()) return '';
+  const got = ACH.filter(a => achHave(a.id)).length;
+  return `<div class="card"><details${got ? '' : ' open'}><summary class="h3" style="cursor:pointer">🏅 ACHIEVEMENTS · ${got} / ${ACH.length}</summary>
+    <div class="achs">${ACH.map(a => `<div class="${achHave(a.id) ? 'got' : ''}" title="${esc(a.t)}"><span>${a.e}</span><b>${esc(a.n)}</b><small>${esc(a.t)}</small></div>`).join('')}</div>
+    <p class="mini" style="margin:8px 0 0">Your count shows next to your name on the ladder.</p></details></div>`;
+}
+/* ---- Invites: share scrappyxrp.fun/barkarena/?ref=<name>. When a friend gets their own Pixel Scrappy and
+   fights 5 times, both get +3 ranked fights. ---- */
+const REF = {d: null};
+async function refLoad(){
+  if (!achLive()) return;
+  const want = lsGet('ba_ref');
+  if (want && lsGet('ba_ref_sent') !== WALLET.account){
+    try { const r = await api('/ref', {method:'POST', body:{name: want}}); if (r.ok || r.status === 409 || r.status === 404) lsSet('ba_ref_sent', WALLET.account); } catch(e){}
+  }
+  try { const r = await api('/ref'); if (r.ok) REF.d = await r.json(); } catch(e){}
+  if (tab === 'kennel' && !WALLET.loading && !document.querySelector('.stage')) menu();
+}
+function refCard(){
+  const d = REF.d; if (!d) return '';
+  const link = WALLET.name ? 'https://scrappyxrp.fun/barkarena/?ref=' + encodeURIComponent(WALLET.name) : '';
+  return `<div class="card"><h3 class="h3">📣 INVITE FRIENDS</h3>
+    <p class="mini" style="margin:0 0 8px">When a friend comes in through your link, gets a Pixel Scrappy of their own and fights ${d.fights} times, <b>you both get +${d.reward} ranked fights</b> — and you the 📣 Recruiter badge.${d.by ? ` You were invited by <b>${esc(d.by)}</b>.` : ''}</p>
+    ${link ? `<div class="row" style="gap:8px;flex-wrap:wrap;justify-content:flex-start"><input id="refLink" readonly value="${esc(link)}" style="flex:1;min-width:200px;padding:8px 12px">
+      <button id="refCopy" class="sm" style="margin-top:0">Copy</button></div>
+      <p class="mini" style="margin:8px 0 0">Invited: <b>${d.invited}</b> · joined with their own Scrappy: <b>${d.joined}</b></p>`
+      : `<p class="mini" style="margin:0"><b>Set a player name</b> (✏️ above) to get your invite link.</p>`}</div>`;
+}
+/* Bond paths: at bond 4 and 8 each dog follows one of two perks. The classic one is the default; the
+   trainer can switch any time outside a fight (the opponent's dog is unknown until the bell). */
+function pathCard(R){
+  const dogs = bondOrder(R).filter(f => SAVE.dog(f.id).lvl >= 4);
+  if (!dogs.length) return '';
+  const row = f => {
+    const g = SAVE.dog(f.id), p = g.path || {};
+    return `<div class="wal" style="margin-top:8px;align-items:flex-start"><div style="min-width:130px"><b>${esc(f.name)}</b> <span class="lvl">BOND ${g.lvl}</span></div>
+      <div style="flex:1">${[4, 8].filter(l => g.lvl >= l).map(l => `<div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap;margin:0 0 6px">
+        <span class="mini" style="min-width:26px"><b>L${l}</b></span>
+        ${['a', 'b'].map(k => `<button class="sm ${(p[l] || 'a') === k ? 'on' : ''}" data-path="${esc(f.id)}|${l}|${k}" style="margin-top:0">${esc((k === 'a' ? BOND.perks[l] : BOND.alt[l]).txt)}</button>`).join('')}
+      </div>`).join('')}</div></div>`;
+  };
+  return `<div class="card"><h3 class="h3">🧭 BOND PATHS</h3>
+    <p class="mini" style="margin:0">At bond 4 and 8 every dog takes one of two paths. Switch any time between fights.</p>
+    ${dogs.map(row).join('')}</div>`;
 }
 
 function ladderView(){
@@ -3801,6 +4023,31 @@ function packsView(){
 }
 
 
+/* ---- The weekly boss: one Legendary, one health bar for everybody. Every refereed ranked or arena fight hits
+   it with the damage your dog dealt. Down before Monday = +3 ranked fights for everyone who hit it. ---- */
+const BOSS = {d: null, at: 0};
+async function bossLoad(force){
+  if (!LIVE() || WALLET.demo) return;
+  if (!force && BOSS.d && Date.now() - BOSS.at < 60000) return;
+  try {
+    const r = WALLET.token ? await api('/boss') : await fetch(CONFIG.WORKER_URL.replace(/\/$/, '') + '/public/boss');
+    if (r.ok){ BOSS.d = await r.json(); BOSS.at = Date.now(); if (tab === 'arena' && !arenaRun && !clubMode && !document.querySelector('.stage')) menu(); }
+  } catch(e){}
+}
+function bossCard(){
+  const b = BOSS.d; if (!b || !b.max) return '';
+  const leg = DATA.fighters.find(f => f.id === 'L' + b.n), pct = Math.round(100 * b.hp / b.max);
+  const name = b.name || (leg && leg.name) || 'Legendary #' + b.n;
+  const top = (b.top || []).slice(0, 3).map((x, i) => `<span class="tag">${['🥇','🥈','🥉'][i]} ${esc(x.name)} · ${x.dmg}</span>`).join('');
+  return `<div class="card boss" id="bossCard"><div class="wal" style="align-items:center;gap:12px">
+      ${leg ? `<img src="${leg.img}" alt="">` : ''}
+      <div style="flex:1;min-width:0"><b style="font-size:12px">👹 BOSS OF THE WEEK · ${esc(name)}</b>
+        <div class="bossbar"><i style="width:${pct}%"></i></div>
+        <div class="mini">${b.down ? `💥 <b>DEFEATED</b>${b.killer ? ' — final blow by <b>' + esc(b.killer) + '</b>' : ''}. Everyone who hit it gets +${b.reward} ranked fights.`
+          : `<b>${b.hp}</b> / ${b.max} HP · ${b.players} trainer${b.players === 1 ? '' : 's'} on it${b.mine ? ` · your damage <b>${b.mine}</b>` : ''}`}</div>
+        ${top ? `<div class="top">${top}</div>` : ''}</div></div>
+    <p class="mini" style="margin:8px 0 0">Every ranked and arena fight hits the boss with the damage your dog deals. Bring it down before Monday 00:00 UTC: everyone who hit it gets <b>+${b.reward} ranked fights</b>, the top three are named in the chat and on Discord.</p></div>`;
+}
 function arenaView(){
   const A = SAVE.data.arena, t = nextArena(), signed = SAVE.signedToday();
   const local = t.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
@@ -3813,7 +4060,7 @@ function arenaView(){
   const last = A.last ? `<div class="card"><h3 class="h3">LAST ARENA</h3>
       <p class="mini" style="margin:0 0 8px">${A.last.live ? 'Fought live' : 'Your ghosts fought'} · ${A.last.won===3?'<b>Champion</b>':'out after '+A.last.won+' win'+(A.last.won===1?'':'s')} · +${A.last.xp} XP</p>
       ${arenaLines(A.last.lines)}</div>` : '';
-  return `<div class="card">
+  return bossCard() + `<div class="card">
     <div class="wal">
       <div><b style="font-size:12px">🏟️ Daily Arena</b>
         <div class="mini"><b>${ARENA_RUNS} tournaments a day</b>, whenever you like · new ones in <b>${untilUtcMidnight()}</b> (00:00 UTC)<br>
@@ -3972,7 +4219,7 @@ function weekRecapHtml(wk, lad){
     const top = (lad[key] || []).slice(0,5), me = lad.mine && lad.mine[key];
     const inTop = top.some(x => x.you);
     return `<div><h3>${label}</h3>${top.length ? top.map((x,i) =>
-      `<p class="lb ${x.you?'you':''}"><span>${i+1}.</span><span>${esc(x.you ? 'YOU' : x.who)}${x.team ? ' <span class="tag">TEAM</span>' : ''}</span><b>${x.v}${sfx||''}</b></p>`).join('')
+      `<p class="lb ${x.you?'you':''}"><span>${i+1}.</span><span>${esc(x.you ? 'YOU' : x.who)}${x.team ? ' <span class="tag">TEAM</span>' : ''}${x.ach ? ` <span class="tag" title="achievements">🏅${x.ach}</span>` : ''}</span><b>${x.v}${sfx||''}</b></p>`).join('')
       : '<p class="mini">Nobody.</p>'}
       ${me && !inTop ? `<p class="lb you"><span>${me.rank}.</span><span>YOU</span><b>${me.v}${sfx||''}</b></p>` : ''}</div>`;
   };
@@ -4110,13 +4357,20 @@ function menu(){
 
   app.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { S.unlock(); S.click(); tab = b.dataset.t; menu();
     if (tab === 'packs') loadPacks();
-    if (tab === 'arena'){ arenaRegister(); ensureRivals().then(() => { if (tab === 'arena' && !arenaRun) menu(); }); } });
+    if (tab === 'arena'){ arenaRegister(); bossLoad(); ensureRivals().then(() => { if (tab === 'arena' && !arenaRun) menu(); }); } });
   const rc = document.getElementById('recapOpen'); if (rc) rc.onclick = () => { S.click(); showRecap(); };
   app.querySelectorAll('[data-weekrecap]').forEach(b => b.onclick = () => { S.click(); showWeekRecap(); });
   if (weekRecapDue()) showWeekRecap();            // a new week: last week's results come first
   else if (SAVE.dayComplete() && !SAVE.data.today.shown && !WALLET.loading && !needLogin()) showRecap();
   const tvo = document.getElementById('tvOpt');
   if (tvo) tvo.onclick = () => { S.click(); SAVE.data.tvOff = !SAVE.data.tvOff; SAVE.save(); api('/tv', {method:'POST', body:{off: !!SAVE.data.tvOff}}).catch(() => {}); menu(); };
+  const rc2 = document.getElementById('refCopy');
+  if (rc2) rc2.onclick = async () => { S.click(); const i = document.getElementById('refLink');
+    try { await navigator.clipboard.writeText(i.value); rc2.textContent = '✅ Copied'; } catch(e){ i.select(); rc2.textContent = 'Copy it above'; } };
+  app.querySelectorAll('[data-path]').forEach(b => b.onclick = () => {
+    S.click(); const [id, l, k] = b.dataset.path.split('|'), g = SAVE.dog(id);
+    g.path = {...(g.path || {}), [l]: k}; SAVE.save(); menu();
+  });
   app.querySelectorAll('[data-ksort]').forEach(b => b.onclick = () => { S.click(); kSort = b.dataset.ksort; lsSet('ba_ksort', kSort); menu(); });
   app.querySelectorAll('[data-f]').forEach(b => b.onclick = () => {
     S.unlock(); S.click();
@@ -4154,7 +4408,7 @@ function menu(){
     await ensureRivals();                                   // real players' Scrappys, ready before the bell
     if (arenaLimited()) SAVE.arenaUse();
     if (SAVE.signedToday()) { startLiveArena(); return; }
-    const r = runGhostArena();
+    const r = await runGhostArena();
     r.won === 3 ? S.win() : (r.won ? S.heal() : S.lose());
     menu();
   };
@@ -4210,7 +4464,7 @@ async function tvPlay(rep){
   TV.theme = rep.kind === 'club' ? 'club' : rep.kind === 'arena' ? 'arena' : 'meadow';
   const [ia, ib] = await Promise.all([tvImg(rep.P.def), tvImg(rep.E.def)]);
   const a = Object.assign({}, rep.P.def, {img: ia}), b = Object.assign({}, rep.E.def, {img: ib});
-  P = build(a, rep.P.lvl, rep.P.bonus ? {key: rep.P.bonus} : null); E = build(b, rep.E.lvl, null);
+  P = build(a, rep.P.lvl, rep.P.bonus ? {key: rep.P.bonus} : null, rep.P.path); E = build(b, rep.E.lvl, null, rep.E.path);
   turn = 1; log = []; ev = []; over = false; AIM = null;
   app.innerHTML = tvTop(rep) + stage() + tvLow(rep);
   fxInit(document.querySelector('canvas.fx'), TV.theme); auraInit(); setBars();
@@ -4221,7 +4475,7 @@ async function tvPlay(rep){
       const r = rep.rounds ? rep.rounds[i] : null;
       if (rep.rounds && !r) break;
       if (!r){ const ea = ai(E, P, null); resolve(ai(P, E, ea), ea); }          // exhibition: both sides on the AI
-      else if (rep.kind === 'club') resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
+      else if ((rep.kind === 'club' || r.seed != null)) resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
       else { const pa = moveOf(P, r.a), ea = moveOf(E, r.b); rollsReplay(r.r, () => resolve(pa, ea)); }
       simulating = false; await play(); simulating = true; TV.beat = Date.now();
       await wait(450);
@@ -4289,7 +4543,7 @@ const PCT = f => f.hp / f.maxHp;
 /* Plays a fight silently and keeps the dice, so the visible run is the same fight; returns what happened. */
 function clipDry(rep){
   const keep = Math.random; let rounds = [];
-  P = build(rep.P.def, rep.P.lvl, rep.P.bonus ? {key: rep.P.bonus} : null); E = build(rep.E.def, rep.E.lvl, null);
+  P = build(rep.P.def, rep.P.lvl, rep.P.bonus ? {key: rep.P.bonus} : null, rep.P.path); E = build(rep.E.def, rep.E.lvl, null, rep.E.path);
   turn = 1; log = []; ev = []; over = false; AIM = null; simulating = true;
   const st = {low: {P: 1, E: 1}, lowHp: {P: 99, E: 99}, big: 0, rounds: 0, abil: 0, crit: 0};
   try {
@@ -4297,7 +4551,7 @@ function clipDry(rep){
       let r = rep.rounds ? rep.rounds[i] : null;
       if (rep.rounds && !r) break;
       if (!r){ const ea = ai(E, P, null), pa = ai(P, E, ea); r = {a: mvKey(P, pa), b: mvKey(E, ea), r: recRolls(() => resolve(pa, ea))}; }
-      else if (rep.kind === 'club') resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
+      else if ((rep.kind === 'club' || r.seed != null)) resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
       else { const pa = moveOf(P, r.a), ea = moveOf(E, r.b); rollsReplay(r.r, () => resolve(pa, ea)); }
       rounds.push(r); st.rounds++;
       for (const e of ev){ if (e.t === 'hit') st.big = Math.max(st.big, e.n); if (e.t === 'moves') st.abil += (e.l === 'ability') + (e.r === 'ability'); if (e.txt === 'CRIT!') st.crit++; }
@@ -4359,7 +4613,7 @@ async function clipBoot(){
   TV.theme = rep.kind === 'club' ? 'club' : rep.kind === 'arena' ? 'arena' : ['meadow', 'arena', 'club'][Math.floor(Math.random() * 3)];
   const [ia, ib] = await Promise.all([tvImg(rep.P.def), tvImg(rep.E.def)]);
   const a = Object.assign({}, rep.P.def, {img: ia}), b = Object.assign({}, rep.E.def, {img: ib});
-  P = build(a, rep.P.lvl, rep.P.bonus ? {key: rep.P.bonus} : null); E = build(b, rep.E.lvl, null);
+  P = build(a, rep.P.lvl, rep.P.bonus ? {key: rep.P.bonus} : null, rep.P.path); E = build(b, rep.E.lvl, null, rep.E.path);
   turn = 1; log = []; ev = []; over = false;
   // TikTok cut: the first rounds happen off screen, the clip opens on the last few (the decisive part)
   let skip = 0;
@@ -4367,7 +4621,7 @@ async function clipBoot(){
     skip = Math.max(0, rep.rounds.length - 4);
     simulating = true;
     try { for (let i = 0; i < skip; i++){ const r = rep.rounds[i];
-      if (rep.kind === 'club') resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
+      if ((rep.kind === 'club' || r.seed != null)) resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
       else { const pa = moveOf(P, r.a), ea = moveOf(E, r.b); rollsReplay(r.r, () => resolve(pa, ea)); } } }
     finally { simulating = false; }
     log = []; ev = [];
@@ -4387,7 +4641,7 @@ async function clipBoot(){
   try {
     for (const r of rep.rounds.slice(skip)){
       if (over) break;
-      if (rep.kind === 'club') resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
+      if ((rep.kind === 'club' || r.seed != null)) resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
       else { const pa = moveOf(P, r.a), ea = moveOf(E, r.b); rollsReplay(r.r, () => resolve(pa, ea)); }
       simulating = false; await play(); simulating = true;
       await wait(150);

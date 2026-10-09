@@ -176,9 +176,14 @@ const env = {
   SESSION_SECRET: sessionSecret(), ADMIN_KEY: process.env.ADMIN_KEY || "",
   ORIGIN: process.env.ORIGIN || "", RETURN_URL: process.env.RETURN_URL || "",
   IPFS_GATEWAY: process.env.IPFS_GATEWAY || "https://ipfs.io/ipfs/", META_HOSTS: process.env.META_HOSTS || "*",
+  TEAM: process.env.TEAM || "", DISCORD_WEBHOOK: process.env.DISCORD_WEBHOOK || "",
+  FAIRPLAY: process.env.FAIRPLAY || "", FAIR_SINCE: process.env.FAIR_SINCE || "",
   STORE, KV, FILES,
   ENGINE: loadEngine(path.join(ROOT, "public", "index.html")),   // Fight Club referee: the game's own engine
 };
+
+// every 5 minutes: freeze a finished week on time, post the daily summary to Discord (worker.scheduled)
+if (worker.scheduled) { setTimeout(() => worker.scheduled({}, env), 20e3).unref(); setInterval(() => worker.scheduled({}, env), 5 * 60e3).unref(); }
 
 const GAME = fs.readFileSync(path.join(ROOT, "public", "index.html"));
 // WalletConnect bundle for "Joey (mobile)", fetched only when a player picks it
@@ -231,6 +236,10 @@ select{border:2px solid var(--ink);border-radius:999px;padding:6px 10px;font:inh
       Bio / channel links: TikTok <b>scrappyxrp.fun/barkarena/?src=tt</b> · Instagram <b>…?src=ig</b> · YouTube <b>…?src=yt</b>. Pin the "comment" as the first comment.</p>
     <div class="row" style="margin-top:8px"><button class="btn ghost" id="clipsReload">↻ Refresh clips</button></div>
     <div id="clips"><p class="muted">Loading…</p></div></div>
+  <div class="card"><h2 style="margin:0;font-size:18px">🛡️ Fair play — this week</h2>
+    <p class="muted" style="margin:4px 0 0">The server referees ranked and arena fights. <b>Claimed</b> = what the page posted, <b>verified</b> = what the server saw.
+      The ladder never shows more than verified (+60 XP slack). A flag means: look closer — e.g. a page that posted more than it fought, or a rival that loses on purpose too often.</p>
+    <div id="fair"><p class="muted">Loading…</p></div></div>
   <div class="card"><h2 style="margin:0;font-size:18px">📈 Reach — where new people come from</h2>
     <p class="muted" style="margin:4px 0 0">Visits of scrappyxrp.fun/barkarena by source (tt TikTok, yt YouTube, ig Instagram, direct = no tag), how many saw the mint section,
       clicked mint, or went into the game — and the players who signed in after coming from a source.</p>
@@ -277,7 +286,7 @@ async function load(){
     .map(([l,v]) => "<div class='card stat'><span>"+l+"</span><b>"+v+"</b></div>").join("");
   $("dlJson").href = "/api/admin/export?download=1&key=" + encodeURIComponent(KEY);
   $("dlCsv").href = "/api/admin/csv?key=" + encodeURIComponent(KEY);
-  draw(); season(); chat(); clips(); funnel();
+  draw(); season(); chat(); clips(); funnel(); fair();
 }
 const CK = p => fetch("/api/admin/clips" + p + (p.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(KEY), {cache: "no-store"});
 async function clips(){
@@ -308,6 +317,16 @@ async function clips(){
     fetch("/api/admin/clips/posted?key=" + encodeURIComponent(KEY), {method: "POST", body: JSON.stringify({name, platform, on: x.checked})}); });
   $("clips").querySelectorAll("[data-cdelete]").forEach(b => b.onclick = async () => { if (!confirm("Delete clip " + b.dataset.cdelete + "?")) return;
     await fetch("/api/admin/clips/delete?key=" + encodeURIComponent(KEY), {method: "POST", body: JSON.stringify({name: b.dataset.cdelete})}); clips(); });
+}
+async function fair(){
+  const j = await api("fair").catch(() => null);
+  if (!j || !j.players){ $("fair").innerHTML = "<p class='muted'>No data.</p>"; return; }
+  if (!j.on){ $("fair").innerHTML = "<p class='muted'>Fair play is switched off (FAIRPLAY=off).</p>"; return; }
+  $("fair").innerHTML = j.players.length ? "<table><tr><th>Player</th><th>XP claimed / verified</th><th>Wins claimed / verified</th><th>Fights</th><th>Ghost runs</th><th>Abandoned</th><th>Desync</th><th>Rival throws</th><th>Flag</th></tr>" +
+    j.players.map(p => "<tr><td><b>" + esc(p.name) + "</b><br><span class='mono'>" + esc(p.account) + "</span></td><td>" + p.xp + " / " + p.vxp + "</td><td>" + p.wins + " / " + p.vwins +
+      "</td><td>" + p.fights + "</td><td>" + p.ghosts + "</td><td>" + p.abandoned + "</td><td>" + p.desync + "</td><td>" + (p.throwRate == null ? "–" : p.throwRate + " %") +
+      "</td><td style='white-space:normal'>" + (p.flag ? "⚠️ " + esc(p.flag) + (p.over ? " (posted " + p.over.xp + " XP)" : "") : "✅") + "</td></tr>").join("") + "</table>"
+    : "<p class='muted'>Nobody on the board yet this week.</p>";
 }
 async function funnel(){
   const j = await api("funnel").catch(() => null);
