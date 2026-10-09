@@ -177,6 +177,8 @@ const env = {
   ORIGIN: process.env.ORIGIN || "", RETURN_URL: process.env.RETURN_URL || "",
   IPFS_GATEWAY: process.env.IPFS_GATEWAY || "https://ipfs.io/ipfs/", META_HOSTS: process.env.META_HOSTS || "*",
   TEAM: process.env.TEAM || "", DISCORD_WEBHOOK: process.env.DISCORD_WEBHOOK || "",
+  DISCORD_WEBHOOK_FIGHTS: process.env.DISCORD_WEBHOOK_FIGHTS || "", DISCORD_WEBHOOK_STATS: process.env.DISCORD_WEBHOOK_STATS || "",
+  DISCORD_WEBHOOK_CLUB: process.env.DISCORD_WEBHOOK_CLUB || "",
   FAIRPLAY: process.env.FAIRPLAY || "", FAIR_SINCE: process.env.FAIR_SINCE || "",
   STORE, KV, FILES,
   ENGINE: loadEngine(path.join(ROOT, "public", "index.html")),   // Fight Club referee: the game's own engine
@@ -510,7 +512,7 @@ function clipsList() {
    (its .json arrives last) each day, up to DISCORD_CLIPS a day (default 1). The YouTube cut if it fits Discord's
    upload limit, else the shorter TikTok cut, else text only. */
 async function discordClip(tag) {
-  const hook = process.env.DISCORD_WEBHOOK || "";
+  const hook = process.env.DISCORD_WEBHOOK_FIGHTS || process.env.DISCORD_WEBHOOK || "";      // #fights
   if (!/^https:\/\/(?:\w+\.)?discord(?:app)?\.com\/api\/webhooks\//.test(hook)) return;
   const stateF = path.join(CLIPS_DIR, ".discord.json"), day = tag.slice(0, 10), max = Math.max(0, +(process.env.DISCORD_CLIPS ?? 1));
   let st = {}; try { st = JSON.parse(fs.readFileSync(stateF, "utf8")); } catch {}

@@ -19,7 +19,8 @@ fs.writeFileSync(D + "/store.json", JSON.stringify({players: {}, weekly, holding
   ["boss:" + NOW]: {week: NOW, n: 3, name: "The Revival", max: 4000, hp: 3, dealt: 3997, by: {[R2]: 3975}, day: {}, down: null, killer: null}}}));
 const log = fs.openSync(S + "/v32server.log", "w");
 const srv = spawn("node", [new URL("./tut-mock.mjs", import.meta.url).pathname], {env: {...process.env, PORT: String(PORT), DATA_DIR: D, ISSUER: "rI", TAXON: "369",
-  ADMIN_KEY: "adm", FAIR_SINCE: "2026-01-05", DISCORD_WEBHOOK: "https://discord.com/api/webhooks/1/test"}, stdio: ["ignore", log, log]});
+  ADMIN_KEY: "adm", FAIR_SINCE: "2026-01-05", DISCORD_WEBHOOK: "https://discord.com/api/webhooks/1/general",
+  DISCORD_WEBHOOK_FIGHTS: "https://discord.com/api/webhooks/2/fights", DISCORD_WEBHOOK_STATS: "https://discord.com/api/webhooks/3/stats", DISCORD_WEBHOOK_CLUB: "https://discord.com/api/webhooks/4/club"}, stdio: ["ignore", log, log]});
 const bye = c => { try { srv.kill(); } catch (e) {} process.exit(c); };
 setTimeout(() => { console.log("TIMEOUT"); bye(1); }, 600000);
 process.on("unhandledRejection", e => { console.log("ERR", e && e.stack || e); bye(1); });
@@ -131,6 +132,11 @@ ok(/Fight of the day:\*\* Common beats a Legendary[\s\S]*\[file bark-arena-\d{4}
 await up(day + "-2.mp4", Buffer.alloc(1000, 1)); await up(day + "-2.json", JSON.stringify({hook: "second"}));
 await new Promise(r => setTimeout(r, 300));
 ok(!/Fight of the day:\*\* second/.test(discordLog()), "only one clip a day");
+const posts = discordLog().split("\n----\n").filter(Boolean);
+const chOf = re => (posts.find(x => re.test(x)) || "").slice(1, (posts.find(x => re.test(x)) || "").indexOf("]"));
+ok(chOf(/Upset!/) === "fights" && chOf(/Fight of the day/) === "fights", "highlights + clip → #fights");
+ok(chOf(/is final/) === "stats" && chOf(/boss is down/) === "stats", "week results + boss → #arena-stats");
+ok(chOf(/wants a fight/) === "club", "open challenges → #search-arena-fight");
 
 // ---------------------------------------------------------------- browser
 const br = await chromium.launch({executablePath: process.env.CHROMIUM || undefined});

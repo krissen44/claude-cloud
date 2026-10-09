@@ -50,8 +50,11 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
 
 **Upload (Mon 19 Oct):**
 1. Game ZIP to the Hostinger Node.js app (all files incl. `node_modules/`), restart.
-2. New env vars (Hostinger → Node.js app → Environment variables): `DISCORD_WEBHOOK` = the webhook URL (Discord:
-   Server settings → Integrations → Webhooks → New Webhook → pick the channel, e.g. #bark-arena → Copy Webhook URL).
+2. New env vars (Hostinger → Node.js app → Environment variables), one Discord webhook per channel (Discord: Server
+   settings → Integrations → Webhooks → New Webhook → name "Bark Arena", pick the channel → Copy Webhook URL):
+   `DISCORD_WEBHOOK_FIGHTS` → #fights (highlights + clip of the day), `DISCORD_WEBHOOK_STATS` → #arena-stats (week
+   results, daily summary, boss), `DISCORD_WEBHOOK_CLUB` → #search-arena-fight (open Club challenges). `DISCORD_WEBHOOK`
+   is the fallback for any channel left empty.
    Optional: `FAIRPLAY=off` (only if something goes wrong with the referee), `TEAM` now really works.
 3. Website: `barkarena/index.html` → `public_html/barkarena/` (boss section, invite links, guide + FAQ).
 4. Check: sign in → kennel shows 🏅 Achievements + 📣 Invite friends; arena tab shows the 👹 boss; play one ranked

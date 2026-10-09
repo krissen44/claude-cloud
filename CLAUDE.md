@@ -61,7 +61,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 
 ### Environment variables (Hostinger)
 `ISSUER=rGAVUGyhdbxQs1G7nwCCFU4w8P4HfgFKD6`, `TAXON=369` (empty/`*` = any taxon), `XUMM_API_KEY`, `XUMM_API_SECRET`,
-`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK` + `DISCORD_CLIPS` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
+`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK_FIGHTS` (#fights) / `_STATS` (#arena-stats) / `_CLUB` (#search-arena-fight), fallback `DISCORD_WEBHOOK`, `DISCORD_CLIPS` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
 `META_HOSTS`, `ORIGIN`, `PORT`.
 
 ### API (`/api/...`)

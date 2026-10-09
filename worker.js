@@ -639,7 +639,7 @@ async function clubRoute(env, account, p, req, url) {
       const k = "dc:club:" + account;
       if (!env.KV || !(await env.KV.get(k))) {
         if (env.KV) await env.KV.put(k, "1", {expirationTtl: 1800});
-        discord(env, `🥊 **${me.name}** wants a fight! Open Fight Club challenge with ${me.def.name} (Bond ${me.lvl}) — first one to accept takes it: ${GAME_URL(env)}`);
+        discord(env, `🥊 **${me.name}** wants a fight! Open Fight Club challenge with ${me.def.name} (Bond ${me.lvl}) — first one to accept takes it: ${GAME_URL(env)}`, "club");
       }
     }
     return json({duel: clubView(d, account)});
@@ -868,8 +868,12 @@ async function adminFair(env, week) {
 /* ------------------------------------------------------------------ Discord */
 /* DISCORD_WEBHOOK (a channel webhook URL) gets the game's news: week results, the boss, open Club
    challenges, the day's arena champions. Fire and forget — Discord being slow never slows the game. */
-function discord(env, text) {
-  const url = String(env.DISCORD_WEBHOOK || "");
+/* Channels: DISCORD_WEBHOOK_FIGHTS (#fights: highlights, clip of the day), DISCORD_WEBHOOK_STATS (#arena-stats:
+   week results, daily summary, boss), DISCORD_WEBHOOK_CLUB (#search-arena-fight: open challenges); each falls back
+   to DISCORD_WEBHOOK. */
+const discordUrl = (env, ch) => String((ch === "fights" ? env.DISCORD_WEBHOOK_FIGHTS : ch === "stats" ? env.DISCORD_WEBHOOK_STATS : ch === "club" ? env.DISCORD_WEBHOOK_CLUB : "") || env.DISCORD_WEBHOOK || "");
+function discord(env, text, ch) {
+  const url = discordUrl(env, ch);
   if (!/^https:\/\/(?:\w+\.)?discord(?:app)?\.com\/api\/webhooks\//.test(url)) return Promise.resolve(false);
   return fetch(url, {method: "POST", headers: {"content-type": "application/json"},
     body: JSON.stringify({username: "Bark Arena", content: String(text).slice(0, 1900), allowed_mentions: {parse: []}})})
@@ -933,7 +937,7 @@ async function bossDown(env, b) {
   await chatSystem(env, `👹 The boss ${who} is DOWN — final blow by ${name(b.killer)}! Everyone who hit it gets +${BOSS_REWARD} ranked fights. Top damage: ${top.map(([a, d]) => name(a) + " " + d).join(", ")}.`);
   await discord(env, `👹 **The weekly boss is down!** ${who} fell after ${Object.keys(b.by).length} trainers dealt ${b.dealt} damage.\n` +
     `🗡️ Final blow: **${name(b.killer)}**\n🏅 Top damage: ${top.map(([a, d], i) => `${["🥇", "🥈", "🥉"][i]} ${name(a)} (${d})`).join(" · ")}\n` +
-    `Everyone who hit it gets +${BOSS_REWARD} ranked fights. ${GAME_URL(env)}`);
+    `Everyone who hit it gets +${BOSS_REWARD} ranked fights. ${GAME_URL(env)}`, "stats");
 }
 async function bossPublic(env, account) {
   const b = await bossGet(env), names = await storeOf(env).profiles();
@@ -1205,7 +1209,7 @@ async function replayKeep(env, r) {
    rarity tiers below, or a non-Legendary beating a Legendary), an arena final won, or a Club duel. At most one
    every 30 minutes, 8 a day. Players who turned Bark Arena TV off never show up (replayKeep skips them). */
 async function discordHighlight(env, r) {
-  if (!env.DISCORD_WEBHOOK || r.result !== "W" || !r.P.who) return;
+  if (!discordUrl(env, "fights") || r.result !== "W" || !r.P.who) return;
   const rk = {Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Mythic: 4, Legendary: 5};
   const a = rk[r.P.def.rarity] ?? 0, b = rk[r.E.def.rarity] ?? 0, legE = !!r.E.def.legendary && !r.P.def.legendary;
   const kind = b - a >= 2 || legE ? "upset" : r.kind === "arena" && r.stage === 2 ? "final" : r.kind === "club" ? "club" : null;
@@ -1216,7 +1220,7 @@ async function discordHighlight(env, r) {
   const dog = (x) => `${x.def.rarity} #${x.def.token || "?"}${x.def.legendary && env.ENGINE ? " *" + (env.ENGINE.legName(x.def.legendary) || "") + "*" : ""}`;
   const head = kind === "upset" ? "⚡ **Upset!**" : kind === "final" ? "🏆 **Arena champion!**" : "🥊 **Fight Club!**";
   const vs = r.E.who ? `${r.E.who}'s ${dog(r.E)}` : `a ${dog(r.E)}`;
-  await discord(env, `${head} ${r.P.who}'s ${dog(r.P)} beat ${vs}${kind === "final" ? " in the final" : ""}.\n▶️ Watch the fight: ${GAME_URL(env)}clip?id=${r.id}`);
+  await discord(env, `${head} ${r.P.who}'s ${dog(r.P)} beat ${vs}${kind === "final" ? " in the final" : ""}.\n▶️ Watch the fight: ${GAME_URL(env)}clip?id=${r.id}`, "fights");
 }
 const MOVE_RE = /^(bite|guard|taunt|ab[0-2])$/;
 async function replayPost(env, account, b) {
@@ -1533,7 +1537,7 @@ async function weekFrozen(env, rec) {
     boss ? (boss.down ? `👹 Boss ${boss.name || "#" + boss.n} was taken down by ${Object.keys(boss.by).length} trainers.` : `👹 Boss ${boss.name || "#" + boss.n} survived with ${boss.hp} HP — this week it's personal.`) : "",
     `🎁 NFT prizes go out today. Results sealed on the XRPL: sha256 \`${rec.sha256.slice(0, 16)}…\``,
     `🆕 New week, new boss: **${now.name || "Legendary #" + now.n}** (${now.max} HP). Tickets are fresh — ${GAME_URL(env)}`];
-  if (rec.week === weekOf(new Date(Date.now() - 7 * 864e5))) await discord(env, lines.filter(Boolean).join("\n"));   // old weeks frozen late stay quiet
+  if (rec.week === weekOf(new Date(Date.now() - 7 * 864e5))) await discord(env, lines.filter(Boolean).join("\n"), "stats");   // old weeks frozen late stay quiet
 }
 /* The day's numbers, for the Discord morning post. */
 async function dailyCount(env, account, champ) {
@@ -1560,7 +1564,7 @@ async function tick(env) {
       await discord(env, [`📊 **Yesterday in Bark Arena:** ${d.fights} refereed fights by ${Object.keys(d.players).length} trainers.`,
         champs.length ? `🏆 Arena champions: ${champs.map(n => "**" + n + "**").join(", ")}` : "",
         boss.down ? `👹 The boss is down — see you next week.` : `👹 Boss ${boss.name || "#" + boss.n}: **${boss.hp}** / ${boss.max} HP left (${Math.round(100 * boss.hp / boss.max)} %).`,
-        `New tickets are in: ${GAME_URL(env)}`].filter(Boolean).join("\n"));
+        `New tickets are in: ${GAME_URL(env)}`].filter(Boolean).join("\n"), "stats");
     }
   }
 }
