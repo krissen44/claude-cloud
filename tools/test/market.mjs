@@ -45,6 +45,15 @@ await p.waitForTimeout(800);
 ok(await p.locator("h3", {hasText: "LENDING MARKET"}).count() === 1, "non-holder (with a starter dog) sees the market");
 ok(await p.locator("[data-take]").count() === 1, "one dog on offer");
 await p.screenshot({path: S + "/shots/market.png", fullPage: true});
+// a holder doesn't get the borrow card, but sees what's on offer in the lend card
+const h = await (await br.newContext({viewport: {width: 1100, height: 900}})).newPage();
+await h.route(u => !u.href.startsWith("http://127.0.0.1"), r => r.abort());
+await h.goto(U + "/"); await h.evaluate(([t, a]) => localStorage.setItem("ba_session", JSON.stringify({token: t, account: a})), [tok(OWNER2), OWNER2]);
+await h.goto(U + "/"); await h.waitForFunction(() => typeof LEND !== "undefined" && LEND.market && LEND.market.length && !WALLET.loading, null, {timeout: 30000});
+await h.waitForTimeout(800);
+ok(await h.locator(".mkview > div").count() === 1 && await h.locator("[data-take]").count() === 0, "a holder sees the offer (view only, no borrow button)");
+await h.locator(".mkview").screenshot({path: S + "/shots/market-holder.png"});
+await h.close();
 await p.click("[data-take]");
 await p.waitForFunction(() => (OWNED || []).some(f => f.borrowed && !f.borrowed.starter), null, {timeout: 15000});
 ok(true, "borrowed dog joined the kennel");

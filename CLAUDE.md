@@ -244,7 +244,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 - **Lending market (v32)**: blob `lendmarket` {id: {id, owner, dog, days, note, at}}, max 3 per owner (`MARKET_MAX`);
   `marketOf` drops sold dogs and hides lent ones (listing stays, back after the loan); `marketTake` = a normal loan
   (`market: <listing id>`). Client `marketCard` (non-holders without a borrowed dog, also over a starter), listing row
-  in `lendCard`, wiring `data-take` / `data-unlist` / `#mkList`. Images via `/public/dogimg?t=`.
+  in `lendCard` + view-only “On the market now” list for holders (v32.1, `.mkview`), wiring `data-take` / `data-unlist` / `#mkList`. Images via `/public/dogimg?t=`.
 - **Starter dog (v32)**: `starterOf(env, a, create)` — no own tokens → a treasury piece (`treasuryList`, issuer's
   non-Legendaries, shared by hash) or a collection token, 7 days, once (blob `starters`); shown as a borrowed dog
   (`lendInfo.in` with `starter: true`, `ownerName` "the Scrappy team"); `buildResults` marks `starter` and skips them

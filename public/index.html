@@ -311,6 +311,7 @@ button.act:disabled{opacity:.4;cursor:not-allowed}
 .mkt{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .mkt>div{border:2px solid var(--panelB);border-radius:10px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center}
 .mkt img{width:96px;height:96px;image-rendering:pixelated;border-radius:8px}
+.mkview{margin-top:8px;grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}.mkview img{width:64px;height:64px}
 .mkt small{font-size:9.5px;color:var(--ink2);line-height:1.35}.mkt b{font-size:12px}
 .achs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}
 .achs div{border:2px solid var(--panelB);border-radius:9px;padding:8px;display:grid;grid-template-columns:30px 1fr;gap:0 8px;opacity:.45;filter:grayscale(1)}
@@ -1674,6 +1675,12 @@ function lendCard(){
         <select id="mkDays" style="padding:8px 12px"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select>
         <input id="mkNote" type="text" maxlength="80" placeholder="Note (optional), e.g. great guard" style="flex:1;min-width:140px;padding:9px 14px">
         <button id="mkList">🏪 List it</button></div>` : ''; })()}
+      ${(LEND.market || []).length ? `<div class="mini" style="margin-top:12px"><b>On the market now</b> (${LEND.market.length}) — players without a Pixel Scrappy see these with a “Borrow” button:</div>
+        <div class="mkt mkview">${LEND.market.map(x => `<div><img src="${CONFIG.WORKER_URL.replace(/\/$/, '')}/public/dogimg?t=${x.dog.t}" alt="" loading="lazy">
+          <b>#${x.dog.t}</b> <span class="lvl">BOND ${x.lvl}</span>
+          <small>${esc(x.rarity || '')}${x.rarity ? ' · ' : ''}${x.days} day${x.days === 1 ? '' : 's'} · from ${esc(x.ownerName)}${x.team ? ' <span class="tag">TEAM</span>' : ''}</small>
+          ${x.note ? `<small><i>“${esc(x.note)}”</i></small>` : ''}</div>`).join('')}</div>`
+        : `<div class="mini" style="margin-top:12px"><i>No other dogs on the market right now.</i></div>`}
     </div></div>`;
 }
 function lendWire(){

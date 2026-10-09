@@ -13,6 +13,9 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
 - **Ladder tags fixed:** the TEAM and 🏅 achievement tags in the ladder rows were squeezed and overlapping —
   `.lb span:nth-child(…)` (meant for the rank and name columns) also hit the tags inside the name. Now `.lb>span`,
   rows centred, tags sized for the row.
+- **Lending market visible to holders:** the market card (with “Borrow”) is only for players without a Pixel Scrappy,
+  so a holder (e.g. the owner testing with a second wallet) saw nothing and thought the listings were gone. The lend
+  card now shows “On the market now” — every open offer, view only. Test: `tools/test/market.mjs`.
 - Upload: `bark-arena-game-v32.1.zip` → Node app folder (replaces `public/index.html`), restart the app.
   (`bark-arena-game-v32.zip` was rebuilt with it, for a full redeploy.)
 
