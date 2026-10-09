@@ -117,6 +117,21 @@ const kR1 = (await call(R1, "/me/kennel")).nfts;
 await call(R1, "/club/create", {dogId: kR1[0].nft_id, open: true});
 ok(/Open Fight Club challenge/.test(discordLog()), "Discord got the open Club challenge");
 
+// ---------------------------------------------------------------- Discord: highlights + clip of the day
+const def = (t, rarity, leg) => ({id: "x" + t, token: t, name: "Pixel Scrappy #" + t, rarity, legendary: leg || null, traits: []});
+const rp = await call(R1, "/replay", {kind: "ranked", P: {def: def(3101, "Common"), lvl: 2}, E: {def: def(8, "Legendary", "8"), lvl: 2},
+  rounds: [{a: "bite", b: "taunt", r: [1, 2, 3]}], result: "W"});
+ok(rp.kept, "replay kept");
+ok(/Upset!.*Barkley's Common #3101 beat a Legendary #8 \*To The Moon\*[\s\S]*clip\?id=/.test(discordLog()), "Discord gets the upset with a watch link");
+const day = new Date().toISOString().slice(0, 10), up = async (n, body) => (await fetch(U + "/api/admin/clips/upload?key=adm&name=" + n, {method: "PUT", body})).json();
+await up(day + "-1.mp4", Buffer.alloc(200000, 1)); await up(day + "-1-tt.mp4", Buffer.alloc(100000, 1));
+await up(day + "-1.json", JSON.stringify({hook: "Common beats a Legendary ⚡", line: "Barkley's #3101 took down #8", question: "Who's next?"}));
+await new Promise(r => setTimeout(r, 500));
+ok(/Fight of the day:\*\* Common beats a Legendary[\s\S]*\[file bark-arena-\d{4}-\d{2}-\d{2}-1\.mp4 200000 bytes\]/.test(discordLog()), "the clip of the day goes to Discord as a video");
+await up(day + "-2.mp4", Buffer.alloc(1000, 1)); await up(day + "-2.json", JSON.stringify({hook: "second"}));
+await new Promise(r => setTimeout(r, 300));
+ok(!/Fight of the day:\*\* second/.test(discordLog()), "only one clip a day");
+
 // ---------------------------------------------------------------- browser
 const br = await chromium.launch({executablePath: process.env.CHROMIUM || undefined});
 const ctx = await br.newContext({viewport: {width: 1100, height: 900}});

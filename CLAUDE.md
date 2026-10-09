@@ -61,7 +61,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 
 ### Environment variables (Hostinger)
 `ISSUER=rGAVUGyhdbxQs1G7nwCCFU4w8P4HfgFKD6`, `TAXON=369` (empty/`*` = any taxon), `XUMM_API_KEY`, `XUMM_API_SECRET`,
-`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
+`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK` + `DISCORD_CLIPS` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
 `META_HOSTS`, `ORIGIN`, `PORT`.
 
 ### API (`/api/...`)
@@ -251,7 +251,9 @@ hand over one combined package for the week start; don't tell the owner to uploa
   for prizes (`starterWeek`). Client: starter card in `lendCard`, "went home" card in the empty kennel.
 - **Discord (v32)**: `discord(env, text)` (env `DISCORD_WEBHOOK`, fire and forget): `weekFrozen` (results + new boss,
   only for last week), `tick` (daily summary from blob `daily:<day>`), `bossDown`, open Club challenges (KV throttle).
-  `worker.scheduled` runs `tick` every 5 minutes from `server.js`.
+  `worker.scheduled` runs `tick` every 5 minutes from `server.js`. Fights: `discordHighlight` (from `replayKeep`: upset /
+  arena final / Club, link `/clip?id=`, KV throttle 30 min + 8/day) and `discordClip` in `server.js` (clip of the day as
+  a video attachment when the factory's `.json` lands, `DISCORD_CLIPS`/day, state `DATA_DIR/clips/.discord.json`).
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 

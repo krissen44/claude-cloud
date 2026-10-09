@@ -506,6 +506,29 @@ function clipsList() {
   }
   return out.sort((a, b) => (a.name < b.name ? 1 : -1));
 }
+/* The factory's clip of the day goes to Discord as a video (DISCORD_WEBHOOK): the first clip that is complete
+   (its .json arrives last) each day, up to DISCORD_CLIPS a day (default 1). The YouTube cut if it fits Discord's
+   upload limit, else the shorter TikTok cut, else text only. */
+async function discordClip(tag) {
+  const hook = process.env.DISCORD_WEBHOOK || "";
+  if (!/^https:\/\/(?:\w+\.)?discord(?:app)?\.com\/api\/webhooks\//.test(hook)) return;
+  const stateF = path.join(CLIPS_DIR, ".discord.json"), day = tag.slice(0, 10), max = Math.max(0, +(process.env.DISCORD_CLIPS ?? 1));
+  let st = {}; try { st = JSON.parse(fs.readFileSync(stateF, "utf8")); } catch {}
+  st[day] = st[day] || [];
+  if (st[day].includes(tag) || st[day].length >= max) return;
+  st[day].push(tag);
+  for (const k of Object.keys(st)) if (k < new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10)) delete st[k];
+  fs.writeFileSync(stateF, JSON.stringify(st));
+  let meta = {}; try { meta = JSON.parse(fs.readFileSync(path.join(CLIPS_DIR, tag + ".json"), "utf8")); } catch {}
+  const LIMIT = 9.5 * 1048576;
+  const file = [tag + ".mp4", tag + "-tt.mp4"].map(f => path.join(CLIPS_DIR, f)).find(f => fs.existsSync(f) && fs.statSync(f).size <= LIMIT);
+  const text = [`🎬 **Fight of the day:** ${meta.hook || "a real Bark Arena fight"}`, meta.line || "",
+    meta.question ? "💬 " + meta.question : "", `🐾 Play free: https://scrappyxrp.fun/barkarena/?src=dc`].filter(Boolean).join("\n").slice(0, 1900);
+  const fd = new FormData();
+  fd.append("payload_json", JSON.stringify({ username: "Bark Arena", content: text, allowed_mentions: { parse: [] } }));
+  if (file) fd.append("files[0]", new Blob([fs.readFileSync(file)], { type: "video/mp4" }), "bark-arena-" + path.basename(file));
+  await fetch(hook, { method: "POST", body: fd }).catch(() => {});
+}
 async function clipsRoute(req, res, url) {
   const send = (code, obj) => { res.writeHead(code, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify(obj)); };
   if (!adminKeyOk(url.searchParams.get("key"))) return send(403, { error: "forbidden" });
@@ -523,6 +546,7 @@ async function clipsRoute(req, res, url) {
     });
     if (tooBig || !n) { try { fs.unlinkSync(tmp); } catch {} return send(413, { error: "too_large_or_empty" }); }
     fs.renameSync(tmp, path.join(CLIPS_DIR, name));
+    if (/^\d{4}-\d{2}-\d{2}-[a-z0-9-]+\.json$/.test(name) && !/-tt\.json$/.test(name)) discordClip(name.slice(0, -5)).catch(() => {});
     return send(200, { ok: true, bytes: n });
   }
   if (p === "/file" && req.method === "GET") {

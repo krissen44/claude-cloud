@@ -39,6 +39,12 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
   same rules as lending by name: no own Scrappy, one borrowed dog, max 3 loans per owner). A listing stays: hidden
   while lent, back when the loan ends; the owner can remove it. Chat announces listings (1/h per owner) and borrows.
   API `/lend/list`, `/lend/unlist`, `/lend/take`; `/lend` returns `listings` + `market`. Test `tools/test/market.mjs` (19 checks).
+- **Fights on Discord (owner's wish, 9 Oct):** (1) the factory's **clip of the day as a video** — when a clip's `.json`
+  arrives (`/api/admin/clips/upload`), `server.js` posts the YouTube cut (or the smaller TikTok cut if the first is over
+  9.5 MB) with hook, story line and question, link `scrappyxrp.fun/barkarena/?src=dc`; `DISCORD_CLIPS` = clips per day
+  (default 1, `0` = off). (2) **live highlights** of real players' fights with a link that plays the fight
+  (`game.scrappyxrp.fun/clip?id=…`): upsets (2+ rarity tiers, or beating a Legendary), arena finals won, Club duels —
+  max 1 per 30 min, 8 a day; players with Bark Arena TV off never appear. Week post now names the three prize winners.
 - **Fix:** the `TEAM` environment variable never reached the API (server.js didn't pass it on) — now it does.
 - Tests: `tools/test/v32.mjs` (44 checks), plus v30, tv, tickets, fc, lend, season-api still green.
 

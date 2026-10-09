@@ -55,7 +55,10 @@ globalThis.fetch = async (u, o = {}) => {
     return Response.json({result: {error: "objectNotFound"}});
   }
   if (u.includes("discord.com/api/webhooks/")) {          // the Discord webhook: written to a file for the tests
-    fs.appendFileSync((process.env.DATA_DIR || "/tmp") + "/discord.log", JSON.parse(o.body).content + "\n----\n");
+    let txt;
+    if (o.body instanceof FormData) { const f = o.body.get("files[0]"); txt = JSON.parse(o.body.get("payload_json")).content + (f ? `\n[file ${f.name} ${f.size} bytes]` : ""); }
+    else txt = JSON.parse(o.body).content;
+    fs.appendFileSync((process.env.DATA_DIR || "/tmp") + "/discord.log", txt + "\n----\n");
     return new Response(null, {status: 204});
   }
   if (u.includes("/ipfs/")) {

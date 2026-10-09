@@ -1198,7 +1198,25 @@ async function replayKeep(env, r) {
   const keep = env.FILES ? REPLAY_KEEP : REPLAY_KEEP_NOFILES;
   for (const old of idx.splice(0, Math.max(0, idx.length - keep))) if (env.FILES && env.FILES.delJson) await env.FILES.delJson("replay:" + old.id);
   await st.blobSet("replays", idx);
+  await discordHighlight(env, r).catch(() => {});
   return r.id;
+}
+/* A real player's big moment goes to Discord with a link that plays the fight: an upset (a dog at least two
+   rarity tiers below, or a non-Legendary beating a Legendary), an arena final won, or a Club duel. At most one
+   every 30 minutes, 8 a day. Players who turned Bark Arena TV off never show up (replayKeep skips them). */
+async function discordHighlight(env, r) {
+  if (!env.DISCORD_WEBHOOK || r.result !== "W" || !r.P.who) return;
+  const rk = {Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Mythic: 4, Legendary: 5};
+  const a = rk[r.P.def.rarity] ?? 0, b = rk[r.E.def.rarity] ?? 0, legE = !!r.E.def.legendary && !r.P.def.legendary;
+  const kind = b - a >= 2 || legE ? "upset" : r.kind === "arena" && r.stage === 2 ? "final" : r.kind === "club" ? "club" : null;
+  if (!kind) return;
+  const k = "dc:hl", day = "dc:hl:" + today();
+  if (env.KV && ((await env.KV.get(k)) || +(await env.KV.get(day) || 0) >= 8)) return;
+  if (env.KV) { await env.KV.put(k, "1", {expirationTtl: 1800}); await env.KV.put(day, String(+(await env.KV.get(day) || 0) + 1), {expirationTtl: 2 * 86400}); }
+  const dog = (x) => `${x.def.rarity} #${x.def.token || "?"}${x.def.legendary && env.ENGINE ? " *" + (env.ENGINE.legName(x.def.legendary) || "") + "*" : ""}`;
+  const head = kind === "upset" ? "⚡ **Upset!**" : kind === "final" ? "🏆 **Arena champion!**" : "🥊 **Fight Club!**";
+  const vs = r.E.who ? `${r.E.who}'s ${dog(r.E)}` : `a ${dog(r.E)}`;
+  await discord(env, `${head} ${r.P.who}'s ${dog(r.P)} beat ${vs}${kind === "final" ? " in the final" : ""}.\n▶️ Watch the fight: ${GAME_URL(env)}clip?id=${r.id}`);
 }
 const MOVE_RE = /^(bite|guard|taunt|ab[0-2])$/;
 async function replayPost(env, account, b) {
@@ -1503,7 +1521,9 @@ async function weekResult(env, wk) {
 }
 /* A week was just frozen: podium badges, and the results on Discord (with this week's new boss). */
 async function weekFrozen(env, rec) {
-  const d = JSON.parse(rec.json), top = d.players.filter(p => !p.team).slice(0, 3);
+  const d = JSON.parse(rec.json);
+  // the podium = the three prize places (team wallets and starter-only trainers don't take one)
+  const top = d.prizes.filter(p => ["1", "2", "3"].includes(p.place)).map(p => d.players.find(x => x.account === p.account)).filter(Boolean);
   for (const p of top) await achGrant(env, p.account, "podium");
   const pack = d.packs[0], boss = await storeOf(env).blobGet("boss:" + rec.week), now = await bossGet(env);
   const names = {ledger: "⛓️ Ledger Hounds", moon: "🌙 Moon Diggers", bone: "🦴 Bone Collectors", static: "⚡ Static Pack"};
