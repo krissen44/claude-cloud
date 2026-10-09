@@ -4,6 +4,48 @@ Changes collect here during the week and go live together when the new week star
 Last version confirmed live: **game v31.2** (uploaded by the owner on 8 Oct 2026; includes the v31.1 ticket hotfix and
 its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on GitHub Actions, daily 05:10 UTC.
 
+## v32 — for Monday 19 Oct (built 9 Oct, owner's go: "the rest sounds good, build it" — everything except $SCRAP)
+- **Fair play — the server referees ranked and arena fights.** `/api/fight/start` rebuilds both dogs on the server
+  (ledger + metadata + the owners' cloud saves, bond ≤ save + 1), `/api/fight/round` takes both moves and only then
+  hands out that round's dice seed (`resolveSeeded`, same engine), so the page can't pick its dice. The server books
+  every result (blob `fair:<week>`: XP, wins, streak, fights, ghost runs, desyncs, how often the rival "threw").
+  Arena ghost tournaments run on the server (`/api/fight/ghost`). `/api/stats` is capped at the verified week
+  (+60 XP / +2 wins / +1 streak slack) from `FAIR_SINCE` (default 2026-10-19); a week's first verified fight keeps
+  whatever the ladder already had (players from before the upload). `/admin` → "🛡️ Fair play": claimed vs verified
+  and flags. `FAIRPLAY=off` switches the cap off. Old page / server unreachable → the page falls back to its own dice
+  (then that fight isn't verified). Replays of refereed fights carry seeds; TV and Shorts play both kinds.
+- **Bond paths:** at bond 4 and 8 each dog picks one of two perks (classic +2 max health, or 4: Iron Guard — guard
+  snaps back for 3; 8: Quick Start — +1 starting energy). Kennel card "🧭 Bond paths", switch any time between fights.
+  Applies in ranked, arena, Club (server), replays and TV.
+- **Weekly boss:** one of the 20 Legendaries per week (rotates), one health bar for everybody (first 4,000 HP, then
+  1.1 × the damage the last boss took, 2,500–60,000). Every refereed ranked/arena fight hits it with the damage the
+  player's dog dealt (max 500 per player per day). Falls before Monday → +3 ranked fights for everyone who hit it,
+  chat + Discord name the final blow and the top 3. Arena tab card, result screen "+N damage to the boss", website
+  section "👹 Boss" (`/api/public/boss`).
+- **Achievements:** 17 badges (first win, giant killer, legend slayer, streak 5/10, champion, bond 5/10, 50/250
+  fights, Club win, pack, boss hunter, final blow, 3 Scrappys, recruiter, podium). Toast when unlocked, kennel card,
+  count next to the name on the ladder. Podium/recruiter/final blow are granted by the server.
+- **Invites:** kennel card "📣 Invite friends" with `scrappyxrp.fun/barkarena/?ref=<name>` (the website passes `ref`
+  to the game). When the friend holds a Pixel Scrappy of their own and has fought 5 times: both +3 ranked fights,
+  Recruiter badge (max 20 per inviter). Only brand-new players can be invited.
+- **Starter dog:** a player without a Pixel Scrappy gets one of the treasury's non-Legendary pieces for 7 days (once).
+  The NFT doesn't move; ranked, arena, ladder and boss like everyone — **no weekly NFT prize** (week close skips
+  starter-only players). Ends early when they get their own. Afterwards a "went home — get your own" card.
+- **Discord:** set `DISCORD_WEBHOOK` and the game posts the week results (Monday 00:15 UTC, with the new boss), a
+  daily summary (fights, trainers, arena champions, boss HP), the fallen boss, open Club challenges (max 1 per player
+  per 30 min). A 5-minute tick in `server.js` (`worker.scheduled`) does the timed posts and freezes finished weeks on time.
+- **Fix:** the `TEAM` environment variable never reached the API (server.js didn't pass it on) — now it does.
+- Tests: `tools/test/v32.mjs` (44 checks), plus v30, tv, tickets, fc, lend, season-api still green.
+
+**Upload (Mon 19 Oct):**
+1. Game ZIP to the Hostinger Node.js app (all files incl. `node_modules/`), restart.
+2. New env vars (Hostinger → Node.js app → Environment variables): `DISCORD_WEBHOOK` = the webhook URL (Discord:
+   Server settings → Integrations → Webhooks → New Webhook → pick the channel, e.g. #bark-arena → Copy Webhook URL).
+   Optional: `FAIRPLAY=off` (only if something goes wrong with the referee), `TEAM` now really works.
+3. Website: `barkarena/index.html` → `public_html/barkarena/` (boss section, invite links, guide + FAQ).
+4. Check: sign in → kennel shows 🏅 Achievements + 📣 Invite friends; arena tab shows the 👹 boss; play one ranked
+   fight → result shows "+N damage to the boss"; `/admin` → "🛡️ Fair play" lists you with claimed = verified.
+
 ## v31.3 — for Monday 12 Oct (not live yet)
 - **Kennel/arena/club dog cards: the "BOND n" label was unreadable** — `.pick span` (grey text) overrode the white text of
   `.lvl`, so it showed as an empty dark-blue pill. One CSS line in `public/index.html`: `.pick .lvl{color:#fff}`.

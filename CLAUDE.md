@@ -61,7 +61,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 
 ### Environment variables (Hostinger)
 `ISSUER=rGAVUGyhdbxQs1G7nwCCFU4w8P4HfgFKD6`, `TAXON=369` (empty/`*` = any taxon), `XUMM_API_KEY`, `XUMM_API_SECRET`,
-`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
+`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
 `META_HOSTS`, `ORIGIN`, `PORT`.
 
 ### API (`/api/...`)
@@ -95,6 +95,10 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/bonus` (GET), `/bonus/claim` (POST) | ✔ | Extra ranked fights (admin-granted, or once automatically by `bonusAuto` = v31.1 day-one compensation, blob `tixbonus_auto`), collected once on the kennel load (`loadBonus`, note card), blob `tixbonus` |
 | `/admin/tickets/scan?since=`, `/admin/tickets/grant` (POST `{grants:[{account,n}], from?, note?}`) | `?key=ADMIN_KEY` | Holders who started since a week (first weekly row) + their day-one grant; grant from a day on (default tomorrow, 7 days) |
 | `/admin/funnel` | `?key=ADMIN_KEY` | Website visits per source/day + players per source (`srcs` blob) |
+| `/fight/start` (POST `{kind, dog, opp:{token\|legendary\|rid}, lvl, oppLvl, bonus, path, run, stage}`), `/fight/round` (POST `{fid, a, b}` → `{seed, hp, over, verdict, boss}`), `/fight/abort`, `/fight/ghost` (POST `{squad, opps}`) | ✔ | v32 referee: ranked + live arena fights run on the server too, dice seed per round after both moves; ghost tournaments run on the server |
+| `/boss` (✔, incl. `mine`), `/public/boss` (–) | | The weekly boss: Legendary `n`, `name`, `hp/max`, `top`, `down`, `killer`, `reward` |
+| `/ach` (GET; POST `{ids}`), `/ref` (GET; POST `{name}`) | ✔ | Achievements (server-only: podium, recruiter, bossfall) / invites |
+| `/admin/fair[?week=]` | `?key=ADMIN_KEY` | Claimed vs verified week per player, flags |
 | `/admin/clips` (GET list), `/admin/clips/upload?name=` (PUT), `/admin/clips/file?name=[&download]`, `/admin/clips/posted` / `delete` (POST) | `?key=ADMIN_KEY` | Shorts clips — **handled in `server.js`** (Node only, files in `DATA_DIR/clips`, kept 30 days) |
 | `/admin/export[?download=1]`, `/admin/csv` | `?key=ADMIN_KEY` | Everything as JSON backup (summary, per-player rows, raw store + saves) / players as CSV. Dashboard page: **`/admin`** |
 
@@ -217,6 +221,32 @@ hand over one combined package for the week start; don't tell the owner to uploa
   the xrp.cafe mint embed (public mint is live), pings `/api/public/hit` (sendBeacon, text/plain = no preflight),
   appends `src` to game links; the game stores the first `?src=` (`ba_src`) and posts it once per wallet (`/api/src`).
   `?demo=1` opens the game in demo mode. `/admin` → "📈 Reach".
+- **Fair play (v32)**: ranked + live arena fights are refereed by the server (`FIGHTS` map, Node only): `fightStart` rebuilds
+  both dogs (`fighterDog` = own / borrowed / starter, `rivalOf` = other player's dog by `rid`, Legendary, or collection
+  token; bond ≤ cloud save + 1, page adopts the server's levels if they differ), `fightRound` = `ENGINE.round` with a fresh
+  seed → page `resolveSeeded`, compares HP (mismatch → `/fight/abort` desync). Client: `VF`, `vfStart`, `vfRound` in
+  `go()` (async), `vfAbort`. Ghost tournaments: `fightGhost` (`ENGINE.ghost`, seeded AI vs AI). Verified week in blob
+  `fair:<week>` (`fairRow` seeds from the existing ladder row); `postStats` → `fairCap` (+60 XP, +2 wins, +1 streak) from
+  `FAIR_SINCE`; `FAIRPLAY=off` disables. Admin "🛡️ Fair play" (`adminFair`). Desync = engine/def mismatch, not cheating.
+- **Bond paths (v32)**: `BOND.alt` {4: snap = Iron Guard (guard snaps back 3), 8: swift = +1 starting energy}; per dog
+  `SAVE.dog(id).path = {4:'a'|'b', 8:…}`; `build(def, lvl, bonus, path)`, `perksAt/hasPerk(l, id, path)`; kennel `pathCard`;
+  path travels with arena rivals (`/arena/rivals` `path`), Club (`clubFighter`), replays (`P.path/E.path`).
+- **Weekly boss (v32)**: blob `boss:<week>` {n (Legendary, rotates by week), name, max, hp, dealt, by, day, down, killer};
+  `bossHit` from `fightDone` (damage = rival's lost HP, cap 500/player/day), `bossDown` → `bonusAdd` +3 to all hitters, chat,
+  Discord, achievement `bossfall`. Next max = 1.1 × last dealt (2,500–60,000). Client `BOSS`, `bossLoad`, `bossCard`
+  (arena tab), `bossLine` (result). Website section `#boss`.
+- **Achievements (v32)**: `ACH` (17), `SAVE.data.ach`, `achScan/achUnlock/achSync/achToast/achCard`; server blob `ach`
+  (`achGrant` for podium in `weekFrozen`, recruiter in `refCheck`, bossfall); ladder rows `ach` = count.
+- **Invites (v32)**: `?ref=<name>` (game `ba_ref`, website passes it on) → `/ref` POST once (`refSet`: only players
+  without any fight yet); `refCheck` after each `/stats`: friend holds an own Scrappy + 5 fights → `bonusAdd` +3 both,
+  Recruiter. Blob `refs`. Kennel `refCard`.
+- **Starter dog (v32)**: `starterOf(env, a, create)` — no own tokens → a treasury piece (`treasuryList`, issuer's
+  non-Legendaries, shared by hash) or a collection token, 7 days, once (blob `starters`); shown as a borrowed dog
+  (`lendInfo.in` with `starter: true`, `ownerName` "the Scrappy team"); `buildResults` marks `starter` and skips them
+  for prizes (`starterWeek`). Client: starter card in `lendCard`, "went home" card in the empty kennel.
+- **Discord (v32)**: `discord(env, text)` (env `DISCORD_WEBHOOK`, fire and forget): `weekFrozen` (results + new boss,
+  only for last week), `tick` (daily summary from blob `daily:<day>`), `bossDown`, open Club challenges (KV throttle).
+  `worker.scheduled` runs `tick` every 5 minutes from `server.js`.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 
@@ -235,6 +265,8 @@ in-game chat, open Club challenges, borrow requests, kennel bond ranking, name n
 v31 fight replays, Bark Arena TV page, Shorts clips + daily factory (GitHub Actions), website funnel (welcome, mint section, source tracking) ·
 v31.1 hotfix: new holders got only 5 tickets on day one → `SAVE.registerDogs` tops up + automatic day-one bonus (`bonusAuto`) ·
 v31.2 Shorts in two cuts (YouTube + TikTok/Reels without crypto words), real players' fights first, captions written from the fight ·
+v32 (package for Mon 19 Oct) server-refereed ranked/arena fights + capped stats, bond paths, weekly boss, achievements,
+invites, starter dogs, Discord webhook; fix: `TEAM` env never reached the API ·
 v31.3 (package for Mon 12 Oct) Joey Wallet first + "⭐ Recommended" in game/website, "BOND n" label on dog cards readable again
 (`.pick span` had overridden `.lvl`'s white text), link page `/links/`.
 
@@ -260,7 +292,9 @@ xrplcluster/ripple.com and fake IPFS JSON/PNG), forge a session token with the `
 Always syntax-check the inline game script after editing `public/index.html`.
 
 ### Known limitations / open decisions
-- Stats, XP and streaks are computed in the browser and trusted by the server (clamped only) — a determined user can fake them.
+- Since v32 ranked/arena results are refereed and the ladder is capped at the verified week. Left open: the rival's AI
+  runs in the page, so a hacked page could make its own rival play badly ("rival throws" rate in the admin flags it);
+  quests, defence and lending XP are bond/trainer XP only, not ladder XP. The referee needs the Node host (memory).
 - The AI memory lives in the player's save: clearing it (Reset progress / new device without cloud save) resets what the opponent learned.
 - Chat is polling, not push (4 s); no private messages; moderation = admin delete/mute only.
 - Replays are uploaded by the client: dice could be faked to make a fake fight appear on TV/Shorts (only cosmetic).
