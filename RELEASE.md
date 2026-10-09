@@ -4,7 +4,7 @@ Changes collect here during the week and go live together when the new week star
 Last version confirmed live: **game v31.2** (uploaded by the owner on 8 Oct 2026; includes the v31.1 ticket hotfix and
 its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on GitHub Actions, daily 05:10 UTC.
 
-## v32 — for Monday 19 Oct (built 9 Oct, owner's go: "the rest sounds good, build it" — everything except $SCRAP)
+## v32 — LIVE since 9 Oct (owner uploaded early; was planned for Monday 19 Oct) (built 9 Oct, owner's go: "the rest sounds good, build it" — everything except $SCRAP)
 - **Fair play — the server referees ranked and arena fights.** `/api/fight/start` rebuilds both dogs on the server
   (ledger + metadata + the owners' cloud saves, bond ≤ save + 1), `/api/fight/round` takes both moves and only then
   hands out that round's dice seed (`resolveSeeded`, same engine), so the page can't pick its dice. The server books
@@ -60,7 +60,7 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
 4. Check: sign in → kennel shows 🏅 Achievements + 📣 Invite friends; arena tab shows the 👹 boss; play one ranked
    fight → result shows "+N damage to the boss"; `/admin` → "🛡️ Fair play" lists you with claimed = verified.
 
-## v31.3 — for Monday 12 Oct (not live yet)
+## v31.3 — LIVE since 9 Oct (inside the v32 upload)
 - **Kennel/arena/club dog cards: the "BOND n" label was unreadable** — `.pick span` (grey text) overrode the white text of
   `.lvl`, so it showed as an empty dark-blue pill. One CSS line in `public/index.html`: `.pick .lvl{color:#fff}`.
   Found while recording the tutorial. Upload: `public/index.html` (part of the game ZIP).

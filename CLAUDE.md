@@ -278,7 +278,8 @@ v31.3 (package for Mon 12 Oct) Joey Wallet first + "⭐ Recommended" in game/web
 (`.pick span` had overridden `.lvl`'s white text), link page `/links/`.
 
 ### Where things stand
-- **Live:** game v31.2 (uploaded 8 Oct), website v31 (5 Oct), Shorts factory daily on GitHub Actions.
+- **Live:** game **v32** (uploaded early by the owner on 9 Oct, incl. v31.3 + lending market + Discord channels); the stats
+  cap (`FAIR_SINCE`) only starts with the week of 2026-10-19, the referee already books verified fights. Shorts factory daily on GitHub Actions.
 - **Next package:** `RELEASE.md` (top section = what goes up at the next Monday, with upload steps). `HANDOFF.md` = how
   to run the test harness.
 - **Videos:** how-to-play tutorial (7:00, 1080p) recorded by `tools/test/tutorial.mjs` on `tools/test/tut-mock.mjs`
