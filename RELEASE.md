@@ -34,6 +34,11 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
 - **Discord:** set `DISCORD_WEBHOOK` and the game posts the week results (Monday 00:15 UTC, with the new boss), a
   daily summary (fights, trainers, arena champions, boss HP), the fallen boss, open Club challenges (max 1 per player
   per 30 min). A 5-minute tick in `server.js` (`worker.scheduled`) does the timed posts and freezes finished weeks on time.
+- **Lending market (owner's idea, 9 Oct):** holders list up to 3 dogs (3/7/14 days, short note) in the lend card;
+  players without a Scrappy see "🏪 Lending market" in their kennel and borrow with one tap (needs a player name;
+  same rules as lending by name: no own Scrappy, one borrowed dog, max 3 loans per owner). A listing stays: hidden
+  while lent, back when the loan ends; the owner can remove it. Chat announces listings (1/h per owner) and borrows.
+  API `/lend/list`, `/lend/unlist`, `/lend/take`; `/lend` returns `listings` + `market`. Test `tools/test/market.mjs` (19 checks).
 - **Fix:** the `TEAM` environment variable never reached the API (server.js didn't pass it on) — now it does.
 - Tests: `tools/test/v32.mjs` (44 checks), plus v30, tv, tickets, fc, lend, season-api still green.
 

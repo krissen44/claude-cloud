@@ -1070,9 +1070,76 @@ async function lendInfo(env, account) {
     l.lvl = Math.max(1, (g[l.dog.id] || {}).lvl | 0 || 1); l.xp = (g[l.dog.id] || {}).xp | 0;
   }
   const seek = await seekersOf(env, loans), mine = seek.find(x => x.account === account);
+  const mk = await marketOf(env, loans);
   return {out: loans.filter(l => l.owner === account).map(view), in: inn, rewards: await st.lendGet(account),
-    seeking: !!mine, seekers: seek.filter(x => x.account !== account).map(x => ({name: x.name, since: x.at})), starter: await starterInfo(env, account)};
+    seeking: !!mine, seekers: seek.filter(x => x.account !== account).map(x => ({name: x.name, since: x.at})), starter: await starterInfo(env, account),
+    listings: mk.mine(account), market: mk.open.filter(x => x.owner !== account).map(({owner, ...x}) => x)};
 }
+/* ------------------------------------------------------------------ lending market */
+/* Holders put dogs up for lending (1–14 days, a short note); a player without a Pixel Scrappy browses the
+   market and borrows one with a tap — the owner agreed by listing it. A listing stays up: while the dog is
+   lent it's hidden, when the loan ends it's back. Same rules as lending by name (no own Scrappy, one borrowed
+   dog, the owner's 3 loans), the NFT never moves. Blob `lendmarket` {id: {id, owner, dog, days, note, at}}. */
+const MARKET_MAX = 3;
+async function marketOf(env, loans) {
+  const st = storeOf(env), m = (await st.blobGet("lendmarket")) || {}, hold = await st.allHoldings(), names = await st.profiles();
+  loans = loans || await activeLoans(env);
+  const rows = [];
+  for (const x of Object.values(m)) {
+    const held = ((hold[x.owner] || {}).dogs || []).some(d => d.id === x.dog.id);
+    if (!held) continue;                                                   // sold: the listing is gone
+    const lent = loans.find(l => l.dog.id === x.dog.id);
+    const g = ((((await st.saveGet(x.owner)) || {}).data || {}).dogs || {})[x.dog.id] || {};
+    let rarity = null;
+    try { const a = (await metaFor(env, x.dog.uri)).attributes || []; rarity = x.dog.t <= 20 ? "Legendary" : ((a.find(y => /^rarity$/i.test(y.t)) || {}).v || null); } catch (e) {}
+    rows.push({id: x.id, owner: x.owner, ownerName: displayName(names, x.owner), dog: {id: x.dog.id, t: x.dog.t}, days: x.days, note: x.note || "",
+      lvl: Math.max(1, g.lvl | 0 || 1), rarity, at: x.at, lent: lent ? {to: displayName(names, lent.borrower), end: lent.end} : null,
+      ...(isTeam(env, x.owner) ? {team: true} : {})});
+  }
+  rows.sort((a, b) => b.lvl - a.lvl || b.at - a.at);
+  return {open: rows.filter(x => !x.lent), mine: a => rows.filter(x => x.owner === a)};
+}
+async function marketList(env, account, b) {
+  const st = storeOf(env), hold = await st.allHoldings(), names = await st.profiles();
+  const dog = ((hold[account] || {}).dogs || []).find(d => d.id === String(b.dogId || ""));
+  if (!dog) return json({error: "not_your_dog"}, 400);
+  if (!names[account]) return json({error: "need_name"}, 409);
+  const m = (await st.blobGet("lendmarket")) || {};
+  if (Object.values(m).some(x => x.dog.id === dog.id)) return json({error: "already_listed"}, 409);
+  if (Object.values(m).filter(x => x.owner === account).length >= MARKET_MAX) return json({error: "too_many_listings"}, 429);
+  const days = Math.max(LEND_DAYS[0], Math.min(LEND_DAYS[1], b.days | 0 || 7));
+  const id = rid(), note = chatClean(b.note).slice(0, 80);
+  m[id] = {id, owner: account, dog: {id: dog.id, uri: dog.uri, t: dog.t}, days, note, at: Date.now()};
+  await st.blobSet("lendmarket", m);
+  const k = "mkt:chat:" + account;
+  if (!env.KV || !(await env.KV.get(k))) {
+    if (env.KV) await env.KV.put(k, "1", {expirationTtl: 3600});
+    await chatSystem(env, `🏪 ${names[account].name} put Pixel Scrappy #${dog.t} up for lending (${days} days) — players without a Scrappy can borrow it in their kennel.`);
+  }
+  return json({ok: true, ...(await lendInfo(env, account))});
+}
+async function marketUnlist(env, account, b) {
+  const st = storeOf(env), m = (await st.blobGet("lendmarket")) || {}, x = m[String(b.id || "")];
+  if (!x || x.owner !== account) return json({error: "no_such_listing"}, 404);
+  delete m[x.id]; await st.blobSet("lendmarket", m);
+  return json({ok: true, ...(await lendInfo(env, account))});
+}
+async function marketTake(env, account, b) {
+  const st = storeOf(env), hold = await st.allHoldings(), loans = await activeLoans(env), names = await st.profiles();
+  const x = ((await st.blobGet("lendmarket")) || {})[String(b.id || "")];
+  if (!x || !((hold[x.owner] || {}).dogs || []).some(d => d.id === x.dog.id)) return json({error: "no_such_listing"}, 404);
+  if (x.owner === account) return json({error: "your_own"}, 409);
+  if (!names[account]) return json({error: "need_name"}, 409);
+  if (((hold[account] || {}).tokens || []).length) return json({error: "borrower_holds"}, 409);
+  if (loans.some(l => l.borrower === account)) return json({error: "borrower_busy"}, 409);
+  if (loans.some(l => l.dog.id === x.dog.id)) return json({error: "dog_lent"}, 409);
+  if (loans.filter(l => l.owner === x.owner).length >= LEND_MAX_OUT) return json({error: "owner_full"}, 429);
+  const loan = {id: rid(), owner: x.owner, borrower: account, dog: x.dog, start: Date.now(), end: Date.now() + x.days * 864e5, xp: {}, market: x.id};
+  await st.loanSet(loan);
+  await chatSystem(env, `🤝 ${names[account].name} borrowed Pixel Scrappy #${x.dog.t} from ${displayName(names, x.owner)} on the lending market.`);
+  return json({ok: true, ...(await lendInfo(env, account))});
+}
+
 /* "Looking for a dog": players without a Scrappy can put their name on a list
    every holder sees in the lending card (a week, or until they borrow one). */
 const SEEK_TTL = 7 * 864e5;
@@ -1989,6 +2056,9 @@ export default {
       if (p === "/profile" && req.method === "POST") return withCors(await setProfile(env, account, await req.json().catch(() => null)), cors);
       if (p === "/lend" && req.method === "GET") return withCors(json(await lendInfo(env, account)), cors);
       if (p === "/lend" && req.method === "POST") return withCors(await lendStart(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/lend/list" && req.method === "POST") return withCors(await marketList(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/lend/unlist" && req.method === "POST") return withCors(await marketUnlist(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/lend/take" && req.method === "POST") return withCors(await marketTake(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/lend/end" && req.method === "POST") return withCors(await lendEnd(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/lend/report" && req.method === "POST") return withCors(await lendReport(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/bonus" && req.method === "GET") return withCors(await bonusGet(env, account), cors);

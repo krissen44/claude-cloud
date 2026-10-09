@@ -95,6 +95,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/bonus` (GET), `/bonus/claim` (POST) | ✔ | Extra ranked fights (admin-granted, or once automatically by `bonusAuto` = v31.1 day-one compensation, blob `tixbonus_auto`), collected once on the kennel load (`loadBonus`, note card), blob `tixbonus` |
 | `/admin/tickets/scan?since=`, `/admin/tickets/grant` (POST `{grants:[{account,n}], from?, note?}`) | `?key=ADMIN_KEY` | Holders who started since a week (first weekly row) + their day-one grant; grant from a day on (default tomorrow, 7 days) |
 | `/admin/funnel` | `?key=ADMIN_KEY` | Website visits per source/day + players per source (`srcs` blob) |
+| `/lend/list` (POST `{dogId, days, note}`), `/lend/unlist` (POST `{id}`), `/lend/take` (POST `{id}`) | ✔ | Lending market (v32): holders offer dogs, non-holders borrow with a tap; `/lend` GET adds `listings` (mine) + `market` (open offers, no wallets) |
 | `/fight/start` (POST `{kind, dog, opp:{token\|legendary\|rid}, lvl, oppLvl, bonus, path, run, stage}`), `/fight/round` (POST `{fid, a, b}` → `{seed, hp, over, verdict, boss}`), `/fight/abort`, `/fight/ghost` (POST `{squad, opps}`) | ✔ | v32 referee: ranked + live arena fights run on the server too, dice seed per round after both moves; ghost tournaments run on the server |
 | `/boss` (✔, incl. `mine`), `/public/boss` (–) | | The weekly boss: Legendary `n`, `name`, `hp/max`, `top`, `down`, `killer`, `reward` |
 | `/ach` (GET; POST `{ids}`), `/ref` (GET; POST `{name}`) | ✔ | Achievements (server-only: podium, recruiter, bossfall) / invites |
@@ -240,6 +241,10 @@ hand over one combined package for the week start; don't tell the owner to uploa
 - **Invites (v32)**: `?ref=<name>` (game `ba_ref`, website passes it on) → `/ref` POST once (`refSet`: only players
   without any fight yet); `refCheck` after each `/stats`: friend holds an own Scrappy + 5 fights → `bonusAdd` +3 both,
   Recruiter. Blob `refs`. Kennel `refCard`.
+- **Lending market (v32)**: blob `lendmarket` {id: {id, owner, dog, days, note, at}}, max 3 per owner (`MARKET_MAX`);
+  `marketOf` drops sold dogs and hides lent ones (listing stays, back after the loan); `marketTake` = a normal loan
+  (`market: <listing id>`). Client `marketCard` (non-holders without a borrowed dog, also over a starter), listing row
+  in `lendCard`, wiring `data-take` / `data-unlist` / `#mkList`. Images via `/public/dogimg?t=`.
 - **Starter dog (v32)**: `starterOf(env, a, create)` — no own tokens → a treasury piece (`treasuryList`, issuer's
   non-Legendaries, shared by hash) or a collection token, 7 days, once (blob `starters`); shown as a borrowed dog
   (`lendInfo.in` with `starter: true`, `ownerName` "the Scrappy team"); `buildResults` marks `starter` and skips them

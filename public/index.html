@@ -308,6 +308,10 @@ button.act:disabled{opacity:.4;cursor:not-allowed}
 .mini{font-size:10.5px;color:var(--ink2);line-height:1.65}
 .lvl{display:inline-block;font-family:'Press Start 2P',monospace;font-size:8px;padding:3px 5px;border-radius:5px;
   background:var(--accent);color:#fff;letter-spacing:.5px}
+.mkt{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.mkt>div{border:2px solid var(--panelB);border-radius:10px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center}
+.mkt img{width:96px;height:96px;image-rendering:pixelated;border-radius:8px}
+.mkt small{font-size:9.5px;color:var(--ink2);line-height:1.35}.mkt b{font-size:12px}
 .achs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:10px}
 .achs div{border:2px solid var(--panelB);border-radius:9px;padding:8px;display:grid;grid-template-columns:30px 1fr;gap:0 8px;opacity:.45;filter:grayscale(1)}
 .achs div.got{opacity:1;filter:none;border-color:var(--accent)}
@@ -1541,12 +1545,13 @@ async function prizeClaim(key){
    bond level it has in its owner's kennel); what the borrower earns with it is
    reported to the server: the bond XP goes to the dog, 25 % of the trainer XP to
    the owner, both collected on the owner's next visit. */
-const LEND = {out:[], in:[], note:'', err:'', open:false, seeking:false, seekers:[]};
+const LEND = {out:[], in:[], note:'', err:'', open:false, seeking:false, seekers:[], listings:[], market:[]};
 async function loadLending(){
   if (!LIVE() || !WALLET.token || WALLET.demo) return;
   let j;
   try { const r = await api('/lend'); j = await r.json(); if (!r.ok) return; } catch(e){ return; }
   LEND.out = j.out || []; LEND.in = j.in || []; LEND.seeking = !!j.seeking; LEND.seekers = j.seekers || []; LEND.starter = j.starter || null;
+  LEND.listings = j.listings || []; LEND.market = j.market || [];
   // borrowed dogs join the kennel, at their real bond level
   for (const l of LEND.in){
     if ((OWNED || []).some(f => f.id === l.dog.id)) continue;
@@ -1594,7 +1599,25 @@ function lendGain(id, xp){
 }
 const LEND_ERR = {no_such_player:'No player with that name.', borrower_holds:'They hold Pixel Scrappys themselves — lending is for players without one.',
   borrower_busy:'They are already borrowing a Scrappy.', dog_lent:'That Scrappy is already lent out.',
-  too_many_loans:'You can lend up to 3 Scrappys at a time.', not_your_dog:'Pick one of your own Scrappys.'};
+  too_many_loans:'You can lend up to 3 Scrappys at a time.', not_your_dog:'Pick one of your own Scrappys.',
+  need_name:'Set a player name first (✏️ above).', already_listed:'That Scrappy is already on the market.', too_many_listings:'You can list up to 3 Scrappys.',
+  no_such_listing:'That offer is gone — someone was faster, or the owner took it back.', owner_full:'Its owner has 3 dogs out already — try another one.',
+  your_own:"That's your own listing."};
+/* The lending market: every dog holders offer, for players without a Pixel Scrappy — borrow with one tap. */
+function marketCard(){
+  const list = LEND.market || [];
+  const img = t => CONFIG.WORKER_URL.replace(/\/$/, '') + '/public/dogimg?t=' + t;
+  return `<div class="card"><h3 class="h3">🏪 LENDING MARKET</h3>
+    <p class="mini" style="margin:0 0 10px">Holders offer these Scrappys to players without one. Borrow one with a tap: it joins your kennel for the days shown, you fight ranked and arena with it, its bond grows, and its owner gets a share of your XP. The NFT never leaves their wallet.</p>
+    ${!WALLET.name ? `<p class="mini" style="margin:0 0 8px"><b>Set a player name first</b> (✏️ above) — owners see who borrows their dog.</p>` : ''}
+    ${list.length ? `<div class="mkt">${list.map(x => `<div><img src="${img(x.dog.t)}" alt="" loading="lazy">
+        <b>#${x.dog.t}</b> <span class="lvl">BOND ${x.lvl}</span>
+        <small>${esc(x.rarity || '')}${x.rarity ? ' · ' : ''}${x.days} day${x.days === 1 ? '' : 's'} · from ${esc(x.ownerName)}${x.team ? ' <span class="tag">TEAM</span>' : ''}</small>
+        ${x.note ? `<small><i>“${esc(x.note)}”</i></small>` : ''}
+        <button class="sm" data-take="${esc(x.id)}" ${WALLET.name ? '' : 'disabled'}>🤝 Borrow</button></div>`).join('')}</div>`
+      : `<p class="mini" style="margin:0"><i>No dogs on offer right now — check back later, or put your name on the list below.</i></p>`}
+    ${LEND.err ? `<p class="mini" style="margin:8px 0 0"><b>${esc(LEND.err)}</b></p>` : ''}</div>`;
+}
 function lendCard(){
   const own = (OWNED || []).filter(f => !f.borrowed);
   const note = LEND.note ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🤝 Lending</b>
@@ -1606,7 +1629,7 @@ function lendCard(){
   const starter = st ? `<div class="card"><h3 class="h3">🎓 YOUR STARTER DOG</h3>
       <p class="mini" style="margin:0 0 8px">The Scrappy team lends you <b>Pixel Scrappy #${st.dog.t}</b> until <b>${until(st.end)}</b>. Fight ranked and in the arena, level its bond, climb the weekly ladder and hit the boss — like everyone. The weekly NFT prizes are for trainers with a Pixel Scrappy of their own.</p>
       <div class="row" style="justify-content:flex-start"><a class="btn" href="https://scrappyxrp.fun/barkarena/?src=starter#mint" target="_blank" rel="noopener">🐾 Get your own fighter</a></div></div>` : '';
-  if (!own.length) return note + starter + (inn ? `<div class="card"><h3 class="h3">BORROWED</h3>${inn}
+  if (!own.length) return note + starter + (inn ? '' : marketCard()) + (inn ? `<div class="card"><h3 class="h3">BORROWED</h3>${inn}
       <p class="mini" style="margin:8px 0 0">Fight with it like your own — ranked and arena. Its bond XP goes to the dog, and its owner gets a share of your XP.</p></div>`
     : `<div class="card"><h3 class="h3">🙋 BORROW A SCRAPPY</h3>
       <p class="mini" style="margin:0 0 8px">No Pixel Scrappy yet? Holders can lend you one of theirs for 1–14 days — the NFT stays in their wallet, you fight ranked and arena with it like your own, and its owner gets a share of your XP. Put your name on the list every holder sees.</p>
@@ -1631,7 +1654,19 @@ function lendCard(){
       <select id="lendDays" style="padding:8px 12px"><option value="1">1 day</option><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select>
       <button id="lendGo">Lend</button></div>` : ''}
     ${LEND.err ? `<p class="mini" style="margin:8px 0 0"><b>${esc(LEND.err)}</b></p>` : ''}
-    ${inn}</div>`;
+    ${inn}
+    <div style="margin-top:14px;border-top:2px dashed var(--panelB);padding-top:12px">
+      <div class="mini"><b>🏪 Lending market</b> — offer a dog to everyone without a Scrappy; the first to tap “Borrow” gets it for the days you set. It stays listed: after a loan it's back on the market.</div>
+      ${(LEND.listings || []).map(x => `<div class="wal" style="margin-top:8px"><div><b>Pixel Scrappy #${x.dog.t}</b> <span class="lvl">BOND ${x.lvl}</span>
+          <div class="mini">${x.days} day${x.days === 1 ? '' : 's'}${x.note ? ' · “' + esc(x.note) + '”' : ''} · ${x.lent ? `🤝 lent to <b>${esc(x.lent.to)}</b> until ${until(x.lent.end)}` : '🟢 on offer'}</div></div>
+        <button class="ghost sm" data-unlist="${esc(x.id)}">Remove</button></div>`).join('')}
+      ${(() => { const can = own.filter(f => !(LEND.listings || []).some(x => x.dog.id === f.id));
+        return can.length && (LEND.listings || []).length < 3 ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">
+        <select id="mkDog" style="padding:8px 12px">${can.map(f => `<option value="${esc(f.id)}">${esc(f.name)} · Bond ${SAVE.dog(f.id).lvl}</option>`).join('')}</select>
+        <select id="mkDays" style="padding:8px 12px"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option></select>
+        <input id="mkNote" type="text" maxlength="80" placeholder="Note (optional), e.g. great guard" style="flex:1;min-width:140px;padding:9px 14px">
+        <button id="mkList">🏪 List it</button></div>` : ''; })()}
+    </div></div>`;
 }
 function lendWire(){
   const q = id => document.getElementById(id);
@@ -1643,6 +1678,29 @@ function lendWire(){
       const r = await api('/lend/seek', {method:'POST', body:{on}}), j = await r.json();
       if (!r.ok) LEND.err = j.error === 'need_name' ? 'Set a player name first (✏️ above).' : j.error === 'borrower_holds' ? 'You hold a Pixel Scrappy — lending is for players without one.' : 'That did not work (' + (j.error || r.status) + ').';
       else { LEND.seeking = !!j.seeking; LEND.seekers = j.seekers || []; }
+    } catch(e){ LEND.err = 'The server is not reachable right now.'; }
+    menu();
+  };
+  app.querySelectorAll('[data-take]').forEach(b => b.onclick = async () => {
+    S.unlock(); S.click(); b.disabled = true; LEND.err = '';
+    try {
+      const r = await api('/lend/take', {method:'POST', body:{id: b.dataset.take}}), j = await r.json();
+      if (!r.ok) LEND.err = LEND_ERR[j.error] || 'That did not work (' + (j.error || r.status) + ').';
+      else { LEND.note = 'Borrowed! Your new dog is in the kennel — go fight with it.'; await loadLending(); }
+    } catch(e){ LEND.err = 'The server is not reachable right now.'; }
+    menu();
+  });
+  app.querySelectorAll('[data-unlist]').forEach(b => b.onclick = async () => {
+    S.click(); b.disabled = true;
+    try { const r = await api('/lend/unlist', {method:'POST', body:{id: b.dataset.unlist}}), j = await r.json(); if (r.ok){ LEND.listings = j.listings || []; LEND.market = j.market || []; } } catch(e){}
+    menu();
+  });
+  if (q('mkList')) q('mkList').onclick = async () => {
+    S.unlock(); S.click(); q('mkList').disabled = true; LEND.err = '';
+    try {
+      const r = await api('/lend/list', {method:'POST', body:{dogId: q('mkDog').value, days: +q('mkDays').value, note: q('mkNote').value}}), j = await r.json();
+      if (!r.ok) LEND.err = LEND_ERR[j.error] || 'That did not work (' + (j.error || r.status) + ').';
+      else { LEND.listings = j.listings || []; LEND.note = 'Listed on the lending market.'; }
     } catch(e){ LEND.err = 'The server is not reachable right now.'; }
     menu();
   };

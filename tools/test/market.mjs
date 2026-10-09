@@ -1,0 +1,75 @@
+// Lending market: holders list dogs, players without a Scrappy borrow them with a tap
+import { chromium } from "playwright";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import { createHmac } from "node:crypto";
+const S = process.argv[2], D = S + "/dataMarket", PORT = 3986, U = "http://127.0.0.1:" + PORT;
+fs.rmSync(D, {recursive: true, force: true}); fs.mkdirSync(D, {recursive: true}); fs.writeFileSync(D + "/session.secret", "testsecret");
+const tok = a => { const b0 = Buffer.from(JSON.stringify({a, exp: 2e9})).toString("base64url"); return b0 + "." + createHmac("sha256", "testsecret").update(b0).digest("base64url"); };
+const OWNER = "rRiva1OneXXXXXXXXXXXXXXXXXXXXX", OWNER2 = "rTutoria1P1ayerXXXXXXXXXXXXXXX", NEW = "rMarketNewbieXXXXXXXXXXXXXXXXX", NEW2 = "rMarketNewbie2XXXXXXXXXXXXXXXX";
+const log = fs.openSync(S + "/marketserver.log", "w");
+const srv = spawn("node", [new URL("./tut-mock.mjs", import.meta.url).pathname], {env: {...process.env, PORT: String(PORT), DATA_DIR: D, ISSUER: "rI", TAXON: "369", FAIR_SINCE: "2026-01-05"}, stdio: ["ignore", log, log]});
+const bye = c => { try { srv.kill(); } catch (e) {} process.exit(c); };
+setTimeout(() => { console.log("TIMEOUT"); bye(1); }, 300000);
+process.on("unhandledRejection", e => { console.log("ERR", e && e.stack || e); bye(1); });
+await new Promise(r => setTimeout(r, 1800));
+let fails = 0;
+const ok = (c, m) => { if (!c) fails++; console.log((c ? "PASS " : "FAIL ") + m); };
+const call = async (who, path, body) => { const r = await fetch(U + "/api" + path, {method: body ? "POST" : "GET", headers: {authorization: "Bearer " + tok(who), "content-type": "application/json"}, body: body && JSON.stringify(body)}); return {status: r.status, ...(await r.json())}; };
+
+const k = (await call(OWNER, "/me/kennel")).nfts;
+let r = await call(OWNER, "/lend/list", {dogId: k[0].nft_id, days: 7});
+ok(r.error === "need_name", "listing needs a player name");
+await call(OWNER, "/profile", {name: "Barkley"});
+r = await call(OWNER, "/lend/list", {dogId: k[0].nft_id, days: 7, note: "<b>great</b> guard"});
+ok(r.ok && r.listings.length === 1 && r.listings[0].note.includes("great"), "holder lists a dog");
+r = await call(OWNER, "/lend/list", {dogId: k[0].nft_id, days: 3});
+ok(r.error === "already_listed", "the same dog can't be listed twice");
+r = await call(OWNER, "/lend/list", {dogId: "000800009999", days: 3});
+ok(r.error === "not_your_dog", "only your own dogs");
+await call(OWNER2, "/me/kennel");
+r = await call(OWNER2, "/lend");
+ok(r.market.length === 1 && r.market[0].ownerName === "Barkley" && !r.market[0].owner, "everyone sees the market (no wallets in it)");
+ok(r.market[0].rarity && r.market[0].lvl >= 1, "listing shows rarity " + r.market[0].rarity + " and bond " + r.market[0].lvl);
+r = await call(OWNER2, "/lend/take", {id: r.market[0].id});
+ok(r.error === "need_name" || r.error === "borrower_holds", "a holder can't borrow (" + r.error + ")");
+// the browser: a new player without a dog borrows from the market
+const br = await chromium.launch({executablePath: process.env.CHROMIUM || undefined});
+const p = await (await br.newContext({viewport: {width: 1100, height: 900}})).newPage();
+const errs = []; p.on("pageerror", e => errs.push(e.message));
+await p.route(u => !u.href.startsWith("http://127.0.0.1"), r => r.abort());
+await call(NEW, "/profile", {name: "Rookie"});
+await p.goto(U + "/"); await p.evaluate(([t, a]) => localStorage.setItem("ba_session", JSON.stringify({token: t, account: a})), [tok(NEW), NEW]);
+await p.goto(U + "/"); await p.waitForFunction(() => typeof LEND !== "undefined" && LEND.market && LEND.market.length && !WALLET.loading, null, {timeout: 30000});
+await p.waitForTimeout(800);
+ok(await p.locator("h3", {hasText: "LENDING MARKET"}).count() === 1, "non-holder (with a starter dog) sees the market");
+ok(await p.locator("[data-take]").count() === 1, "one dog on offer");
+await p.screenshot({path: S + "/shots/market.png", fullPage: true});
+await p.click("[data-take]");
+await p.waitForFunction(() => (OWNED || []).some(f => f.borrowed && !f.borrowed.starter), null, {timeout: 15000});
+ok(true, "borrowed dog joined the kennel");
+ok(await p.evaluate(() => !(OWNED || []).some(f => f.borrowed && f.borrowed.starter)), "the starter dog steps aside while borrowing");
+ok(await p.locator("h3", {hasText: "LENDING MARKET"}).count() === 0, "market hidden while borrowing");
+const chat = await call(OWNER, "/chat?since=0");
+ok(chat.msgs.some(m => m.sys && /put Pixel Scrappy #\d+ up for lending/.test(m.text)) && chat.msgs.some(m => m.sys && /Rookie borrowed/.test(m.text)), "chat announces listing and borrowing");
+// a refereed fight with the borrowed dog
+const dogId = await p.evaluate(() => OWNED.find(f => f.borrowed).id);
+const st = await call(NEW, "/fight/start", {kind: "ranked", dog: dogId, opp: {token: 1234}, lvl: 1, oppLvl: 1});
+ok(!!st.fid, "the server lets the borrower fight with it");
+// the owner's view: lent, still listed; a second newbie finds nothing
+r = await call(OWNER, "/lend");
+ok(r.listings[0].lent && r.listings[0].lent.to === "Rookie" && r.out.length === 1, "owner sees it lent to Rookie, listing kept");
+await call(NEW2, "/profile", {name: "Rookie2"});
+r = await call(NEW2, "/lend");
+ok(r.market.length === 0, "a lent dog is off the market");
+// loan ends → back on the market
+const loan = (await call(OWNER, "/lend")).out[0];
+await call(NEW, "/lend/end", {id: loan.id});
+r = await call(NEW2, "/lend");
+ok(r.market.length === 1, "after the loan it's back on offer");
+r = await call(OWNER, "/lend/unlist", {id: r.market[0].id});
+ok(r.ok && !r.listings.length, "owner removes the listing");
+console.log("  errors:", errs); ok(!errs.length, "no page errors");
+await br.close();
+console.log(fails ? `${fails} FAILED` : "ALL PASSED");
+bye(fails ? 1 : 0);
