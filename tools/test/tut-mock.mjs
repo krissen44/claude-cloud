@@ -49,7 +49,9 @@ globalThis.fetch = async (u, o = {}) => {
       return Response.json({result: {nfts: Array.from({length: 5000}, (_, i) => ({nft_id: "000800" + String(i + 1).padStart(6, "0"), uri: hex(`ipfs://bafyX/${i + 1}.json`), owner: "rHolder" + (i % 7)}))}});
     }
     if (b.method === "account_nfts") {
-      const ts = HOLD[b.params[0].account] || [];
+      // HOLD_FILE (tests): a JSON {account: [tokens]} read on every call, so a test can move a dog to another wallet
+      let hold = HOLD; if (process.env.HOLD_FILE) try { hold = {...HOLD, ...JSON.parse(fs.readFileSync(process.env.HOLD_FILE, "utf8"))}; } catch {}
+      const ts = hold[b.params[0].account] || [];
       return Response.json({result: {account_nfts: ts.map(t => ({Issuer: "rI", NFTokenTaxon: 369, NFTokenID: "000800" + String(t).padStart(6, "0"), URI: hex(`ipfs://bafyX/${t}.json`)}))}});
     }
     return Response.json({result: {error: "objectNotFound"}});

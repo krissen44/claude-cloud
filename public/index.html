@@ -2806,6 +2806,22 @@ async function oppTopUp(){
   } finally { OPP.busy = false; }
 }
 
+// the bond travels with the NFT: a dog that came from another wallet keeps the training it had there
+function bondAdopt(carry, dogs){
+  const got = [];
+  for (const [id, e] of Object.entries(carry || {})){
+    const f = dogs.find(x => x.id === id && !x.borrowed); if (!f) continue;
+    const g = SAVE.dog(id);
+    if (!(e.lvl > g.lvl || (e.lvl === g.lvl && e.xp > g.xp))) continue;
+    g.lvl = Math.max(1, Math.min(BOND.maxLevel, e.lvl | 0)); g.xp = Math.max(0, e.xp | 0);
+    g.w = Math.max(g.w || 0, e.w | 0); g.l = Math.max(g.l || 0, e.l | 0);
+    if (e.path) g.path = e.path;
+    got.push(`${f.name} — Bond ${g.lvl}`);
+  }
+  if (!got.length) return;
+  SAVE.save();
+  WALLET.bondNote = `Welcome to the kennel! Their training came along with the NFT: ${got.join(' · ')}.`;
+}
 async function loadKennel(fresh){
   WALLET.loading = true; WALLET.error = ''; WALLET.progress = 'Reading your wallet…'; if (tab !== 'dash') tab = 'kennel'; menu();
   try {
@@ -2833,6 +2849,7 @@ async function loadKennel(fresh){
     out.sort((a,b) => (b.legendary?1:0) - (a.legendary?1:0) || (a.token||1e9) - (b.token||1e9));
     OWNED = out; WALLET.owned = out.length;
     SAVE.registerDogs(out.map(f => f.id));
+    if (j.carry) bondAdopt(j.carry, out);
     oppLearnBase(j.nfts);
   } catch(e){ WALLET.error = 'Could not load your kennel (' + e.message + ').'; }
   WALLET.loading = false; if (SC.linkId) tab = 'club'; menu();
@@ -2935,6 +2952,7 @@ function walletWire(){
   if (q('demo'))      q('demo').onclick = () => { S.unlock(); S.click(); WALLET.demo = true; menu(); };
   if (q('signout'))   q('signout').onclick = () => { S.click(); walletSignOut(); };
   if (q('defOk'))     q('defOk').onclick = () => { S.click(); WALLET.defenseNote = ''; menu(); };
+  if (q('bondOk'))    q('bondOk').onclick = () => { S.click(); WALLET.bondNote = ''; menu(); };
   if (q('bonusOk'))   q('bonusOk').onclick = () => { S.click(); WALLET.bonusNote = ''; menu(); };
   if (q('prizeOk'))   q('prizeOk').onclick = () => { S.click(); PRIZE.done = ''; menu(); };
   app.querySelectorAll('[data-prize]').forEach(b => b.onclick = () => { S.unlock(); S.click(); prizeClaim(b.dataset.prize); });
@@ -3922,6 +3940,8 @@ function kennelView(){
     <div class="row" style="justify-content:flex-start;margin-top:10px"><button id="demo">Try the demo</button></div></div>` + prizeCards() + lendCard();
   const bonusNote = WALLET.bonusNote ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🎟️ Bonus fights</b>
       <div class="mini">${esc(WALLET.bonusNote)}</div></div><button id="bonusOk" class="sm">OK</button></div></div>` : '';
+  const carryNote = WALLET.bondNote ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🐾 Bond carried over</b>
+      <div class="mini">${esc(WALLET.bondNote)}</div></div><button id="bondOk" class="sm">OK</button></div></div>` : '';
   const defNote = WALLET.defenseNote ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🛡️ Arena defence</b>
       <div class="mini">${esc(WALLET.defenseNote)}</div></div><button id="defOk" class="sm">OK</button></div></div>` : '';
   let dogs;
@@ -3933,7 +3953,7 @@ function kennelView(){
     dogs = (gen || '') + (leg ? `</div><h3 class="h3" style="margin:16px 0 10px">★ ${R === DATA.fighters ? 'THE 20 LEGENDARIES' : 'YOUR LEGENDARIES'} — hand-built, each with its own signature</h3><div class="pick">` + leg : '');
   }
   const top = bondOrder(R)[0], tg = top && SAVE.dog(top.id);
-  return walletCard() + prizeCards() + bonusNote + defNote + `
+  return walletCard() + prizeCards() + carryNote + bonusNote + defNote + `
   <div class="card pnl">
     <div>
       <h3>TRAINER</h3>

@@ -4,6 +4,20 @@ Changes collect here during the week and go live together when the new week star
 Last version confirmed live: **game v31.2** (uploaded by the owner on 8 Oct 2026; includes the v31.1 ticket hotfix and
 its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on GitHub Actions, daily 05:10 UTC.
 
+## Fix (owner, 12 Oct): the bond level travels with the NFT — in the same package for Monday 19 Oct
+- **Bug:** the owner sent a Pixel Scrappy to another wallet and it arrived at Bond 1. A dog's training (bond level, XP,
+  record, bond paths) lived only in the save of the wallet that trained it.
+- **Fix:** the server keeps the latest training **per NFT** (blob `bonds`), written from the cloud save of the wallet
+  that holds the dog — and only by the newest holder on record, so a seller whose kennel wasn't reloaded since the
+  sale can't change it any more. When a wallet loads its kennel, every dog that came from elsewhere carries its training
+  along (`/me/kennel` → `carry`): the game adopts the higher bond, XP, record and bond paths and shows
+  "🐾 Bond carried over — … Bond 6". A fresh Bond-1 save of the buyer can't wipe it before it's adopted. Dogs that
+  changed hands **before** this fix (like the owner's #3615) are found once in the old owner's save on the server
+  (the most trained one wins), so they get their bond back on the next kennel load after the upload.
+- Test: `tools/test/bond-transfer.mjs` (A trains #3615 to bond 6 → sends it to B → B's kennel/game shows bond 6 with XP,
+  record and path; an old save is found; B's fresh save and A's stale save can't overwrite it). `lend.mjs`, `market.mjs`,
+  `dash.mjs` still pass. (The test mock reads `HOLD_FILE` so a test can move dogs between wallets.)
+
 ## v33 — Scrappy Dash mini game · for Monday 19 Oct (built 12 Oct, owner's idea "Scrappy Sleigh Dash")
 - **New tab "🛷 Dash"** (also straight at `game.scrappyxrp.fun/dash`): a one-tap endless runner. The player's own
   Scrappy (its NFT picture) flies a sleigh over snowy night roofs. **Hold** = climb, let go = sink, **quick tap** (< 0.18 s)

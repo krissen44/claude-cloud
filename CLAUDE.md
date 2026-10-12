@@ -284,6 +284,10 @@ hand over one combined package for the week start; don't tell the owner to uploa
   Board `advent.days[].prize` (plan) / `.won` {name, score, token, status, key, place}, `grandPrizes`, `grandWon`; client doors show the
   prize image (`dashImgUrl` → `/public/dogimg`, future ones blurred), `todayCard`, `.agrand`; prize cards also in the Dash tab.
   Website `dashPrizes` + `claimPrize` (modal, polls `/public/dash/claim?uuid=`). `treasuryFree` = issuer pieces no prize used yet.
+- **Bond travels with the NFT (fix 12 Oct)**: blob `bonds` {nftId: {lvl, xp, w, l, path, by, at}} — `bondRecord` from `savePut`
+  (only dogs the saver holds and is the newest holder of, by holdings `updated`; a new holder's lower save doesn't overwrite
+  another trainer's higher entry), `bondCarry` in `kennel()` → `carry` for dogs trained by someone else (first time: scans
+  `saveAll()` for the most trained copy). Client `bondAdopt` (takes the higher bond, `WALLET.bondNote` card in the kennel).
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 
