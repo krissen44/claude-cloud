@@ -17,6 +17,12 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
   people who come to the window now and then (some in a Santa hat) and wave when the sleigh flies by. Sky: twinkling
   stars that flare into crosses, a glowing full moon with a breathing halo, a soft aurora, shooting stars, far windows
   that switch on and off. The sleigh has blinking bulbs and a bell; the Dash tab header has falling snow and a glowing moon.
+- **Glitter milestones (owner: "sparkling animations when you collect a certain amount or reach points"):** at 250,
+  500, 1,000, 1,500, 2,000, 3,000, 4,000, 5,000, 7,500, 10,000 points (then every 2,500), every 10th candy cane
+  ($SCRAP coin), every 5th delivery and the first ×5 combo: glitter rain over the whole field, a sparkle burst around
+  the dog, a golden shimmer, a popping gold banner ("1,000 POINTS — GREAT!", "10 CANDY CANES — SWEET!",
+  "5 GIFTS DELIVERED — HO HO HO!") with dancing sparkles, a bell jingle, and the sleigh trails glitter for 2–3 s
+  (the score blinks gold). Every pickup and delivery also gives a small glint.
 - **Free, unlimited, no tickets.** Signed-in runs go to a **weekly Dash board** (best run of the week, resets Monday
   00:00 UTC, last week's top 3 shown). Guests/demo can play for fun. The dog earns a little **bond XP** (score ÷ 150, max
   15 per run, 40 per day; own dogs only, not borrowed/demo). No ladder XP, no influence on fights' fairness.

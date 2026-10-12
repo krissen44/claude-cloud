@@ -1428,6 +1428,8 @@ const S = (() => {
     dashCoin(){ tone(1320, 1320, .05, 'square', .08); tone(1760, 1760, .07, 'square', .08, .045); },
     dashAmmo(){ tone(440, 880, .12, 'triangle', .18); },
     dashEmpty(){ tone(180, 140, .08, 'square', .1); },
+    dashJingle(big){ [1047,1319,1568,2093].concat(big ? [2637] : []).forEach((f,i)=>tone(f,f,.16,'triangle',.16,i*.06));
+      for (let i = 0; i < (big ? 6 : 3); i++) tone(3000 + i * 400, 3000 + i * 400, .05, 'sine', .05, .3 + i * .07); },
     dashCrash(big){ noise(big ? .5 : .2, 'lowpass', big ? 700 : 1400, big ? .45 : .25); if (big) tone(220, 50, .5, 'sawtooth', .18); },
     lose(){ [392,330,262].forEach((f,i)=>tone(f,f,.24,'triangle',.22,i*.14)); }
   };
@@ -4557,11 +4559,11 @@ const DASH_XP_DAY = 40, DASH_XP_RUN = 15;                // bond XP: per run (sc
 const DASH = {board: null, loading: false, dog: lsGet('ba_dashdog'), g: null};
 const DASH_SKIN = {
   sleigh: {title: 'SLEIGH DASH', icon: '🛷', ammo: 'gift', ammos: 'gifts', coin: 'candy cane', coins: 'candy canes',
-    target: 'glowing chimneys', obst: 'tall chimneys', foe: 'crows', where: 'over the snowy roofs',
+    cheer: 'HO HO HO!', target: 'glowing chimneys', obst: 'tall chimneys', foe: 'crows', where: 'over the snowy roofs',
     sky: ['#0b1634', '#24386b'], far: '#1a2a52', near: '#22335f', walls: ['#b5523b', '#3f7f86', '#d9c9a3', '#7a5c9e', '#c27b3a'],
     roof: '#eef6ff', stack: '#8c3b2c', glow: '#ffd75a'},
   rocket: {title: 'ROCKET DASH', icon: '🚀', ammo: 'bone', ammos: 'bones', coin: '$SCRAP coin', coins: '$SCRAP coins',
-    target: 'glowing hatches', obst: 'antenna towers', foe: 'asteroids', where: 'over the moon bases',
+    cheer: 'TO THE MOON!', target: 'glowing hatches', obst: 'antenna towers', foe: 'asteroids', where: 'over the moon bases',
     sky: ['#04050d', '#1c1440'], far: '#2a2550', near: '#3a3566', walls: ['#c9d1dc', '#9fb0c4', '#d8dee8', '#b6c2d3', '#aab6c8'],
     roof: '#7e8796', stack: '#6c7787', glow: '#5cff9a'}
 };
@@ -4674,7 +4676,7 @@ function dashSize(G){
 }
 function dashReset(G){
   Object.assign(G, {t: 0, ms: 0, dist: 0, v: 150, y: 120, vy: 0, hold: false, downAt: 0, ammo: 3, score: 0, combo: 0, best: 0,
-    delivered: 0, coinsN: 0, shield: false, blink: 0, houses: [], gifts: [], items: [], foes: [], fx: [], nextX: 0,
+    delivered: 0, coinsN: 0, msN: 0, bq: [], banner: null, glow: 0, flash: 0, maxShown: false, shield: false, blink: 0, houses: [], gifts: [], items: [], foes: [], fx: [], nextX: 0,
     distPts: 0, startPress: false, nextCoin: 1.2, nextAmmo: 3.5, nextFoe: 7, nextStar: 22, runId: null, posted: null, xp: 0, lastDrop: 0});
   G.nextX = 0;
   while (G.nextX < DASH_W + 200) dashHouse(G, true);
@@ -4825,7 +4827,9 @@ function dashStep(G, dt){
   for (const it of G.items){
     if (Math.abs(it.x - DASH_PX) < 20 && Math.abs(it.y - G.y) < 18){
       it.got = true;
-      if (it.k === 'coin'){ G.score += 5; G.coinsN++; S.dashCoin(); }
+      dashGlint(G, it.x, it.y, it.k === 'coin' ? 6 : 10);
+      if (it.k === 'coin'){ G.score += 5; G.coinsN++; S.dashCoin();
+        if (G.coinsN % 10 === 0) dashCelebrate(G, G.coinsN + ' ' + G.K.coins.toUpperCase(), G.coinsN % 50 ? 'SWEET!' : 'WHAT A HAUL!', G.coinsN % 50 ? 1 : 2); }
       else if (it.k === 'ammo'){ G.ammo = Math.min(9, G.ammo + 2); G.score += 5; S.dashAmmo(); G.fx.push({k: 'txt', x: it.x, y: it.y - 12, t: 0, s: '+2 ' + G.K.ammos, c: '#fff'}); }
       else { G.shield = true; S.heal(); G.fx.push({k: 'txt', x: it.x, y: it.y - 12, t: 0, s: 'SHIELD', c: '#9be7ff'}); }
     }
@@ -4852,6 +4856,9 @@ function dashStep(G, dt){
           G.fx.push({k: 'txt', x: h.x + h.cx + 9, y: ct - 14, t: 0, s: '+' + pts + (G.combo > 1 ? '  ×' + G.combo : ''), c: G.K.glow});
           for (let i = 0; i < 10; i++) G.fx.push({k: 'spark', x: h.x + h.cx + 9, y: ct, vx: drand(-60, 60), vy: drand(-140, -40), t: 0, c: i % 2 ? G.K.glow : '#fff'});
           S.dashGood(G.combo);
+          dashGlint(G, h.x + h.cx + 9, ct, 12);
+          if (G.delivered % 5 === 0) dashCelebrate(G, G.delivered + ' ' + G.K.ammos.toUpperCase() + ' DELIVERED', G.K.cheer, 2);
+          else if (G.combo === 5 && pts === 125 && !G.maxShown){ G.maxShown = true; dashCelebrate(G, 'COMBO ×5', 'MAX COMBO!', 2); }
         } else { dashComboLost(G); G.fx.push({k: 'poof', x: g.x, y: ct, t: 0}); }
         break;
       }
@@ -4868,8 +4875,32 @@ function dashStep(G, dt){
     else return dashOver(G);
   }
   G.score += Math.floor(G.dist / 10) - (G.distPts || 0); G.distPts = Math.floor(G.dist / 10);
+  while (G.score >= dashScoreMs(G.msN)){ const v = dashScoreMs(G.msN++); dashCelebrate(G, v.toLocaleString() + ' POINTS', v >= 5000 ? 'LEGENDARY!' : v >= 2000 ? 'AMAZING!' : v >= 1000 ? 'GREAT!' : 'NICE!', v >= 1000 ? 2 : 1); }
+  if (G.glow > 0){                                 // glitter trail behind the sleigh after a milestone
+    G.glow -= dt;
+    for (let i = 0; i < 2; i++) G.fx.push({k: 'glit', x: DASH_PX - 18 + drand(-6, 10), y: G.y + drand(-14, 10), vx: -G.v * .6 + drand(-20, 20), vy: drand(-20, 30), t: 0, life: drand(.4, .8), c: DASH_GLITTER[Math.floor(Math.random() * DASH_GLITTER.length)], p: Math.random() * 6, s: Math.random() < .25 ? 2 : 1});
+  }
   dashFx(G, dt);
   if (G.hold && Math.random() < .6) G.fx.push({k: 'trail', x: DASH_PX - 24, y: G.y + 4 + drand(-3, 3), t: 0});
+}
+/* Milestones: points (250, 500, 1000, 1500, 2000, 3000, 4000, 5000, 7500, 10000, then every 2500), every 10th
+   coin/candy cane, every 5th delivery and the first ×5 combo of a run get a celebration: glitter rain over the whole
+   field, a sparkle burst around the dog, a golden shimmer, a banner and a bell jingle; the sleigh then trails glitter. */
+const DASH_MS_LIST = [250, 500, 1000, 1500, 2000, 3000, 4000, 5000, 7500, 10000];
+const dashScoreMs = n => n < DASH_MS_LIST.length ? DASH_MS_LIST[n] : 10000 + (n - DASH_MS_LIST.length + 1) * 2500;
+const DASH_GLITTER = ['#ffd54f', '#fff8e1', '#ffffff', '#ff8a80', '#69f0ae', '#80d8ff', '#ea80fc', '#ffe57f'];
+function dashGlint(G, x, y, n){
+  for (let i = 0; i < n; i++){ const a = Math.random() * 7, v = drand(30, 90);
+    G.fx.push({k: 'glit', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: drand(.35, .6), c: DASH_GLITTER[i % DASH_GLITTER.length], p: Math.random() * 6, s: 1, burst: true}); }
+}
+function dashCelebrate(G, title, sub, lvl){
+  G.bq.push({s: title, sub, t: 0, big: lvl > 1});
+  for (let i = 0; i < (lvl > 1 ? 80 : 45); i++) G.fx.push({k: 'glit', x: drand(0, DASH_W), y: drand(-80, -4), vx: drand(-25, 25), vy: drand(50, 130), t: 0,
+    life: drand(1.6, 2.6), c: DASH_GLITTER[Math.floor(Math.random() * DASH_GLITTER.length)], p: Math.random() * 6, s: Math.random() < .35 ? 2 : 1});
+  for (let i = 0; i < 24; i++){ const a = i / 24 * Math.PI * 2, v = drand(80, 160);
+    G.fx.push({k: 'glit', x: DASH_PX, y: G.y - 8, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: drand(.7, 1.1), c: DASH_GLITTER[i % DASH_GLITTER.length], p: Math.random() * 6, s: 2, burst: true}); }
+  G.glow = Math.max(G.glow, lvl > 1 ? 3 : 2); G.flash = lvl > 1 ? .5 : .3;
+  S.dashJingle(lvl > 1);
 }
 function dashComboLost(G){
   if (G.combo > 1) G.fx.push({k: 'txt', x: DASH_PX, y: G.y - 30, t: 0, s: 'combo lost', c: '#ff8a80'});
@@ -4886,14 +4917,19 @@ function dashFx(G, dt){
     if (f.k === 'spark'){ f.x += f.vx * dt; f.y += f.vy * dt; f.vy += 300 * dt; }
     if (f.k === 'trail') f.x -= G.v * dt * .9;
     if (f.k === 'txt') f.y -= 22 * dt;
+    if (f.k === 'glit'){ f.x += f.vx * dt; f.y += f.vy * dt; if (f.burst){ f.vx *= .93; f.vy = f.vy * .93 + 60 * dt; } else f.x += Math.sin(f.t * 3 + f.p) * 12 * dt; }
   }
-  G.fx = G.fx.filter(f => f.t < (f.k === 'txt' ? 1 : f.k === 'trail' ? .35 : .6));
+  G.fx = G.fx.filter(f => f.t < dashLife(f));
+  if (G.flash > 0) G.flash = Math.max(0, G.flash - dt);
+  if (G.banner){ G.banner.t += dt; if (G.banner.t > 1.7) G.banner = null; }
+  if (!G.banner && G.bq && G.bq.length) G.banner = G.bq.shift();
   if (G.th === 'sleigh'){
     if (G.shoot){ G.shoot.t += dt; if (G.shoot.t > .9) G.shoot = null; }
     else if (Math.random() < dt / 7) G.shoot = {x: drand(DASH_W * .35, DASH_W), y: drand(8, 70), t: 0};
   }
   for (const s of G.flakes){ s.y += s.v * dt; s.x -= (G.state === 'run' ? G.v * .15 : 8) * dt + Math.sin(s.y / 20 + s.w) * .2; if (s.y > DASH_H) s.y = -4; if (s.x < -4) s.x = DASH_W + 4; }
 }
+const dashLife = f => f.life || (f.k === 'txt' ? 1 : f.k === 'trail' ? .35 : .6);
 function dashOver(G){
   G.state = 'over'; G.overAt = Date.now(); G.hold = false;
   S.dashCrash(true);
@@ -5087,11 +5123,17 @@ function dashDraw(G){
   for (const g of G.gifts) dashAmmoSprite(c, Math.round(g.x), Math.round(g.y), rocket);
   // fx
   for (const f of G.fx){
-    const a = 1 - f.t / (f.k === 'txt' ? 1 : f.k === 'trail' ? .35 : .6);
+    const a = 1 - f.t / dashLife(f);
     c.globalAlpha = Math.max(0, a);
     if (f.k === 'spark'){ c.fillStyle = f.c; c.fillRect(Math.round(f.x), Math.round(f.y), 3, 3); }
     else if (f.k === 'trail'){ c.fillStyle = rocket ? (f.t < .12 ? '#fff3a0' : '#ff7a30') : '#fff7c2'; c.fillRect(Math.round(f.x), Math.round(f.y), 3, 3); }
     else if (f.k === 'poof'){ c.fillStyle = '#ddd'; const r = 4 + f.t * 20; c.fillRect(f.x - r, f.y - 3, r * 2, 3); }
+    else if (f.k === 'glit'){                        // a twinkling four-point star
+      const x = Math.round(f.x), y = Math.round(f.y), tw = Math.sin(f.t * 16 + f.p);
+      c.globalAlpha = Math.max(0, a) * (.55 + .45 * tw); c.fillStyle = f.c;
+      if (tw > .2){ const r = f.s > 1 ? 3 : 2; c.fillRect(x - r, y, r * 2 + 1, 1); c.fillRect(x, y - r, 1, r * 2 + 1); c.fillStyle = '#fff'; c.fillRect(x, y, 1, 1); }
+      else c.fillRect(x, y, f.s, f.s);
+    }
     else if (f.k === 'txt'){ c.fillStyle = f.c; c.font = '8px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(f.s, f.x, f.y); }
   }
   c.globalAlpha = 1;
@@ -5100,10 +5142,32 @@ function dashDraw(G){
   if (G.state === 'run' && G.ammo > 0){ c.fillStyle = 'rgba(255,255,255,.18)'; for (let yy = Math.round(G.y) + 16; yy < H; yy += 8) c.fillRect(DASH_PX + 3, yy, 2, 3); }
   // the pilot
   if (G.state !== 'over' || Math.floor(T * 10) % 2) dashPilot(G, c, DASH_PX, Math.round(G.y), rocket, T);
+  // milestone shimmer + banner
+  if (G.flash > 0){
+    const sh = c.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, W * .7);
+    sh.addColorStop(0, 'rgba(255,236,170,0)'); sh.addColorStop(1, 'rgba(255,224,130,' + Math.min(.55, G.flash) + ')');
+    c.fillStyle = sh; c.fillRect(0, 0, W, H);
+  }
+  if (G.banner){
+    const b = G.banner, pop = 1 + .45 * Math.max(0, 1 - b.t / .18), fade = Math.min(1, (1.7 - b.t) / .35);
+    c.save(); c.globalAlpha = Math.max(0, fade); c.translate(W / 2, H * .36 + Math.sin(b.t * 5) * 2); c.scale(pop, pop);
+    c.textAlign = 'center'; c.lineJoin = 'round';
+    const fs = Math.min(b.big ? 16 : 13, Math.floor((W - 30) / Math.max(8, b.s.length)));
+    c.font = fs + 'px "Press Start 2P", monospace';
+    c.lineWidth = 5; c.strokeStyle = '#3b1b00'; c.strokeText(b.s, 0, 0);
+    const gg = c.createLinearGradient(0, -fs, 0, 2); gg.addColorStop(0, '#fff8e1'); gg.addColorStop(.5, '#ffd54f'); gg.addColorStop(1, '#ff9800');
+    c.fillStyle = gg; c.fillText(b.s, 0, 0);
+    if (b.sub){ c.font = '9px "Press Start 2P", monospace'; c.lineWidth = 4; c.strokeText(b.sub, 0, 18); c.fillStyle = '#fff'; c.fillText(b.sub, 0, 18); }
+    for (let i = 0; i < 6; i++){                    // sparkles dancing around the words
+      const a2 = b.t * 3 + i * 1.05, sx = Math.cos(a2) * (W * .3), sy = Math.sin(a2 * 1.3) * 16 - 4;
+      if (Math.sin(b.t * 18 + i) > 0){ c.fillStyle = DASH_GLITTER[i]; c.fillRect(sx - 3, sy, 7, 1); c.fillRect(sx, sy - 3, 1, 7); }
+    }
+    c.restore();
+  }
   // HUD
   c.textAlign = 'left'; c.font = '10px "Press Start 2P", monospace';
   c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(6, 6, 150, 34);
-  c.fillStyle = '#fff'; c.fillText(String(Math.floor(G.score)).padStart(6, '0'), 12, 21);
+  c.fillStyle = G.glow > 0 && Math.floor(T * 8) % 2 ? '#ffd54f' : '#fff'; c.fillText(String(Math.floor(G.score)).padStart(6, '0'), 12, 21);
   c.font = '8px "Press Start 2P", monospace';
   c.fillStyle = G.combo > 1 ? K.glow : 'rgba(255,255,255,.55)'; c.fillText('COMBO ×' + Math.max(1, G.combo), 12, 34);
   c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(W - 128, 6, 122, 22);

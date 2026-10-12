@@ -266,7 +266,9 @@ hand over one combined package for the week start; don't tell the owner to uploa
   early while a run is on screen (`DASH.g`). Skins `DASH_SKIN.sleigh|rocket`: rocket from `DASH_ROCKET_FROM` (27 Dec 2026,
   page + worker), env `DASH_THEME` overrides, `?dash=` previews. Sleigh dressing: `dashDeco` (per house: lights `DASH_BULBS`
   + blink mode, icicles, garland, smoke, window roles lit/dark/candle/tree/person/star/wreath), `dashWindow`, aurora,
-  shooting stars (`G.shoot`), moon halo — visuals only, never in collision boxes. $SCRAP coins are only a picture. Website section `#dash`.
+  shooting stars (`G.shoot`), moon halo — visuals only, never in collision boxes. Milestones: `dashScoreMs` (`DASH_MS_LIST`), every 10th coin,
+  every 5th delivery, first ×5 → `dashCelebrate` (glitter `fx` kind `glit`, banner queue `G.bq`, `G.glow` trail, `G.flash`,
+  `S.dashJingle`); `dashGlint` = small burst on pickups. $SCRAP coins are only a picture. Website section `#dash`.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 
