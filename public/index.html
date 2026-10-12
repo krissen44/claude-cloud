@@ -431,6 +431,17 @@ button.dashgo:active{transform:translateY(3px);box-shadow:0 1px 0 #0e1726}
 .adoor small{display:block;font-size:8.5px;line-height:1.2;margin-top:3px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .adoor i{position:absolute;top:1px;right:2px;font-style:normal;font-size:9px}
 .adoor.past{background:rgba(46,125,50,.1);border-color:#7cb987}
+.adoor img{display:block;width:34px;height:34px;margin:2px auto 0}
+.adoor img.hid{filter:blur(3px) saturate(.6);opacity:.7}
+.adoor em,.aprize span,.agrand em{display:block;font-style:normal;font-size:8px;font-weight:700;letter-spacing:.3px;text-transform:uppercase}
+.r-common{color:#78909c}.r-uncommon{color:#2e7d32}.r-rare{color:#1565c0}.r-epic{color:#8e24aa}.r-legendary{color:#ef6c00}.r-mythic{color:#d81b60}
+.aprize{display:flex;gap:12px;align-items:center;border:2px dashed #e53935;border-radius:10px;padding:8px 10px;margin:0 0 10px;background:rgba(255,213,79,.12)}
+.aprize img{width:64px;height:64px;flex:none}
+.aprize b{font-size:12px}.aprize span{display:inline;font-size:9px;margin-left:6px}
+.agrand{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.agrand>div{border:2px solid var(--panelB);border-radius:8px;text-align:center;padding:5px 2px;font-size:10px}
+.agrand img{width:46px;height:46px;display:block;margin:0 auto 2px}
+.agrand small{display:block;font-size:8.5px;color:var(--ink2)}
 .adoor.today{border-color:#e53935;background:rgba(229,57,53,.08);animation:doorGlow 1.6s ease-in-out infinite}
 .adoor.today b{color:#e53935}
 @keyframes doorGlow{50%{box-shadow:0 0 0 3px rgba(255,213,79,.55),0 0 14px rgba(255,213,79,.6)}}
@@ -1571,7 +1582,7 @@ async function loadPrizes(){
     const r = await api('/prizes'), j = await r.json();
     if (!r.ok) return;
     PRIZE.list = (j.prizes || []).filter(p => p.status === 'offered');
-    if (PRIZE.list.length && tab === 'kennel') menu();
+    if (PRIZE.list.length && (tab === 'kennel' || tab === 'dash')) menu();
   } catch(e){}
 }
 function prizeCards(){
@@ -4740,6 +4751,7 @@ async function dashLoad(){
   if (!LIVE() || DASH.loading) return;
   DASH.loading = true;
   try { const r = await api('/dash/board'); if (r.ok) DASH.board = await r.json(); } catch(e){}
+  if (!PRIZE.list.length) loadPrizes();   // an Advent prize can be claimed right here
   DASH.loading = false;
   if (tab === 'dash' && !DASH.g) menu();
 }
@@ -4754,19 +4766,28 @@ function dashBoardRows(rows, prizes){
 }
 // "🥇 Epic · 🥈 Rare · 🥉 Rare · 4th Uncommon · 5th Uncommon" — one Pixel Scrappy per overall place
 const dashGrandText = A => (A.grand || []).map((g, i) => `${['🥇', '🥈', '🥉'][i] || (i + 1) + 'th'} <b>${esc(g)}</b>`).join(' · ') + ' Pixel Scrappy';
+const dashImgUrl = t => CONFIG.WORKER_URL.replace(/\/$/, '') + '/public/dogimg?t=' + t;
 // the Advent calendar: 24 doors, today's glowing, past ones show the day's winner, a star where you played
 function dashAdvent(A){
   if (!A) return '';
+  // each door shows its prize: future ones as a silhouette with the rarity, today's and past ones in full
   const doors = A.days.map(d => {
     const cls = d.state === 'today' ? 'today' : d.state === 'past' ? 'past' : '';
-    return `<div class="adoor ${cls}" title="${esc(d.day)}"><b>${d.n}</b>${d.mine ? '<i>⭐</i>' : ''}${d.winner ? `<small>${esc(d.winner.name)}</small>` : d.state === 'today' ? '<small>today</small>' : ''}</div>`;
+    const pz = d.prize ? `<img src="${dashImgUrl(d.prize.token)}" alt="" loading="lazy" class="${d.state === 'future' ? 'hid' : ''}"><em class="r-${esc((d.prize.rarity || '').toLowerCase())}">${esc(d.prize.rarity || '')}</em>` : '';
+    const who = d.won ? `<small>${d.won.status === 'claimed' ? '✅' : '🏆'} ${esc(d.won.name)}</small>` : d.winner ? `<small>${esc(d.winner.name)}</small>` : d.state === 'today' ? '<small>today</small>' : '';
+    return `<div class="adoor ${cls}" title="${esc(d.day)}${d.prize ? ' · Pixel Scrappy #' + d.prize.token : ''}"><b>${d.n}</b>${d.mine ? '<i>⭐</i>' : ''}${pz}${who}</div>`;
   }).join('');
+  const td = A.days.find(d => d.state === 'today'), tp = td && td.prize;
+  const todayCard = tp ? `<div class="aprize"><img src="${dashImgUrl(tp.token)}" alt=""><div><b>🎁 Today's prize: Pixel Scrappy #${tp.token}</b>
+      <span class="r-${esc((tp.rarity || '').toLowerCase())}">${esc(tp.rarity || '')}</span><br><span class="mini">The best run of today (UTC) takes it home.</span></div></div>` : '';
+  const grand = (A.grandPrizes || []).some(g => g.token) ? `<p class="mini" style="margin:12px 0 6px"><b>🎄 Overall prizes after Christmas Eve</b></p><div class="agrand">${A.grandPrizes.map(g =>
+      `<div>${g.token ? `<img src="${dashImgUrl(g.token)}" alt="" loading="lazy">` : ''}<b>${['🥇', '🥈', '🥉'][g.place - 1] || g.place + 'th'}</b><em class="r-${esc(g.rarity.toLowerCase())}">${esc(g.rarity)}</em>${g.token ? `<small>#${g.token}</small>` : ''}</div>`).join('')}</div>` : '';
   const head = A.on ? `🎄 ADVENT DASH · DAY ${A.n} OF 24` : A.done ? '🎄 ADVENT DASH · FINISHED' : `🎄 ADVENT DASH · STARTS ${A.from.slice(8)}.${A.from.slice(5, 7)}.`;
   const gp = dashGrandText(A);
   const txt = A.on ? `Today's best run wins <b>${esc(A.dayPrize)}</b>${A.dayPlaces > 1 ? ` (top ${A.dayPlaces})` : ''}. The overall ranking adds up your best run of every day — after Christmas Eve the top ${A.grandPlaces} win: ${gp}. Play every day!`
     : A.done ? 'The calendar is done — thanks for flying! The winners are below.'
     : `From ${A.from} to ${A.to}: a prize every single day for the best run of the day (<b>${esc(A.dayPrize)}</b>), and the top ${A.grandPlaces} of the overall ranking (your daily bests added up) win: ${gp}. ${A.n > -14 ? `Only ${1 - A.n} day${1 - A.n === 1 ? '' : 's'} to go — practise now!` : 'Practise now!'}`;
-  return `<div class="card advent"><h3 class="h3">${head}</h3><p class="mini" style="margin:0 0 10px">${txt}</p><div class="adoors">${doors}</div></div>`;
+  return `<div class="card advent"><h3 class="h3">${head}</h3><p class="mini" style="margin:0 0 10px">${txt}</p>${A.on ? todayCard : ''}<div class="adoors">${doors}</div>${grand}</div>`;
 }
 function dashView(){
   const th = dashTheme(), K = DASH_SKIN[th], me = dashPickDog(), sv = dashSave(), B = DASH.board;
@@ -4784,6 +4805,7 @@ function dashView(){
       <button id="dashGo" class="dashgo">▶ PLAY</button>
       <p class="dashsub" style="margin-top:10px">${tm && tm.best ? `Today: <b>${tm.best.toLocaleString()}</b> · #${tm.rank}` : `Best on this device: <b>${sv.best.toLocaleString()}</b>`}${om && om.total ? ` · Advent total <b>${om.total.toLocaleString()}</b> (#${om.rank})` : ''} · Free, no tickets — play as often as you like.</p>
     </div>
+    ${PRIZE.list.length || PRIZE.done ? prizeCards() : ''}
     ${dashAdvent(A)}
     ${board("🏆 TODAY'S RANKING", B && B.today && B.today.top, 'No runs yet today — the first one takes the top spot.',
       `${B && B.yesterday && B.yesterday.top.length ? `<p class="mini" style="margin:10px 0 4px"><b>Yesterday (${esc(B.yesterday.day)})</b></p>${dashBoardRows(B.yesterday.top)}` : ''}<p class="mini" style="margin:8px 0 0">Your best run of the day counts. A new day starts at 00:00 UTC.</p>`)}

@@ -105,7 +105,8 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/admin/fair[?week=]` | `?key=ADMIN_KEY` | Claimed vs verified week per player, flags |
 | `/admin/clips` (GET list), `/admin/clips/upload?name=` (PUT), `/admin/clips/file?name=[&download]`, `/admin/clips/posted` / `delete` (POST) | `?key=ADMIN_KEY` | Shorts clips — **handled in `server.js`** (Node only, files in `DATA_DIR/clips`, kept 30 days) |
 | `/dash/start` (POST `{dog}` → `{id, seed}`), `/dash/end` (POST `{id, score, ticks, w, inp}`), `/dash/board` (optional auth), `/public/dash` (–) | ✔ | Scrappy Dash (v33): the server replays the run from seed + inputs (`env.DASH`) and books its score; best per day `dashday:<day>` + week `dash:<week>`; board = `today`, `yesterday`, `week`, `advent` (24 days, winners, `overall`) |
-| `/admin/dash`, `/admin/dash/prize` (POST `{key, place, nftId}`) | `?key=ADMIN_KEY` | Advent Dash: frozen days (`dash-<day>`) / season (`dash-grand-<from>`) with winners → Xaman offer from the treasury; claimed via `/prizes` like the weekly ones |
+| `/admin/dash` (+ treasury check `have`/`needGrand`/`needDays`, `plan`), `/admin/dash/prize` (POST `{key, place, nftId}`), `/admin/dash/plan` (POST `{auto:true}` or `{plan:{key:nftId}}`) | `?key=ADMIN_KEY` | Advent Dash: frozen days (`dash-<day>`) / season (`dash-grand-<from>`) with winners → Xaman offer from the treasury; prize plan blob `dashplan:<from>` (`dash-<day>`, `grand-<n>`) shown in the calendars |
+| `/public/dash/claim` (POST text/plain `{key, place}`; GET `?uuid=`) | – | Website claim of an Advent prize: Xaman NFTokenAcceptOffer request for the winner's wallet (only they can sign) / its status (only accept payloads of `dash-` prizes) |
 | `/admin/export[?download=1]`, `/admin/csv` | `?key=ADMIN_KEY` | Everything as JSON backup (summary, per-player rows, raw store + saves) / players as CSV. Dashboard page: **`/admin`** |
 
 ### Game rules (as implemented — keep the website guide in sync)
@@ -280,6 +281,9 @@ hand over one combined package for the week start; don't tell the owner to uploa
   **Scrappy bonus**: own dog only (holdings, checked at `/dash/start` → `run.bonus`), by rarity `DASH_BONUS` Common 5 … Legendary/
   Mythic 10 %; booked = `floor(raw × (100 + bonus) / 100)` (`dashBoosted`; page `dashFinal`, HUD/targets/milestones use it,
   `/dash/end` gets the raw score to compare with the replay). Overall prizes per place `A.grand` → winners `want`, admin pre-pick.
+  Board `advent.days[].prize` (plan) / `.won` {name, score, token, status, key, place}, `grandPrizes`, `grandWon`; client doors show the
+  prize image (`dashImgUrl` → `/public/dogimg`, future ones blurred), `todayCard`, `.agrand`; prize cards also in the Dash tab.
+  Website `dashPrizes` + `claimPrize` (modal, polls `/public/dash/claim?uuid=`). `treasuryFree` = issuer pieces no prize used yet.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 

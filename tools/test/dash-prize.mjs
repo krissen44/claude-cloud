@@ -41,8 +41,36 @@ s = await get("/admin/season?key=adm");
 ok(!s.treasury.some(n => n.nftId === free0[0]), "the piece is no longer offered as free treasury");
 d = await get("/admin/dash?key=adm");
 ok(d.results.find(x => x.key === r1.key).winners[0].status === "claimed", "admin shows it claimed");
+// the prize plan: auto-filled from the treasury, shown in the public calendar
+let pl = await post("/admin/dash/plan?key=adm", {auto: true});
+const planned = Object.entries(pl.plan || {});
+ok(pl.ok && planned.length === 5 && pl.plan["dash-" + day(-2)].sent && !planned.some(([k, x]) => !x.sent && x.nftId === free0[0]), "auto-plan: the sent day keeps its piece, the 4 free ones go to the overall places and the next day: " + planned.map(([k, x]) => k + "=#" + x.token + " " + x.rarity).join(", "));
+ok((await post("/admin/dash/plan?key=adm", {plan: {["dash-" + day(-1)]: free0[1], ["dash-" + day(0)]: free0[1]}})).error === "duplicate", "the same Scrappy can't be planned twice");
+ok((await post("/admin/dash/plan?key=adm", {plan: {["dash-" + day(-1)]: free0[0]}})).error === "not_in_treasury", "a sent piece can't be planned again");
+pl = await post("/admin/dash/plan?key=adm", {auto: true});
+let pub = await get("/public/dash");
+const withPrize = pub.advent.days.filter(x => x.prize);
+ok(withPrize.length >= 1 && withPrize.every(x => x.prize.token) && pub.advent.grandPrizes.length === 5, `public calendar shows ${withPrize.length} day prizes + 5 overall places (${pub.advent.grandPrizes.map(g => g.rarity + (g.token ? " #" + g.token : "")).join(", ")})`);
+ok(pub.advent.days[0].won && pub.advent.days[0].won.status === "claimed" && pub.advent.days[1].won && pub.advent.days[1].won.status === "pending", "past days show the winner and the prize status");
+// day 2: the admin sends the planned piece, the winner claims it on the website (no sign-in)
+d = await get("/admin/dash?key=adm");
+ok(d.have && d.needDays === 24 && d.needGrand.Epic === 1 && d.needGrand.Rare === 2, "admin treasury check: have " + JSON.stringify(d.have) + ", need 24 days + " + JSON.stringify(d.needGrand));
+const k2 = "dash-" + day(-1), pk2 = pl.plan[k2];
+const pz2 = await post("/admin/dash/prize?key=adm", {key: k2, place: "1", nftId: pk2 ? pk2.nftId : free0[1]});
+await get("/admin/xaman?key=adm&uuid=" + pz2.uuid);
+ok((await get("/admin/dash?key=adm")).plan[k2].sent, "the planned piece is marked as sent");
+pub = await get("/public/dash");
+ok(pub.advent.days[1].won.status === "offered", "website sees day 2's prize waiting");
+const pc = await (await fetch(U + "/api/public/dash/claim", {method: "POST", headers: {"content-type": "text/plain"}, body: JSON.stringify({key: k2, place: "1"})})).json();
+ok(!!pc.uuid && !!pc.qr, "website claim: Xaman request for the winner's wallet");
+const ps = await (await fetch(U + "/api/public/dash/claim?uuid=" + pc.uuid)).json();
+ok(ps.state === "signed", "signed");
+pub = await get("/public/dash");
+ok(pub.advent.days[1].won.status === "claimed", "website shows it collected");
+ok((await (await fetch(U + "/api/public/dash/claim", {method: "POST", headers: {"content-type": "text/plain"}, body: JSON.stringify({key: "dash-" + day(0), place: "1"})})).json()).error === "no_prize", "nothing to claim for a running day");
+ok((await (await fetch(U + "/api/public/dash/claim?uuid=" + pz2.uuid)).json()).error === "unknown_payload", "the status poll only answers for claim requests");
 // a finished season: the overall top 5, each place with the rarity it's promised (Epic, Rare, Rare, Uncommon, Uncommon)
-srv.kill(); await new Promise(r => setTimeout(r, 500));
+srv.kill(); await new Promise(r => srv.once("exit", r)); await new Promise(r => setTimeout(r, 300));
 const D2 = S + "/dataDashGrand"; fs.rmSync(D2, {recursive: true, force: true}); fs.mkdirSync(D2, {recursive: true}); fs.writeFileSync(D2 + "/session.secret", "testsecret");
 const blobs = {};
 for (let k = 0; k < 24; k++) { const m = {}; for (let n = 1; n <= 7; n++) m[acc(n)] = {best: 100 * n + k, runs: 1, at: k * 1000 + n}; m.rI = {best: 99999, runs: 1, at: 1}; blobs["dashday:" + day(-40 + k)] = m; }
@@ -54,7 +82,7 @@ const g = d.results.find(x => x.grand);
 ok(d.advent.done && g && g.winners.length === 5, "season over: overall top 5 frozen");
 ok(g.winners.map(w => w.want).join(",") === "Epic,Rare,Rare,Uncommon,Uncommon", "prizes by place: " + g.winners.map(w => w.place + "=" + w.want).join(" "));
 ok(g.winners[0].account === acc(7) && g.winners[4].account === acc(3) && !g.winners.some(w => w.account === "rI"), "ranked by daily bests added up, team skipped: 1st " + g.winners[0].score);
-const pub = await get("/public/dash");
+pub = await get("/public/dash");
 ok(pub.advent.grand.join(",") === "Epic,Rare,Rare,Uncommon,Uncommon" && pub.advent.overall.top.length >= 5, "the game and website get the prize list");
 srv2.kill();
 console.log(fails ? fails + " FAILED" : "ALL PASS");

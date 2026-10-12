@@ -437,30 +437,55 @@ let ONDONE = null;
 async function dashAdmin(){
   const j = await api("dash").catch(() => null);
   if (!j || !j.advent){ $("dash").innerHTML = "<p class='muted'>No data.</p>"; return; }
-  const A = j.advent, T = ((SEASON && SEASON.treasury) || []).slice().sort((a, b) => (b.rank || 0) - (a.rank || 0) || (a.token || 0) - (b.token || 0));
+  const A = j.advent, T = (j.treasury || []).slice().sort((a, b) => (b.rank || 0) - (a.rank || 0) || (a.token || 0) - (b.token || 0));
+  const PL = j.plan || {}, byId = Object.fromEntries(T.map(n => [n.nftId, n]));
   // pre-pick: the overall places get a piece of the rarity they're promised (Epic, Rare, …), the daily winners the
   // most common piece left — every pick can be changed
   const used = new Set(), byRank = (a, b) => (a.rank || 0) - (b.rank || 0) || (a.token || 0) - (b.token || 0);
-  const pickFor = w => { const free = T.filter(n => !used.has(n.nftId) && !n.handmade);
+  for (const x of Object.values(PL)) if (!x.sent) used.add(x.nftId);   // planned pieces belong to their day
+  const pickFor = (w, key) => { const pk = key && (key.indexOf("dash-grand-") === 0 ? "grand-" + w.place : w.place === "1" ? key : null);
+    if (pk && PL[pk] && byId[PL[pk].nftId]) return PL[pk].nftId;
+    const free = T.filter(n => !used.has(n.nftId) && !n.handmade);
     const n = w.want ? free.find(x => (x.rarity || "").toLowerCase() === w.want.toLowerCase()) : free.slice().sort(byRank)[0];
     if (n) used.add(n.nftId); return n ? n.nftId : null; };
   const opts = (sel, w) => T.slice().sort((a, b) => (w && w.want ? ((b.rarity || "").toLowerCase() === w.want.toLowerCase()) - ((a.rarity || "").toLowerCase() === w.want.toLowerCase()) : 0))
     .map(n => "<option value='" + n.nftId + "'" + (n.nftId === sel ? " selected" : "") + ">#" + (n.token || "?") + " · " + esc(RLAB(n)) + "</option>").join("");
   const rows = j.results.slice().reverse();
-  $("dash").innerHTML = "<p class='muted'>Season " + A.from + " – " + A.to + " · " + (A.on ? "day <b>" + A.n + "</b> of 24" : A.done ? "finished" : "starts in " + (1 - A.n) + " days") +
+  // the treasury check: what the event needs against what the issuer wallet holds (free, not hand-built Legendaries)
+  const need = Object.assign({}, j.needGrand), have = j.have || {}, nFree = Object.values(have).reduce((a, b) => a + b, 0);
+  const lack = Object.entries(need).filter(([r, n]) => (have[r] || 0) < n);
+  const enough = nFree >= j.needDays + A.grandPlaces;
+  const check = "<div class='wk'><h3>🔎 Treasury check (live from the issuer wallet)</h3>" +
+    (j.treasuryError ? "<p><b>Ledger error:</b> " + esc(j.treasuryError) + "</p>" :
+    "<p>Free Pixel Scrappys: <b>" + nFree + "</b> — " + (Object.entries(have).map(([r, n]) => n + " " + esc(r)).join(" · ") || "none") + "</p>" +
+    "<p>Needed: <b>" + (j.needDays + A.grandPlaces) + "</b> (" + j.needDays + " daily winners + " + A.grandPlaces + " overall: " + Object.entries(need).map(([r, n]) => n + " " + esc(r)).join(", ") + ")</p>" +
+    "<p>" + (lack.length ? "⚠️ Missing for the overall prizes: " + lack.map(([r, n]) => (n - (have[r] || 0)) + " " + esc(r)).join(", ") + ". "
+      : "<span class='ok'>✅ The overall prizes are covered.</span> ") + (enough ? "<span class='ok'>✅ Enough pieces for all 24 days.</span>" : "⚠️ " + (j.needDays + A.grandPlaces - nFree) + " more pieces needed for every day to have a prize.") + "</p>") + "</div>";
+  const keys = Array.from({length: 24}, (_, k) => "dash-" + new Date(Date.parse(A.from + "T12:00:00Z") + k * 864e5).toISOString().slice(0, 10)).concat(A.grand.map((_, i) => "grand-" + (i + 1)));
+  const popt = (k) => "<option value=''>— none —</option>" + T.filter(n => !n.handmade).map(n => "<option value='" + n.nftId + "'" + (PL[k] && PL[k].nftId === n.nftId ? " selected" : "") + ">#" + (n.token || "?") + " · " + esc(n.rarity || "?") + "</option>").join("");
+  const plan = "<div class='wk'><h3>🎁 Prize plan — what each day shows in the calendar</h3>" +
+    "<p class='muted'>Pick the Scrappy each day's winner gets (shown in the game and on the website), and one per overall place. " +
+    "“Auto-plan” fills it from the treasury: overall places get their rarity, the days the rest, most common first. Sent prizes stay fixed.</p>" +
+    "<p><button class='btn' id='planAuto'>✨ Auto-plan</button> <button class='btn ghost' id='planSave'>💾 Save plan</button> <span id='planMsg' class='muted'></span></p>" +
+    "<table><tr><th>Prize for</th><th>Scrappy</th></tr>" + keys.map((k, i) => "<tr><td>" + (i < 24 ? "Day " + (i + 1) + " · " + k.slice(5) : "🎄 Overall " + k.slice(6) + " (" + esc(A.grand[i - 24]) + ")") + "</td><td>" +
+      (PL[k] && PL[k].sent ? "#" + PL[k].token + " · " + esc(PL[k].rarity || "") + " <span class='ok'>sent</span>" : "<select data-plan='" + k + "'>" + popt(k) + "</select>") + "</td></tr>").join("") + "</table></div>";
+  $("dash").innerHTML = check + plan + "<p class='muted'>Season " + A.from + " – " + A.to + " · " + (A.on ? "day <b>" + A.n + "</b> of 24" : A.done ? "finished" : "starts in " + (1 - A.n) + " days") +
     " · daily prize: " + esc(A.dayPrize) + " (top " + A.dayPlaces + ") · overall top " + A.grandPlaces + ": " + A.grand.map((g, i) => (i + 1) + ". " + esc(g)).join(", ") + (j.xaman ? "" : " · <b>XUMM keys missing</b>") + "</p>" +
     (rows.length ? "<table><tr><th>Day</th><th>Place</th><th>Winner</th><th>Score</th><th>Status</th><th></th></tr>" + rows.map(r => {
       const title = r.grand ? "🎄 Overall" : "Day " + r.day;
       if (r.open) return "<tr><td>" + title + "</td><td colspan='5' class='muted' style='text-align:left'>running — leading: " +
         (r.lead.length ? r.lead.map(x => esc(x.name) + " " + x.score).join(" · ") : "nobody yet") + "</td></tr>";
       if (!r.winners.length) return "<tr><td>" + title + "</td><td colspan='5' class='muted'>no eligible runs</td></tr>";
-      return r.winners.map(w => { const done = w.status === "offered" || w.status === "claimed", sel = done ? null : pickFor(w);
+      return r.winners.map(w => { const done = w.status === "offered" || w.status === "claimed", sel = done ? null : pickFor(w, r.key);
         const miss = w.want && !done && !T.some(n => (n.rarity || "").toLowerCase() === w.want.toLowerCase());
         return "<tr><td>" + title + "</td><td>" + w.place + (w.want ? "<br><b>" + esc(w.want) + "</b>" : "") + (miss ? "<br><span class='muted'>no " + esc(w.want) + " in the treasury</span>" : "") + "</td><td>" + esc(w.name) + "<br><span class='mono'>" + esc(w.account) + "</span></td><td>" + w.score + "</td><td>" +
         (w.status === "claimed" ? "<span class='ok'>✅ claimed #" + w.token + "</span>" : w.status === "offered" ? "🎁 offered #" + w.token + " " + (w.offerTx ? txLink(w.offerTx) : "") : "—") + "</td><td>" +
         (done ? "" : T.length ? "<select data-dnft='" + r.key + "|" + w.place + "'>" + opts(sel, w) + "</select> <button class='btn' data-dprize='" + r.key + "|" + w.place + "'>🎁 Send (Xaman)</button>" : "<span class='muted'>treasury empty</span>") +
         "</td></tr>"; }).join("");
     }).join("") + "</table>" : "<p class='muted'>The season hasn't started yet.</p>");
+  $("planAuto").onclick = async () => { $("planMsg").textContent = "planning…"; const r = await api("dash/plan", {auto: true}); $("planMsg").textContent = r.ok ? "planned ✓" : (r.error || "error"); dashAdmin(); };
+  $("planSave").onclick = async () => { const plan = {}; $("dash").querySelectorAll("[data-plan]").forEach(s => { if (s.value) plan[s.dataset.plan] = s.value; });
+    const r = await api("dash/plan", {plan}); $("planMsg").textContent = r.ok ? "saved ✓" : (r.error === "duplicate" ? "the same Scrappy is picked twice (" + r.key + ")" : r.error || "error"); if (r.ok) dashAdmin(); };
   $("dash").querySelectorAll("[data-dprize]").forEach(b => b.onclick = () => {
     const [key, place] = b.dataset.dprize.split("|"), sel = $("dash").querySelector("[data-dnft='" + b.dataset.dprize + "']");
     const tok = sel.options[sel.selectedIndex].text;

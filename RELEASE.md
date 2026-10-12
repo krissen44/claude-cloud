@@ -42,6 +42,16 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
   `Epic,Rare,Rare,Uncommon,Uncommon`) — shown in the calendar text, as 🎁 tags on the overall board and on the website;
   `/admin` pre-picks a treasury piece of that rarity for each place (daily winners get the most common piece left) and
   warns when the treasury has none. (`DASH_GRAND_PRIZE` / `DASH_GRAND_PLACES` are gone.)
+- **What you can win, every day + claiming right on the page (owner: "show what you can win each day; winners claim
+  on the site"):** `/admin` → "🎄 Advent Dash" now starts with a **🔎 treasury check, live from the issuer wallet** (free
+  Pixel Scrappys by rarity vs. what the event needs: 24 daily winners + Epic, Rare, Rare, Uncommon, Uncommon) and a
+  **🎁 prize plan**: "✨ Auto-plan" gives the overall places their rarity and the 24 days the rest (most common first,
+  so it gets better towards Christmas; hand-built Legendaries #1–20 never); every pick can be changed, "💾 Save plan".
+  Sent prizes stay fixed. The calendar (game + website) shows each day's Scrappy — past/today in full, coming days
+  blurred with their rarity — plus "🎁 Today's prize" and the 5 overall prizes with pictures. Sending a prize pre-picks
+  the planned piece. **Claim on the website:** `/barkarena/` lists the winners; a waiting prize has "🎁 Claim" → Xaman
+  QR / "Open in Xaman" (only the winner's wallet can sign the free offer, so no sign-in is needed) or the Joey hint;
+  it turns "✅ collected" when signed. In the game the prize card also shows in the Dash tab.
 - **Fair rankings — every run is replayed on the server.** With real prizes a score check isn't enough: the run's
   simulation is now deterministic (fixed 1/60 s ticks, dice from a seed the server hands out, no sin/random inside;
   `//@dash` section of `public/index.html`), the page sends only its taps (press/release/drop per tick), and the server

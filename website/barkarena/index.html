@@ -114,6 +114,28 @@ section{margin-top:56px}
 .lbmeta{margin:12px 0 0}
 .boards{display:grid;gap:14px;margin-top:16px}
 @media(min-width:820px){.boards{grid-template-columns:repeat(3,1fr)}}
+.adv{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+@media (max-width:640px){.adv{grid-template-columns:repeat(4,1fr)}}
+.adv>div{border:2px solid var(--line);border-radius:10px;text-align:center;padding:5px 2px;font:11px var(--mono);position:relative}
+.adv>div.today{border-color:#e53935;box-shadow:0 0 0 3px rgb(255 213 79 / 55%)}
+.adv>div.past{background:rgb(46 125 50 / 7%)}
+.adv img{width:44px;height:44px;display:block;margin:2px auto;image-rendering:pixelated}
+.adv img.hid{filter:blur(4px) saturate(.6);opacity:.75}
+.adv small{display:block;font-size:9.5px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rar{font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.r-common{color:#78909c}.r-uncommon{color:#2e7d32}.r-rare{color:#1565c0}.r-epic{color:#8e24aa}.r-legendary{color:#ef6c00}.r-mythic{color:#d81b60}
+.today-prize{display:flex;gap:14px;align-items:center}
+.today-prize img{width:84px;height:84px;image-rendering:pixelated;border-radius:12px;background:var(--raised)}
+.grand{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px}
+.grand>div{border:2px solid var(--line);border-radius:12px;text-align:center;padding:8px 4px;font-size:12px}
+.grand img{width:52px;height:52px;image-rendering:pixelated;display:block;margin:0 auto 4px}
+.wins{display:grid;gap:6px;margin-top:8px}
+.wins>div{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:7px 10px;border-radius:10px;background:var(--raised);font-size:13px}
+.wins img{width:32px;height:32px;image-rendering:pixelated}
+.claimbox{position:fixed;inset:0;background:rgb(14 23 38 / 55%);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+.claimbox[hidden]{display:none}
+.claimbox .card{max-width:380px;width:100%;text-align:center}
+.claimbox img.qr{width:220px;height:220px;max-width:100%}
 .board h3{margin:0 0 10px;font-size:15px;letter-spacing:.02em;display:flex;justify-content:space-between;align-items:baseline}
 .board ol{list-style:none;margin:0;padding:0;display:grid;gap:2px}
 .board li{display:grid;grid-template-columns:30px 1fr auto;gap:8px;align-items:center;padding:7px 8px;border-radius:10px;font:13px var(--mono)}
@@ -268,6 +290,17 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
     <h2 id="dashH">🛷 Scrappy Sleigh Dash</h2>
     <p class="lead" id="dashLead">Your Scrappy flies a sleigh over the snowy roofs. One button: <b>hold</b> to climb, let go to sink, a <b>quick tap</b> drops a gift. Hit the glowing chimneys for a combo up to ×5, dodge tall chimneys and crows — it gets faster every second. Runs last 30–90 seconds, no tickets, play as often as you like. The best run of the week counts.</p>
     <p class="lead" id="dashAdv" hidden></p>
+    <div class="card" id="dashPrizeCard" style="margin-top:16px" hidden>
+      <div id="dashToday"></div>
+      <h3 style="margin:14px 0 8px;font-size:15px">🎄 Advent calendar — a prize every day</h3>
+      <div class="adv" id="dashCal"></div>
+      <div id="dashGrand"></div>
+      <div id="dashWins"></div>
+    </div>
+    <div class="claimbox" id="claimBox" hidden><div class="card">
+      <h3 id="claimH" style="margin:0 0 6px;font-size:16px">Claim your prize</h3>
+      <div id="claimBody"></div>
+      <p style="margin:12px 0 0"><button class="btn ghost" type="button" id="claimClose">Close</button></p></div></div>
     <div class="boards" style="margin-top:16px"><div class="card board"><h3>Today's best runs</h3><div id="dashTop"><p class="empty">Loading…</p></div></div>
       <div class="card board" id="dashAllCard" hidden><h3>🎄 Advent overall</h3><div id="dashAll"></div></div></div>
     <div class="row" style="margin-top:14px"><a class="btn" href="https://game.scrappyxrp.fun/dash" data-ev="play">▶ Play the Dash</a></div>
@@ -470,6 +503,54 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
 </script>
 <script>
 /* Live leaderboard from the game server's public endpoint. */
+/* Advent Dash prizes: what each day is worth, who won, and claiming a prize right here — the free offer can only be
+   accepted by the winner's wallet, so the button just asks the game server for the Xaman request (or shows how to do it in Joey). */
+var GAME = "https://game.scrappyxrp.fun/api";
+function dashPrizes(A, esc){
+  var img = function(t, hid){ return '<img src="/pixelscrappy/nfts/' + t + '.png" alt="Pixel Scrappy #' + t + '" loading="lazy"' + (hid ? ' class="hid"' : '') + ' onerror="this.onerror=null;this.src=\'/pixelscrappy/scrappy-5000/01_bilder/' + t + '.png\'">'; };
+  var rar = function(r){ return r ? '<span class="rar r-' + esc(r.toLowerCase()) + '">' + esc(r) + '</span>' : ''; };
+  if (!A.days.some(function(d){ return d.prize; }) && !(A.grandPrizes || []).some(function(g){ return g.token; })) return;
+  document.getElementById("dashPrizeCard").hidden = false;
+  var td = A.days.filter(function(d){ return d.state === "today"; })[0];
+  document.getElementById("dashToday").innerHTML = td && td.prize ? '<div class="today-prize">' + img(td.prize.token) + '<div><b>🎁 Today\'s prize (day ' + td.n + '): Pixel Scrappy #' + td.prize.token + '</b><br>' + rar(td.prize.rarity) +
+    '<br><span class="meta">The best run of today (UTC) wins it' + (td.winner ? ' — leading now: <b>' + esc(td.winner.name) + '</b> with ' + Number(td.winner.score).toLocaleString() : '') + '.</span></div></div>'
+    : '<p class="meta" style="margin:0">' + (A.done ? "The Advent calendar is done — thanks for flying!" : "Starts " + esc(A.from) + " — here's what you can win:") + '</p>';
+  document.getElementById("dashCal").innerHTML = A.days.map(function(d){
+    var p = d.prize, w = d.won;
+    return '<div class="' + d.state + '" title="' + esc(d.day) + '"><b>' + d.n + '</b>' + (p ? img(p.token, d.state === "future") + rar(p.rarity) : '') +
+      (w ? '<small>' + (w.status === "claimed" ? "✅ " : "🏆 ") + esc(w.name) + '</small>' : d.state === "today" ? '<small>today</small>' : '') + '</div>'; }).join("");
+  var G = A.grandPrizes || [];
+  document.getElementById("dashGrand").innerHTML = G.length ? '<h3 style="margin:16px 0 4px;font-size:15px">🏆 Overall ranking — top ' + G.length + ' win</h3><div class="grand">' + G.map(function(g){
+    return '<div>' + (g.token ? img(g.token) : '') + '<b>' + (["🥇","🥈","🥉"][g.place - 1] || g.place + "th") + '</b><br>' + rar(g.rarity) + (g.token ? '<br><span class="meta">#' + g.token + '</span>' : '') + '</div>'; }).join("") + '</div>' : '';
+  // winners with prizes waiting: claim right here
+  var wins = A.days.filter(function(d){ return d.won; }).map(function(d){ return {label: "Day " + d.n, w: d.won}; }).reverse()
+    .concat((A.grandWon || []).map(function(w){ return {label: "Overall " + (["🥇","🥈","🥉"][w.place - 1] || w.place + "th"), w: w}; }));
+  document.getElementById("dashWins").innerHTML = wins.length ? '<h3 style="margin:16px 0 4px;font-size:15px">🎁 Winners</h3><div class="wins">' + wins.map(function(x){
+    var w = x.w;
+    return '<div><span>' + (w.token ? img(w.token) : '') + '</span><span style="flex:1"><b>' + esc(x.label) + '</b> · ' + esc(w.name) + ' · ' + Number(w.score).toLocaleString() + '</span><span>' +
+      (w.status === "claimed" ? "✅ collected" : w.status === "offered" ? '<button class="btn" type="button" data-claim="' + esc(w.key) + '|' + esc(w.place) + '|' + (w.token || "") + '">🎁 Claim</button>' : '<span class="meta">prize on its way</span>') + '</span></div>'; }).join("") + '</div>' : '';
+  document.querySelectorAll("[data-claim]").forEach(function(b){ b.onclick = function(){ var v = b.dataset.claim.split("|"); claimPrize(v[0], v[1], v[2]); }; });
+}
+function claimPrize(key, place, token){
+  var box = document.getElementById("claimBox"), body = document.getElementById("claimBody"), poll = null;
+  var close = function(){ box.hidden = true; if (poll) clearInterval(poll); };
+  document.getElementById("claimClose").onclick = close;
+  document.getElementById("claimH").textContent = "Claim Pixel Scrappy #" + token;
+  body.innerHTML = '<p class="meta">Preparing the request…</p>'; box.hidden = false;
+  var joey = '<p class="meta" style="margin-top:12px"><b>Joey Wallet</b> (recommended): open Joey → your NFT offers → accept the free offer for #' + token + '. Only the winner\'s wallet can accept it — it costs 0 XRP.</p>';
+  fetch(GAME + "/public/dash/claim", {method: "POST", headers: {"content-type": "text/plain"}, body: JSON.stringify({key: key, place: place})})
+    .then(function(r){ return r.json(); }).then(function(j){
+      if (j.state === "claimed"){ body.innerHTML = '<p>✅ Already in the winner\'s wallet. Congratulations!</p>'; return; }
+      if (!j.uuid){ body.innerHTML = '<p class="meta">' + (j.error === "offer_not_found" ? "The offer isn't on the ledger yet — try again in a minute." : "Accept the free offer in your wallet.") + '</p>' + joey; return; }
+      body.innerHTML = '<p class="meta">Scan with <b>Xaman</b> from the winning wallet and sign — free, no XRP paid.</p><img class="qr" src="' + j.qr + '" alt="Xaman QR"><p><a class="btn" href="' + j.deeplink + '" target="_blank" rel="noopener">Open in Xaman</a></p>' + joey;
+      poll = setInterval(function(){
+        fetch(GAME + "/public/dash/claim?uuid=" + encodeURIComponent(j.uuid)).then(function(r){ return r.json(); }).then(function(s){
+          if (s.state === "signed"){ clearInterval(poll); body.innerHTML = '<p style="font-size:18px">🎉 Pixel Scrappy #' + token + ' is yours!</p><p class="meta">It\'s in your wallet now. Welcome to the kennel.</p>'; }
+          else if (s.state === "rejected" || s.state === "expired"){ clearInterval(poll); body.innerHTML = '<p class="meta">The request was ' + s.state + '. Close and try again.</p>' + joey; }
+        }).catch(function(){});
+      }, 3000);
+    }).catch(function(){ body.innerHTML = '<p class="meta">The game server isn\'t reachable right now.</p>' + joey; });
+}
 (function(){   // Scrappy Dash: sleigh until Christmas, then the rocket to the moon — the server says which
   fetch("https://game.scrappyxrp.fun/api/public/dash", {cache: "no-store"}).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
     if (!d) return;
@@ -484,6 +565,7 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
       : '<p class="empty">' + empty + '</p>'; };
     document.getElementById("dashTop").innerHTML = list(d.today && d.today.top, "No runs yet today — the first one takes the top spot.");
     var A = d.advent;
+    if (A) dashPrizes(A, esc);
     if (A){   // Advent Dash: a prize every day from the 1st to the 24th + the overall ranking (daily bests added up)
       var adv = document.getElementById("dashAdv"); adv.hidden = false;
       var gp = (A.grand || []).map(function(g, i){ return (["🥇","🥈","🥉"][i] || (i + 1) + "th") + " " + esc(g); }).join(" · ") + " Pixel Scrappy";

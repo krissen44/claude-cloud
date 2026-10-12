@@ -1082,9 +1082,20 @@ async function dashBoard(env, account) {
     week: {top: dashRows(env, names, account, dashSort(w, "best"), "best", 10)}};
   if (account) out.today.mine = m[account] ? {best: m[account].best, runs: m[account].runs, rank: dashRank(m, account)} : {best: 0, runs: 0, rank: null};
   // the Advent calendar and, once it runs, the overall ranking
-  const adv = {...A, days: []};
+  const adv = {...A, days: []}, plan = await dashPlan(env);
+  adv.grandPrizes = A.grand.map((want, i) => { const pl = plan["grand-" + (i + 1)]; return {place: i + 1, rarity: want, ...(pl ? {token: pl.token} : {})}; });
+  if (A.done) {
+    const rec = await st.resultGet("dash-grand-" + A.from);
+    if (rec) adv.grandWon = rec.winners.map(w => { const x = rec.prizes[w.place]; return {place: w.place, name: w.name, score: w.score, want: w.want,
+      ...(x && x.token ? {token: x.token} : {}), status: x ? x.status : "pending", key: rec.week}; });
+  }
   for (let k = 0; k < 24; k++) {
     const d = dayAdd(A.from, k), state = d < day ? "past" : d === day ? "today" : "future", row = {day: d, n: k + 1, state};
+    const pl = plan["dash-" + d]; if (pl) row.prize = {token: pl.token, rarity: pl.rarity};
+    if (state === "past") {    // a frozen day: who won, and whether the prize is out / collected (the website claims it)
+      const rec = await st.resultGet("dash-" + d), w = rec && rec.winners && rec.winners[0], x = rec && rec.prizes && rec.prizes["1"];
+      if (w) row.won = {name: w.name, score: w.score, ...(x && x.token ? {token: x.token} : {}), status: x ? x.status : "pending", key: "dash-" + d, place: "1"};
+    }
     if (state !== "future") {
       const dm = d === day ? m : d === yday ? y : ((await st.blobGet("dashday:" + d)) || {});
       const top = dashSort(dm, "best").find(([a]) => !isTeam(env, a));
@@ -1122,6 +1133,58 @@ async function dashResult(env, key) {
   await st.resultSet(key, rec);
   return rec;
 }
+/* The prize plan: which treasury Scrappy each Advent day (place 1) and each overall place gets, so the calendar can
+   show what there is to win. blob `dashplan:<from>` {"dash-<day>": {nftId, token, rarity}, "grand-<place>": {…}}.
+   "Auto" fills it from the treasury: the overall places get the rarity they're promised, the days the rest — the
+   most common first, so the calendar gets better towards Christmas. Hand-built Legendaries #1–20 are never planned. */
+async function dashPlan(env) { return (await storeOf(env).blobGet("dashplan:" + dashAdvent(env).from)) || {}; }
+async function adminDashPlan(env, b) {
+  const A = dashAdvent(env), T = (await treasuryFree(env)).filter(n => !n.handmade), byId = Object.fromEntries(T.map(n => [n.nftId, n]));
+  const keys = [...Array.from({length: 24}, (_, k) => "dash-" + dayAdd(A.from, k)), ...A.grand.map((_, i) => "grand-" + (i + 1))];
+  const old = await dashPlan(env), plan = {};
+  // a prize that already went out (frozen day / season with an offer) is fixed in the plan, whatever was planned
+  for (const k of keys) {
+    const rk = k.startsWith("grand-") ? "dash-grand-" + A.from : k, pl = k.startsWith("grand-") ? k.slice(6) : "1";
+    const rec = await storeOf(env).resultGet(rk), x = rec && rec.prizes && rec.prizes[pl];
+    if (x && x.nftId && ["signing", "offered", "claimed"].includes(x.status)) old[k] = {nftId: x.nftId, token: x.token, rarity: (old[k] || {}).rarity || null, sent: x.at || Date.now()};
+  }
+  const keep = k => old[k] && (old[k].sent || byId[old[k].nftId]);     // planned pieces already sent stay as they are
+  if (b && b.auto) {
+    for (const k of keys) if (keep(k)) plan[k] = old[k];
+    const taken = new Set(Object.values(plan).map(x => x.nftId)), free = () => T.filter(n => !taken.has(n.nftId));
+    A.grand.forEach((want, i) => { const k = "grand-" + (i + 1); if (plan[k]) return;
+      const n = free().find(x => (x.rarity || "").toLowerCase() === want.toLowerCase()); if (n) { plan[k] = n; taken.add(n.nftId); } });
+    const rest = free().sort((a, b) => (a.rank || 0) - (b.rank || 0) || (a.token || 0) - (b.token || 0));
+    for (const k of keys.slice(0, 24)) if (!plan[k] && rest.length) { const n = rest.shift(); plan[k] = n; taken.add(n.nftId); }
+  } else if (b && b.plan && typeof b.plan === "object") {
+    const seen = new Set();
+    for (const k of keys) {
+      if (keep(k) && old[k].sent) { plan[k] = old[k]; seen.add(old[k].nftId); continue; }
+      const id = b.plan[k]; if (!id) continue;
+      if (!byId[id]) return json({error: "not_in_treasury", key: k}, 400);
+      if (seen.has(id)) return json({error: "duplicate", key: k}, 400);
+      seen.add(id); plan[k] = byId[id];
+    }
+  } else return json({error: "bad_request"}, 400);
+  for (const k of Object.keys(plan)) { const n = plan[k]; plan[k] = {nftId: n.nftId, token: n.token, rarity: n.rarity, ...(n.sent ? {sent: n.sent} : {})}; }
+  await storeOf(env).blobSet("dashplan:" + A.from, plan);
+  return json({ok: true, plan});
+}
+/* Claiming without signing in (the website): the offer only lets the winner's wallet accept it, so anybody may ask
+   for the Xaman request — only the winner can sign it. */
+async function dashPublicClaim(env, b) {
+  const key = String(b.key || ""), place = String(b.place || "1");
+  const rec = key.startsWith("dash-") ? await storeOf(env).resultGet(key) : null, x = rec && rec.prizes[place];
+  if (!x) return json({error: "no_prize"}, 404);
+  if (x.status === "claimed") return json({state: "claimed"});
+  if (x.status !== "offered") return json({error: "not_sent_yet"}, 409);
+  return claimPrize(env, x.account, {week: key, place});
+}
+async function dashClaimStatus(env, uuid) {
+  const pend = env.KV && /^[\w-]{6,64}$/.test(uuid || "") ? await env.KV.get(`xpay:${uuid}`, "json") : null;
+  if (!pend || pend.kind !== "accept" || !String(pend.week).startsWith("dash-")) return json({error: "unknown_payload"}, 404);
+  return xamanResolve(env, uuid, pend.account);
+}
 const dashKeys = env => { const A = dashAdvent(env); return [...Array.from({length: 24}, (_, k) => "dash-" + dayAdd(A.from, k)), "dash-grand-" + A.from]; };
 async function adminDash(env) {
   const A = dashAdvent(env), names = await storeOf(env).profiles(), out = [];
@@ -1137,7 +1200,12 @@ async function adminDash(env) {
     }
     out.push({key, day, grand, label: rec.label, sha256: rec.sha256, winners: rec.winners.map(w => ({...w, ...(rec.prizes[w.place] || {})}))});
   }
-  return json({advent: A, results: out, xaman: !!(env.XUMM_API_KEY && env.XUMM_API_SECRET)});
+  let treasury = [], treasuryError = null;
+  try { treasury = await treasuryFree(env); } catch (e) { treasuryError = String(e.message); }
+  const have = {}; for (const n of treasury) if (!n.handmade) have[n.rarity || "?"] = (have[n.rarity || "?"] || 0) + 1;
+  const needGrand = {}; for (const g of A.grand) needGrand[g] = (needGrand[g] || 0) + 1;
+  return json({advent: A, results: out, plan: await dashPlan(env), treasury, treasuryError, have, needGrand, needDays: 24 * A.dayPlaces,
+    xaman: !!(env.XUMM_API_KEY && env.XUMM_API_SECRET)});
 }
 async function adminDashPrize(env, b) {
   const key = String(b.key || ""), rec = key.startsWith("dash-") ? await dashResult(env, key) : null;
@@ -1150,6 +1218,8 @@ async function adminDashPrize(env, b) {
   const token = +(nft.uri.match(/(\d+)\.json$/) || [])[1] || null;
   rec.prizes[place] = {account: win.account, nftId: nft.nft_id, token, status: "signing"};
   await storeOf(env).resultSet(key, rec);
+  { const plan = await dashPlan(env), pk = key.startsWith("dash-grand-") ? "grand-" + place : place === "1" ? key : null;
+    if (pk && plan[pk] && plan[pk].nftId === nft.nft_id) { plan[pk].sent = Date.now(); await storeOf(env).blobSet("dashplan:" + dashAdvent(env).from, plan); } }
   return xamanPayload(env, {TransactionType: "NFTokenCreateOffer", Account: env.ISSUER, NFTokenID: nft.nft_id,
       Amount: "0", Flags: 1, Destination: win.account},
     `${rec.label}, place ${place}: Pixel Scrappy #${token} for ${win.name}. A free sell offer only this player can accept.`,
@@ -1842,18 +1912,21 @@ async function adminSeason(env) {
       prizes: d.prizes.map(p => ({...p, ...(rec.prizes[p.place] || {})}))});
   }
   let treasury = [], treasuryError = null;
-  try {
-    const used = new Set();
-    for (const wk of [...lastWeeks(60), ...dashKeys(env)]) {
-      const rec = await storeOf(env).resultGet(wk);
-      if (rec) for (const x of Object.values(rec.prizes || {})) if (x.nftId) used.add(x.nftId);
-    }
-    treasury = (await accountNfts(env, env.ISSUER)).filter(n => !used.has(n.nft_id))
-      .map(n => ({nftId: n.nft_id, uri: n.uri, token: +(n.uri.match(/(\d+)\.json$/) || [])[1] || null}))
-      .sort((a, b) => (a.token || 0) - (b.token || 0));
-    await treasuryRarity(env, treasury);
-  } catch (e) { treasuryError = String(e.message); }
+  try { treasury = await treasuryFree(env); } catch (e) { treasuryError = String(e.message); }
   return json({issuer: env.ISSUER, xaman: !!env.XUMM_API_KEY, weeks, treasury, treasuryError});
+}
+/* The Pixel Scrappys in the issuer wallet that no prize (weekly or Dash) has gone out with yet, with their rarity. */
+async function treasuryFree(env) {
+  const used = new Set();
+  for (const wk of [...lastWeeks(60), ...dashKeys(env)]) {
+    const rec = await storeOf(env).resultGet(wk);
+    if (rec) for (const x of Object.values(rec.prizes || {})) if (x.nftId) used.add(x.nftId);
+  }
+  const treasury = (await accountNfts(env, env.ISSUER)).filter(n => !used.has(n.nft_id))
+    .map(n => ({nftId: n.nft_id, uri: n.uri, token: +(n.uri.match(/(\d+)\.json$/) || [])[1] || null}))
+    .sort((a, b) => (a.token || 0) - (b.token || 0));
+  await treasuryRarity(env, treasury);
+  return treasury;
 }
 /* Rarity of each treasury Scrappy from its metadata (disk-cached), so the admin
    page can hand the rarest pieces to the top places. rank: higher = rarer. */
@@ -2247,6 +2320,7 @@ export default {
         if (p === "/admin/funnel") r = await adminFunnel(env);
         if (p === "/admin/dash") r = await adminDash(env);
         if (p === "/admin/dash/prize" && req.method === "POST") r = await adminDashPrize(env, b);
+        if (p === "/admin/dash/plan" && req.method === "POST") r = await adminDashPlan(env, b);
         if (p === "/admin/fair") r = await adminFair(env, url.searchParams.get("week"));
         if (p === "/admin/tickets" || p === "/admin/tickets/scan" || (p === "/admin/tickets/grant" && req.method === "POST")) r = await adminBonus(env, p, b, url);
         if (p === "/admin/chat" || ((p === "/admin/chat/del" || p === "/admin/chat/mute") && req.method === "POST")) r = await adminChat(env, p, b);
@@ -2278,6 +2352,13 @@ export default {
         const r = json(await bossPublic(env, null));
         r.headers.set("access-control-allow-origin", "*"); r.headers.set("cache-control", "public, max-age=30");
         return r;
+      }
+      if (p === "/public/dash/claim" && req.method === "POST") {   // text/plain body: no CORS preflight from the website
+        let b = {}; try { b = JSON.parse(await req.text()); } catch {}
+        const r = await dashPublicClaim(env, b); r.headers.set("access-control-allow-origin", "*"); return r;
+      }
+      if (p === "/public/dash/claim") {
+        const r = await dashClaimStatus(env, url.searchParams.get("uuid")); r.headers.set("access-control-allow-origin", "*"); return r;
       }
       if (p === "/public/dash") {
         const r = json(await dashBoard(env, null));   // names only, never wallets
