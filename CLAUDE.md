@@ -2,7 +2,10 @@
 
 Project context for Claude Code. The owner speaks **German**: answer in German, keep code, comments and
 commit messages in English. They deploy by uploading ZIPs to **Hostinger**, so finish work with a ZIP of
-exactly the files to upload and say where each goes.
+exactly the files to upload and say where each goes. **Game: always the full project ZIP** (package.json, server.js,
+worker.js, fight-engine.js, public/, node_modules/) — Hostinger's Node.js deploy ("Neue Dateien hochladen") rejects a
+ZIP with only changed files ("Nicht unterstütztes Framework oder ungültige Projektstruktur"). Website ZIPs go into
+`public_html/` via the file manager and may contain only the changed files.
 
 ## What's in this repo
 
@@ -95,7 +98,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/bonus` (GET), `/bonus/claim` (POST) | ✔ | Extra ranked fights (admin-granted, or once automatically by `bonusAuto` = v31.1 day-one compensation, blob `tixbonus_auto`), collected once on the kennel load (`loadBonus`, note card), blob `tixbonus` |
 | `/admin/tickets/scan?since=`, `/admin/tickets/grant` (POST `{grants:[{account,n}], from?, note?}`) | `?key=ADMIN_KEY` | Holders who started since a week (first weekly row) + their day-one grant; grant from a day on (default tomorrow, 7 days) |
 | `/admin/funnel` | `?key=ADMIN_KEY` | Website visits per source/day + players per source (`srcs` blob) |
-| `/lend/list` (POST `{dogId, days, note}`), `/lend/unlist` (POST `{id}`), `/lend/take` (POST `{id}`) | ✔ | Lending market (v32): holders offer dogs, non-holders borrow with a tap; `/lend` GET adds `listings` (mine) + `market` (open offers, no wallets) |
+| `/lend/list` (POST `{dogId, days, note}`), `/lend/unlist` (POST `{id}`), `/lend/take` (POST `{id}`) | ✔ | Lending market (v32): holders offer dogs, any player borrows with a tap (holders too since v32.1, 1 at a time); `/lend` GET adds `listings` (mine) + `market` (open offers, no wallets) |
 | `/fight/start` (POST `{kind, dog, opp:{token\|legendary\|rid}, lvl, oppLvl, bonus, path, run, stage}`), `/fight/round` (POST `{fid, a, b}` → `{seed, hp, over, verdict, boss}`), `/fight/abort`, `/fight/ghost` (POST `{squad, opps}`) | ✔ | v32 referee: ranked + live arena fights run on the server too, dice seed per round after both moves; ghost tournaments run on the server |
 | `/boss` (✔, incl. `mine`), `/public/boss` (–) | | The weekly boss: Legendary `n`, `name`, `hp/max`, `top`, `down`, `killer`, `reward` |
 | `/ach` (GET; POST `{ids}`), `/ref` (GET; POST `{name}`) | ✔ | Achievements (server-only: podium, recruiter, bossfall) / invites |
@@ -274,12 +277,16 @@ v31.1 hotfix: new holders got only 5 tickets on day one → `SAVE.registerDogs` 
 v31.2 Shorts in two cuts (YouTube + TikTok/Reels without crypto words), real players' fights first, captions written from the fight ·
 v32 (package for Mon 19 Oct) server-refereed ranked/arena fights + capped stats, bond paths, weekly boss, achievements,
 invites, starter dogs, Discord webhook; fix: `TEAM` env never reached the API ·
+v32.1 (9 Oct) /clip watch link plays for people (play button), ladder TEAM/🏅 tags fixed, holders see and may borrow
+from the lending market (1 dog at a time) ·
 v31.3 (package for Mon 12 Oct) Joey Wallet first + "⭐ Recommended" in game/website, "BOND n" label on dog cards readable again
 (`.pick span` had overridden `.lvl`'s white text), link page `/links/`.
 
 ### Where things stand
-- **Live:** game **v32** + v32.1 clip-link hotfix once uploaded (uploaded early by the owner on 9 Oct, incl. v31.3 + lending market + Discord channels); the stats
+- **Live:** game **v32** (uploaded early by the owner on 9 Oct, incl. v31.3 + lending market + Discord channels); the stats
   cap (`FAIR_SINCE`) only starts with the week of 2026-10-19, the referee already books verified fights. Shorts factory daily on GitHub Actions.
+  **v32.1** handed over on 9 Oct as `bark-arena-game-v32.1-komplett.zip` + `scrappyxrp-website-v32.1.zip` (barkarena
+  page) — not yet confirmed live by the owner.
 - **Next package:** `RELEASE.md` (top section = what goes up at the next Monday, with upload steps). `HANDOFF.md` = how
   to run the test harness.
 - **Videos:** how-to-play tutorial (7:00, 1080p) recorded by `tools/test/tutorial.mjs` on `tools/test/tut-mock.mjs`
