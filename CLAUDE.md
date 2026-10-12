@@ -264,7 +264,9 @@ hand over one combined package for the week start; don't tell the owner to uploa
   glowing chimneys: 25 × combo (≤ 5); a wasted gift breaks the combo. Speed `150 + 4.2·t` (max 420). Free, no tickets;
   weekly board on the server; bond XP score/150 (≤ 15/run, ≤ 40/day, `SAVE.data.dash`, own dogs only). `menu()` returns
   early while a run is on screen (`DASH.g`). Skins `DASH_SKIN.sleigh|rocket`: rocket from `DASH_ROCKET_FROM` (27 Dec 2026,
-  page + worker), env `DASH_THEME` overrides, `?dash=` previews. $SCRAP coins are only a picture. Website section `#dash`.
+  page + worker), env `DASH_THEME` overrides, `?dash=` previews. Sleigh dressing: `dashDeco` (per house: lights `DASH_BULBS`
+  + blink mode, icicles, garland, smoke, window roles lit/dark/candle/tree/person/star/wreath), `dashWindow`, aurora,
+  shooting stars (`G.shoot`), moon halo — visuals only, never in collision boxes. $SCRAP coins are only a picture. Website section `#dash`.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 

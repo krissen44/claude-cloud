@@ -392,7 +392,18 @@ a.btn{font:inherit;font-size:11px;padding:9px 14px;border-radius:8px;border:2px 
 .dashhero{text-align:center;color:#fff;border-color:#0e1726;padding:18px 14px;
   background:linear-gradient(180deg,#0b1634,#2a3f78);position:relative;overflow:hidden}
 .dashhero.dash-rocket{background:radial-gradient(circle at calc(100% - 34px) 30px,#e9e4d0 0 18px,transparent 19px),linear-gradient(180deg,#04050d,#1c1440)}
-.dashhero.dash-sleigh{background:radial-gradient(circle at calc(100% - 34px) 30px,#fff6d8 0 14px,transparent 15px),linear-gradient(180deg,#0b1634,#2a3f78)}
+.dashhero.dash-sleigh{background:linear-gradient(180deg,#0b1634,#2a3f78)}
+.dashhero>*{position:relative;z-index:1}
+.dashhero>.dashsnow{position:absolute;z-index:0;left:0;right:0;top:-180px;bottom:0;pointer-events:none;opacity:.75;
+  background-image:radial-gradient(2px 2px at 18px 24px,#fff 50%,transparent 51%),radial-gradient(1.5px 1.5px at 70px 110px,#fff 50%,transparent 51%),
+    radial-gradient(2px 2px at 128px 60px,#fff 50%,transparent 51%),radial-gradient(1.5px 1.5px at 150px 150px,#fff 50%,transparent 51%),
+    radial-gradient(1px 1px at 40px 140px,#fff 50%,transparent 51%),radial-gradient(1px 1px at 100px 20px,#fff 50%,transparent 51%);
+  background-size:180px 180px;animation:dashSnow 9s linear infinite}
+.dashhero>.dashmoon{position:absolute;z-index:0;right:20px;top:16px;width:28px;height:28px;border-radius:50%;background:#fff6d8;
+  box-shadow:0 0 18px 6px rgba(255,240,190,.55),0 0 46px 16px rgba(255,240,190,.2);animation:dashGlow 3.2s ease-in-out infinite}
+@keyframes dashSnow{to{transform:translateY(180px)}}
+@keyframes dashGlow{50%{box-shadow:0 0 26px 10px rgba(255,240,190,.75),0 0 64px 24px rgba(255,240,190,.3)}}
+@media (prefers-reduced-motion:reduce){.dashhero>.dashsnow,.dashhero>.dashmoon{animation:none}}
 .dashtitle{font-family:'Press Start 2P',monospace;font-size:clamp(15px,4.6vw,24px);line-height:1.5;letter-spacing:1px;
   text-shadow:3px 3px 0 #e53935,5px 5px 0 rgba(0,0,0,.4)}
 .dash-rocket .dashtitle{text-shadow:3px 3px 0 #7c4dff,5px 5px 0 rgba(0,0,0,.4)}
@@ -4587,6 +4598,7 @@ function dashView(){
       <span><b>${esc(f.name)}</b><br><span class="lvl">BOND ${SAVE.dog(f.id).lvl}</span>${f.borrowed ? '<br>borrowed' : ''}</span></button>`).join('');
   const post = dashCanPost();
   return `<div class="card dashhero dash-${th}">
+      ${th === 'sleigh' ? '<i class="dashsnow" aria-hidden="true"></i><i class="dashmoon" aria-hidden="true"></i>' : ''}
       <div class="dashtitle">${K.icon} SCRAPPY<br>${K.title}</div>
       <p class="dashsub">Fly ${K.where}. <b>Hold</b> to climb · let go to sink · <b>quick tap</b> drops a ${K.ammo}.</p>
       <p class="dashsub">Hit the ${K.target} for a combo (up to ×5), grab ${K.ammos} and ${K.coins}, dodge ${K.obst} and ${K.foe}. It gets faster every second.</p>
@@ -4675,8 +4687,81 @@ function dashHouse(G, calm){
   const h = {x: G.nextX + gap, w, top, cx: Math.round(drand(14, w - 32)), cw: 18, ch, tall,
     wants: !tall && Math.random() < (calm ? .5 : .32), done: false, col: G.K.walls[Math.floor(Math.random() * G.K.walls.length)],
     win: Math.random()};
+  if (G.th === 'sleigh') dashDeco(h);
   G.houses.push(h);
   G.nextX = h.x + w;
+}
+/* Christmas dressing for a house (sleigh skin only, all drawn in dashDraw): a light string along the roof with
+   its own blink pattern, icicles, a garland, and every window gets a role — lit, dark, a candle, a little tree,
+   an advent star, a wreath on the wall, or somebody who comes to the window now and then (and waves at the sleigh). */
+const DASH_BULBS = [['#ff4d4d', '#ffd54f', '#4caf50', '#42a5f5'], ['#ffd54f', '#fff3c4'], ['#ff4d4d', '#ffffff'], ['#e040fb', '#40c4ff', '#ffd54f', '#69f0ae']];
+function dashDeco(h){
+  const r = Math.random;
+  h.lights = r() < .8 ? {mode: Math.floor(r() * 3), pal: Math.floor(r() * DASH_BULBS.length)} : null;
+  h.icicles = r() < .65 ? Array.from({length: Math.floor(h.w / 6)}, (_, i) => ({x: i * 6 + Math.floor(r() * 3), l: 2 + Math.floor(r() * 6)})) : null;
+  h.garland = !h.lights || r() < .3;
+  h.smoke = !h.tall && r() < .7;
+  h.wins = [];
+  for (let wy = h.top + 12; wy < DASH_H - 14; wy += 20) for (let dx = 7; dx < h.w - 17; dx += 18){
+    const k = r();
+    h.wins.push({dx, dy: wy - h.top, ph: r() * 9, col: ['#ffd36b', '#ffc24a', '#ffe28a'][Math.floor(r() * 3)],
+      type: k < .36 ? 'lit' : k < .48 ? 'dark' : k < .61 ? 'candle' : k < .71 ? 'tree' : k < .87 ? 'person' : 'star'});
+  }
+  const row0 = h.wins.filter(w => w.dy === 12);
+  if (row0.length > 1 && r() < .5) row0[Math.floor(r() * row0.length)].type = 'wreath';
+}
+function dashWindow(c, wx, wy, wn, T, near){
+  c.save(); c.translate(wx, wy); c.scale(1.25, 1.25);   // drawn on an 8×9 grid, shown at 10×11
+  dashWin(c, 0, 0, wn, T, near);
+  c.restore();
+}
+function dashWin(c, wx, wy, wn, T, near){
+  const t = wn.type;
+  if (t === 'wreath'){
+    c.strokeStyle = '#1e7b3c'; c.lineWidth = 3; c.beginPath(); c.arc(wx + 4, wy + 5, 5, 0, 7); c.stroke();
+    c.fillStyle = '#2fa352'; c.fillRect(wx, wy + 1, 2, 2); c.fillRect(wx + 6, wy + 7, 2, 2);
+    c.fillStyle = '#e53935'; c.fillRect(wx + 2, wy + 9, 5, 2); c.fillRect(wx + 1, wy + 10, 2, 3); c.fillRect(wx + 6, wy + 10, 2, 3);
+    c.fillRect(wx + 7, wy + 2, 1, 1); c.fillRect(wx, wy + 6, 1, 1);
+    return;
+  }
+  if (t === 'dark'){ c.fillStyle = 'rgba(0,0,0,.3)'; c.fillRect(wx, wy, 8, 9); return; }
+  if (t === 'candle'){
+    const fl = Math.sin(T * 17 + wn.ph) + Math.sin(T * 11.3 + wn.ph * 2);
+    c.fillStyle = '#4a2a10'; c.fillRect(wx, wy, 8, 9);
+    c.fillStyle = 'rgba(255,170,60,' + (.45 + .12 * fl) + ')'; c.fillRect(wx, wy, 8, 9);
+    c.fillStyle = '#f4ecd8'; c.fillRect(wx + 3, wy + 4, 2, 5);
+    c.fillStyle = '#ffe97a'; c.fillRect(wx + 3, wy + (fl > .4 ? 1 : 2), 2, fl > .4 ? 3 : 2);
+    c.fillStyle = '#ff8f1f'; c.fillRect(wx + 3 + (fl > 0 ? 1 : 0), wy + (fl > .4 ? 1 : 2), 1, 1);
+    return;
+  }
+  c.fillStyle = wn.col; c.globalAlpha = .88 + .12 * Math.sin(T * 2 + wn.ph); c.fillRect(wx, wy, 8, 9); c.globalAlpha = 1;
+  if (t === 'tree'){
+    c.fillStyle = '#1d7a3a'; c.fillRect(wx + 3, wy + 1, 2, 2); c.fillRect(wx + 2, wy + 3, 4, 2); c.fillRect(wx + 1, wy + 5, 6, 2);
+    c.fillStyle = '#6d4022'; c.fillRect(wx + 3, wy + 7, 2, 2);
+    c.fillStyle = '#fff59d'; c.fillRect(wx + 3, wy, 2, 1);
+    const b = Math.floor(T * 3 + wn.ph);
+    c.fillStyle = ['#ff4d4d', '#42a5f5', '#ffd54f'][b % 3]; c.fillRect(wx + 2, wy + 4, 1, 1);
+    c.fillStyle = ['#ffd54f', '#ff4d4d', '#42a5f5'][b % 3]; c.fillRect(wx + 5, wy + 5, 1, 1);
+    c.fillStyle = ['#42a5f5', '#ffd54f', '#ff4d4d'][b % 3]; c.fillRect(wx + 3, wy + 6, 1, 1);
+    return;
+  }
+  if (t === 'star'){
+    const g = .5 + .5 * Math.sin(T * 3 + wn.ph);
+    c.fillStyle = 'rgba(80,50,20,.5)'; c.fillRect(wx + 4, wy, 1, 3);
+    c.fillStyle = 'rgba(255,255,220,' + (.3 + .4 * g) + ')'; c.fillRect(wx + 1, wy + 2, 7, 7);
+    c.fillStyle = '#fff8c4'; c.fillRect(wx + 3, wy + 3, 3, 5); c.fillRect(wx + 2, wy + 5, 5, 1); c.fillRect(wx + 4, wy + 2, 1, 7);
+    return;
+  }
+  if (t === 'person'){
+    const v = Math.sin(T * .7 + wn.ph);                     // comes to the window now and then
+    if (v > .15){
+      const sx = v > .5 ? 0 : (v < .3 ? 3 : 1);
+      c.fillStyle = '#3b2a26'; c.fillRect(wx + 2 + sx, wy + 2, 3, 3); c.fillRect(wx + sx, wy + 5, 7, 4);
+      if (wn.ph > 4.5){ c.fillStyle = '#d32f2f'; c.fillRect(wx + 2 + sx, wy + 1, 3, 1); c.fillRect(wx + 5 + sx, wy + 2, 1, 1); }   // a Santa hat
+      if (near && v > .5){ c.fillStyle = '#3b2a26'; c.fillRect(wx + 6, wy + (Math.floor(T * 8) % 2 ? 1 : 3), 1, 3); }        // waving at the sleigh
+    }
+  }
+  c.fillStyle = 'rgba(70,35,10,.35)'; c.fillRect(wx + 4, wy, 1, 9); c.fillRect(wx, wy + 4, 8, 1);
 }
 function dashPress(G, on){
   if (on){
@@ -4803,6 +4888,10 @@ function dashFx(G, dt){
     if (f.k === 'txt') f.y -= 22 * dt;
   }
   G.fx = G.fx.filter(f => f.t < (f.k === 'txt' ? 1 : f.k === 'trail' ? .35 : .6));
+  if (G.th === 'sleigh'){
+    if (G.shoot){ G.shoot.t += dt; if (G.shoot.t > .9) G.shoot = null; }
+    else if (Math.random() < dt / 7) G.shoot = {x: drand(DASH_W * .35, DASH_W), y: drand(8, 70), t: 0};
+  }
   for (const s of G.flakes){ s.y += s.v * dt; s.x -= (G.state === 'run' ? G.v * .15 : 8) * dt + Math.sin(s.y / 20 + s.w) * .2; if (s.y > DASH_H) s.y = -4; if (s.x < -4) s.x = DASH_W + 4; }
 }
 function dashOver(G){
@@ -4863,9 +4952,29 @@ function dashDraw(G){
   const c = G.ctx, K = G.K, W = DASH_W, H = DASH_H, rocket = G.th === 'rocket', T = G.t + (G.t0 || 0);
   const sky = c.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, K.sky[0]); sky.addColorStop(1, K.sky[1]);
   c.fillStyle = sky; c.fillRect(0, 0, W, H);
-  for (const s of G.stars){ c.globalAlpha = .45 + .55 * Math.abs(Math.sin(T * 1.3 + s.p)); c.fillStyle = '#fff';
-    const x = ((s.x - G.dist * .03) % W + W) % W; c.fillRect(Math.round(x), Math.round(s.y), s.s, s.s); }
+  if (!rocket){                                     // a soft aurora waving behind everything
+    for (let i = 0; i < W; i += 2){
+      const a = .06 + .04 * Math.sin(T * .8 + i / 40), y = 40 + Math.sin(i / 55 + T * .5) * 14, hh = 34 + Math.sin(i / 23 + T) * 10;
+      const g = c.createLinearGradient(0, y, 0, y + hh + 18);
+      g.addColorStop(0, 'rgba(105,240,174,0)'); g.addColorStop(.35, 'rgba(105,240,174,' + a + ')'); g.addColorStop(.8, 'rgba(124,77,255,' + a * .7 + ')'); g.addColorStop(1, 'rgba(124,77,255,0)');
+      c.fillStyle = g; c.fillRect(i, y, 2, hh + 18);
+    }
+  }
+  for (const s of G.stars){
+    const tw = Math.abs(Math.sin(T * (s.s > 1 ? 1.9 : 1.3) + s.p));
+    c.globalAlpha = .35 + .65 * tw; c.fillStyle = s.s > 1 && !rocket ? '#fff8d6' : '#fff';
+    const x = Math.round(((s.x - G.dist * .03) % W + W) % W), y = Math.round(s.y);
+    c.fillRect(x, y, s.s, s.s);
+    if (s.s > 1 && tw > .8 && !rocket){             // big stars flare into a little cross
+      c.globalAlpha = (tw - .8) * 4; c.fillRect(x - 3, y, 2, 1); c.fillRect(x + 3, y, 2, 1); c.fillRect(x, y - 3, 1, 2); c.fillRect(x + 1, y + 3, 1, 2);
+    }
+  }
   c.globalAlpha = 1;
+  if (G.shoot){
+    const p = G.shoot.t / .9, sx = G.shoot.x - p * 140, sy = G.shoot.y + p * 60;
+    for (let i = 0; i < 14; i++){ c.globalAlpha = (1 - p) * (1 - i / 14); c.fillStyle = i < 2 ? '#fff' : '#cfe8ff'; c.fillRect(Math.round(sx + i * 3.5), Math.round(sy - i * 1.5), 2, 2); }
+    c.globalAlpha = 1;
+  }
   if (rocket){
     // the moon grows as you fly; earth sinks behind
     const m = 46 + Math.min(70, G.dist / 600);
@@ -4874,8 +4983,13 @@ function dashDraw(G){
     c.fillStyle = '#2f7de1'; c.beginPath(); c.arc(60, 60 + Math.min(60, G.dist / 300), 16, 0, 7); c.fill();
     c.fillStyle = '#5ac46a'; c.fillRect(52, 54 + Math.min(60, G.dist / 300), 8, 6); c.fillRect(62, 62 + Math.min(60, G.dist / 300), 6, 5);
   } else {
-    c.fillStyle = '#fff6d8'; c.beginPath(); c.arc(W - 64, 52, 22, 0, 7); c.fill();
-    c.fillStyle = K.sky[0]; c.beginPath(); c.arc(W - 56, 46, 19, 0, 7); c.fill();
+    // a glowing full moon, its halo breathing
+    const mx = W - 64, my = 52, pulse = .5 + .5 * Math.sin(T * 1.2);
+    const halo = c.createRadialGradient(mx, my, 18, mx, my, 70 + pulse * 10);
+    halo.addColorStop(0, 'rgba(255,244,200,' + (.45 + .15 * pulse) + ')'); halo.addColorStop(1, 'rgba(255,244,200,0)');
+    c.fillStyle = halo; c.fillRect(mx - 90, my - 90, 180, 180);
+    c.fillStyle = '#fff6d8'; c.beginPath(); c.arc(mx, my, 22, 0, 7); c.fill();
+    c.fillStyle = '#efe2b4'; [[-8, -6, 5], [7, 5, 4], [-2, 10, 3], [9, -9, 3]].forEach(([dx, dy, r]) => { c.beginPath(); c.arc(mx + dx, my + dy, r, 0, 7); c.fill(); });
   }
   // far skyline, two layers
   [[K.far, .15, 150, 37], [K.near, .35, 120, 53]].forEach(([col, k, base, seed]) => {
@@ -4885,7 +4999,15 @@ function dashDraw(G){
       const n = Math.floor(G.dist * k / 40) + i, hh = 20 + ((n * seed) % 7) * 9;
       const x = i * 40 - off;
       if (rocket){ c.beginPath(); c.arc(x + 20, H - base + 50 + 20, 26 + ((n * 7) % 4) * 6, Math.PI, 0); c.fill(); }
-      else c.fillRect(Math.round(x), H - base + 60 - hh, 38, hh + base);
+      else {
+        const by = H - base + 60 - hh;
+        c.fillRect(Math.round(x), by, 38, hh + base);
+        if (k > .3) for (let row = 0; row < 3; row++) for (let j = 0; j < 3; j++){   // far windows, now and then one goes on or off
+          if ((n * 7 + j * 3 + row * 5) % 4) continue;
+          c.fillStyle = Math.sin(T * .4 + n + j * 2 + row) > -.6 ? 'rgba(255,214,110,.55)' : 'rgba(255,214,110,.12)';
+          c.fillRect(Math.round(x) + 6 + j * 11, by + 6 + row * 11, 3, 3); c.fillStyle = col;
+        }
+      }
     }
   });
   // houses / moon bases
@@ -4894,19 +5016,45 @@ function dashDraw(G){
     c.fillStyle = h.col; c.fillRect(x, h.top, h.w, H - h.top);
     c.fillStyle = 'rgba(0,0,0,.18)'; c.fillRect(x + h.w - 5, h.top, 5, H - h.top);
     // windows
-    for (let wy = h.top + 12; wy < H - 14; wy += 20) for (let wx = x + 8; wx < x + h.w - 14; wx += 18){
+    if (h.wins){ const near = Math.abs(x + h.w / 2 - DASH_PX) < 70; for (const wn of h.wins) dashWindow(c, x + wn.dx, h.top + wn.dy, wn, T, near); }
+    else for (let wy = h.top + 12; wy < H - 14; wy += 20) for (let wx = x + 8; wx < x + h.w - 14; wx += 18){
       const lit = ((wx - x) * 7 + wy * 3 + Math.floor(h.win * 9)) % 5 > 1;
       c.fillStyle = lit ? (rocket ? '#7fe3ff' : '#ffd36b') : 'rgba(0,0,0,.28)'; c.fillRect(wx, wy, 8, 9);
     }
     // roof cap
     c.fillStyle = K.roof; c.fillRect(x - 3, h.top - 4, h.w + 6, 6);
     if (!rocket){ c.fillStyle = '#fff'; for (let i = 0; i < h.w; i += 9) c.fillRect(x + i, h.top + 2, 4, 3); }
+    if (h.icicles){ c.fillStyle = 'rgba(220,240,255,.9)'; for (const ic of h.icicles) c.fillRect(x + ic.x, h.top + 2, 1, ic.l); }
+    if (h.garland){
+      for (let i = 2; i < h.w - 4; i += 12){
+        c.fillStyle = '#1e7b3c'; c.fillRect(x + i, h.top + 3, 3, 2); c.fillRect(x + i + 2, h.top + 5, 3, 2); c.fillRect(x + i + 5, h.top + 6, 3, 2); c.fillRect(x + i + 8, h.top + 4, 3, 2);
+        c.fillStyle = '#e53935'; c.fillRect(x + i + 6, h.top + 8, 2, 2);
+      }
+    }
+    if (h.lights){
+      const pal = DASH_BULBS[h.lights.pal], m = h.lights.mode;
+      c.fillStyle = 'rgba(20,30,20,.8)'; c.fillRect(x, h.top + 3, h.w, 1);
+      for (let i = 3, n = 0; i < h.w - 1; i += 6, n++){
+        const by = h.top + 3 + (n % 2);
+        const on = m === 0 ? true : m === 1 ? (n + Math.floor(T * 2.5)) % 2 === 0 : Math.sin(T * 5 + n * 1.7) > -.2;
+        const col = m === 0 ? pal[(n + Math.floor(T * 5)) % pal.length] : pal[n % pal.length];
+        if (on){ c.fillStyle = col; c.globalAlpha = .3; c.fillRect(x + i - 2, by - 1, 6, 6); c.globalAlpha = 1; c.fillRect(x + i - 1, by, 3, 3); c.fillStyle = '#fff'; c.fillRect(x + i - 1, by, 1, 1); }
+        else { c.fillStyle = 'rgba(0,0,0,.4)'; c.fillRect(x + i - 1, by, 3, 3); }
+      }
+    }
     // chimney / antenna stack
     const cx = x + h.cx;
     c.fillStyle = h.tall ? (rocket ? '#5b6474' : '#6e2e22') : K.stack; c.fillRect(cx, ct, h.cw, h.ch);
     if (!rocket){ c.fillStyle = 'rgba(0,0,0,.2)'; for (let yy = ct + 4; yy < h.top; yy += 6) c.fillRect(cx + ((yy / 6) % 2 ? 2 : 9), yy, 6, 1); }
     else { c.fillStyle = (Math.floor(T * 3) % 2) ? '#ff4d4d' : '#701c1c'; c.fillRect(cx + h.cw / 2 - 2, ct - 5, 4, 4); }
     c.fillStyle = rocket ? '#9aa4b4' : '#fff'; c.fillRect(cx - 2, ct - 3, h.cw + 4, 4);
+    if (h.smoke && !h.wants){                        // a cosy fire inside: smoke curls away in the wind
+      for (let k = 0; k < 3; k++){
+        const p = (T * .55 + k / 3 + h.win) % 1, r = 2 + p * 4;
+        c.fillStyle = 'rgba(205,214,232,' + (.35 * (1 - p)) + ')';
+        c.fillRect(Math.round(cx + 8 + Math.sin(p * 6 + k) * 3 - p * 14 - r / 2), Math.round(ct - 5 - p * 30 - r / 2), Math.round(r), Math.round(r));
+      }
+    }
     if (h.wants && !h.done){
       const b = Math.sin(T * 6) * 3;
       c.fillStyle = K.glow; c.globalAlpha = .35 + .25 * Math.sin(T * 8); c.fillRect(cx - 4, ct - 6, h.cw + 8, 5); c.globalAlpha = 1;
@@ -4999,6 +5147,8 @@ function dashPilot(G, c, x, y, rocket, T){
     c.fillStyle = '#c62828'; c.fillRect(-22, -2, 40, 10); c.fillRect(-22, -10, 8, 10); c.fillRect(14, -6, 6, 6);
     c.fillStyle = '#ffd54f'; c.fillRect(-22, 10, 44, 2); c.fillRect(20, 6, 2, 4); c.fillRect(-20, 8, 2, 2); c.fillRect(10, 8, 2, 2);
     c.fillStyle = '#8e1b1b'; c.fillRect(-14, 0, 26, 2);
+    for (let i = 0; i < 5; i++){ const on = (i + Math.floor(T * 4)) % 2; c.fillStyle = on ? ['#ffd54f', '#69f0ae', '#40c4ff', '#ffd54f', '#ff8a80'][i] : '#5a1010'; c.fillRect(-18 + i * 8, 4, 2, 2); }
+    c.fillStyle = '#ffca28'; c.fillRect(19, -9, 4, 4); c.fillStyle = '#b28704'; c.fillRect(20, -5, 2, 1);
     if (G.ammo > 0){ c.fillStyle = '#43a047'; c.fillRect(-20, -6, 6, 5); c.fillStyle = '#ffd54f'; c.fillRect(-18, -6, 2, 5); }
   }
   // the dog rides on top — its own NFT picture

@@ -11,6 +11,12 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
   wrong chimney breaks the combo. Pick up gift boxes (+2 gifts, max 9), candy canes (+5) and a rare ❄ shield (one free
   crash). Tall chimneys, roofs and (from 7 s) crows end the run. Speed 150 → 420 px/s (+4.2/s), so a run lasts about
   30–90 s. Score = distance/10 + deliveries + pickups. Keys: Space/↑ hold, ↓ drop, Esc quit. Phones get a taller field.
+- **Christmas look (owner: "more decoration, blinking lights, more life"):** every house gets its own dressing —
+  light strings along the roof (chase / blink / twinkle, four colour sets), icicles, garlands, wreaths on the wall,
+  smoke curling from the chimneys; windows hold flickering candles, little trees with blinking lights, advent stars,
+  people who come to the window now and then (some in a Santa hat) and wave when the sleigh flies by. Sky: twinkling
+  stars that flare into crosses, a glowing full moon with a breathing halo, a soft aurora, shooting stars, far windows
+  that switch on and off. The sleigh has blinking bulbs and a bell; the Dash tab header has falling snow and a glowing moon.
 - **Free, unlimited, no tickets.** Signed-in runs go to a **weekly Dash board** (best run of the week, resets Monday
   00:00 UTC, last week's top 3 shown). Guests/demo can play for fun. The dog earns a little **bond XP** (score ÷ 150, max
   15 per run, 40 per day; own dogs only, not borrowed/demo). No ladder XP, no influence on fights' fairness.
