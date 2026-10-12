@@ -56,6 +56,12 @@ drop-in entrance + aura · v29 synthesized sounds for all of it (crowd, KO, one 
   per-Legendary custom animations, Club Cup.
 - Known limitation: stats/XP are client-computed (server clamps only); Fight Club duels are in memory (restart drops them).
 
+## Scrappy Dash test page (for the owner) — `tools/preview/`
+`node tools/preview/dash-preview.mjs <out.html>` builds a stand-alone page of the Dash from `public/index.html` (real sim,
+drawing and UI) with a stand-in server inside the page (`dash-preview-mock.js`: example rankings, Advent day 5, prizes,
+Scrappy bonus, every run replayed with `dashReplay`). Published as a private Artifact for the owner to play; rebuild +
+republish after Dash changes.
+
 ## Testing (offline, no real XRPL/IPFS/Xaman) — `tools/test/`
 Setup once: `cd tools/test && npm install && npx playwright install chromium` (or set `CHROMIUM=/path/to/chromium`).
 Each script takes a scratch dir for its data: `node tools/test/<script>.mjs /tmp/ba-test`.
