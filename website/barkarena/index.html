@@ -486,9 +486,11 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
     var A = d.advent;
     if (A){   // Advent Dash: a prize every day from the 1st to the 24th + the overall ranking (daily bests added up)
       var adv = document.getElementById("dashAdv"); adv.hidden = false;
-      adv.innerHTML = A.on ? "🎄 <b>Advent Dash — day " + A.n + " of 24.</b> Today's best run wins " + esc(A.dayPrize) + ". The overall ranking adds up everyone's best run of each day; the top " + A.grandPlaces + " after Christmas Eve win " + esc(A.grandPrize) + "."
+      var gp = (A.grand || []).map(function(g, i){ return (["🥇","🥈","🥉"][i] || (i + 1) + "th") + " " + esc(g); }).join(" · ") + " Pixel Scrappy";
+      adv.innerHTML = (A.on ? "🎄 <b>Advent Dash — day " + A.n + " of 24.</b> Today's best run wins " + esc(A.dayPrize) + ". The overall ranking adds up everyone's best run of each day — after Christmas Eve the top " + A.grandPlaces + " win: " + gp + "."
         : A.done ? "🎄 <b>Advent Dash is over</b> — thanks for flying! The final overall ranking is below."
-        : "🎄 <b>Advent Dash, " + esc(A.from) + " – " + esc(A.to) + ":</b> win " + esc(A.dayPrize) + " every day with the best run of the day, plus " + esc(A.grandPrize) + " for the top " + A.grandPlaces + " of the overall ranking. Practise now!";
+        : "🎄 <b>Advent Dash, " + esc(A.from) + " – " + esc(A.to) + ":</b> win " + esc(A.dayPrize) + " every day with the best run of the day; the top " + A.grandPlaces + " of the overall ranking win: " + gp + ". Practise now!") +
+        " Flying your own Pixel Scrappy adds a small bonus by rarity (+5 % Common … +10 % Legendary/Mythic) — a better run still beats a rarer dog.";
       if (A.overall){ document.getElementById("dashAllCard").hidden = false; document.getElementById("dashAll").innerHTML = list(A.overall.top, "Nobody on the overall ranking yet."); }
     }
   }).catch(function(){ document.getElementById("dashTop").innerHTML = '<p class="empty">The board is resting — try again later.</p>'; });

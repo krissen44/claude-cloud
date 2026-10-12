@@ -4710,6 +4710,10 @@ function dashReplay(seed, W, PX, inp, maxTicks){
 const DASH_ROCKET_FROM = Date.parse('2026-12-27T00:00:00Z');
 let DASH_W = 480, DASH_PX = 110; const DASH_H = 300;      // logical canvas (narrower on phones), the dog's screen x
 const DASH_XP_DAY = 40, DASH_XP_RUN = 15;                // bond XP: per run (score / 150) and per day
+// own Pixel Scrappy → a small score bonus by rarity (the server decides; this is only for showing it)
+const DASH_BONUS = {Common: 5, Uncommon: 6, Rare: 7, Epic: 8, Legendary: 10, Mythic: 10};
+const dashBonusFor = f => !f || f.borrowed || !OWNED || WALLET.demo || !OWNED.includes(f) ? 0 : (DASH_BONUS[f.rarity] || DASH_BONUS.Common);
+const dashFinal = G => Math.floor(G.score * (100 + (G.bonus || 0)) / 100);
 const DASH = {board: null, loading: false, dog: lsGet('ba_dashdog'), g: null};
 const DASH_SKIN = {
   sleigh: {title: 'SLEIGH DASH', icon: '🛷', ammo: 'gift', ammos: 'gifts', coin: 'candy cane', coins: 'candy canes',
@@ -4743,10 +4747,13 @@ function dashPickDog(){
   const R = ROSTER(), saved = R.find(f => f.id === DASH.dog);
   return saved || bondOrder(R)[0] || R[0];
 }
-function dashBoardRows(rows){
+function dashBoardRows(rows, prizes){
   if (!rows || !rows.length) return '<p class="mini" style="margin:0">No runs yet — the first one takes the top spot.</p>';
-  return rows.map((r, i) => `<div class="lb${r.you ? ' you' : ''}"><span>${i + 1}</span><span>${esc(r.name)}${r.team ? ' <span class="tag">TEAM</span>' : ''}${r.dog && r.dog.token ? ` <span style="opacity:.6">· #${r.dog.token}</span>` : r.dog && r.dog.name ? ` <span style="opacity:.6">· ${esc(r.dog.name)}</span>` : ''}</span><b>${r.score.toLocaleString()}</b></div>`).join('');
+  let k = 0;   // prize places go to the first rows that aren't team wallets
+  return rows.map((r, i) => `<div class="lb${r.you ? ' you' : ''}"><span>${i + 1}</span><span>${esc(r.name)}${r.team ? ' <span class="tag">TEAM</span>' : prizes && k < prizes.length ? ` <span class="tag">🎁 ${esc(prizes[k++])}</span>` : ''}${r.dog && r.dog.token ? ` <span style="opacity:.6">· #${r.dog.token}</span>` : r.dog && r.dog.name ? ` <span style="opacity:.6">· ${esc(r.dog.name)}</span>` : ''}</span><b>${r.score.toLocaleString()}</b></div>`).join('');
 }
+// "🥇 Epic · 🥈 Rare · 🥉 Rare · 4th Uncommon · 5th Uncommon" — one Pixel Scrappy per overall place
+const dashGrandText = A => (A.grand || []).map((g, i) => `${['🥇', '🥈', '🥉'][i] || (i + 1) + 'th'} <b>${esc(g)}</b>`).join(' · ') + ' Pixel Scrappy';
 // the Advent calendar: 24 doors, today's glowing, past ones show the day's winner, a star where you played
 function dashAdvent(A){
   if (!A) return '';
@@ -4755,18 +4762,19 @@ function dashAdvent(A){
     return `<div class="adoor ${cls}" title="${esc(d.day)}"><b>${d.n}</b>${d.mine ? '<i>⭐</i>' : ''}${d.winner ? `<small>${esc(d.winner.name)}</small>` : d.state === 'today' ? '<small>today</small>' : ''}</div>`;
   }).join('');
   const head = A.on ? `🎄 ADVENT DASH · DAY ${A.n} OF 24` : A.done ? '🎄 ADVENT DASH · FINISHED' : `🎄 ADVENT DASH · STARTS ${A.from.slice(8)}.${A.from.slice(5, 7)}.`;
-  const txt = A.on ? `Today's best run wins <b>${esc(A.dayPrize)}</b>${A.dayPlaces > 1 ? ` (top ${A.dayPlaces})` : ''}. The overall ranking adds up your best run of every day — the top ${A.grandPlaces} after Christmas Eve win <b>${esc(A.grandPrize)}</b>. Play every day!`
+  const gp = dashGrandText(A);
+  const txt = A.on ? `Today's best run wins <b>${esc(A.dayPrize)}</b>${A.dayPlaces > 1 ? ` (top ${A.dayPlaces})` : ''}. The overall ranking adds up your best run of every day — after Christmas Eve the top ${A.grandPlaces} win: ${gp}. Play every day!`
     : A.done ? 'The calendar is done — thanks for flying! The winners are below.'
-    : `From ${A.from} to ${A.to}: a prize every single day for the best run of the day (<b>${esc(A.dayPrize)}</b>), plus <b>${esc(A.grandPrize)}</b> for the top ${A.grandPlaces} of the overall ranking (your daily bests added up). ${A.n > -14 ? `Only ${1 - A.n} day${1 - A.n === 1 ? '' : 's'} to go — practise now!` : 'Practise now!'}`;
+    : `From ${A.from} to ${A.to}: a prize every single day for the best run of the day (<b>${esc(A.dayPrize)}</b>), and the top ${A.grandPlaces} of the overall ranking (your daily bests added up) win: ${gp}. ${A.n > -14 ? `Only ${1 - A.n} day${1 - A.n === 1 ? '' : 's'} to go — practise now!` : 'Practise now!'}`;
   return `<div class="card advent"><h3 class="h3">${head}</h3><p class="mini" style="margin:0 0 10px">${txt}</p><div class="adoors">${doors}</div></div>`;
 }
 function dashView(){
   const th = dashTheme(), K = DASH_SKIN[th], me = dashPickDog(), sv = dashSave(), B = DASH.board;
   const A = B && B.advent, tm = B && B.today && B.today.mine, om = A && A.overall && A.overall.mine;
   const pick = ROSTER().map(f => `<button data-dashdog="${esc(f.id)}" class="${me && me.id === f.id ? 'insq' : ''}"><img src="${f.img}" alt="">
-      <span><b>${esc(f.name)}</b><br><span class="lvl">BOND ${SAVE.dog(f.id).lvl}</span>${f.borrowed ? '<br>borrowed' : ''}</span></button>`).join('');
+      <span><b>${esc(f.name)}</b><br><span class="lvl">BOND ${SAVE.dog(f.id).lvl}</span>${f.borrowed ? '<br>borrowed · no bonus' : dashBonusFor(f) ? `<br><b style="color:#2e7d32">+${dashBonusFor(f)} % points</b>` : ''}</span></button>`).join('');
   const post = dashCanPost();
-  const board = (title, rows, empty, foot) => `<div class="card"><h3 class="h3">${title}</h3>${LIVE() ? (B ? (rows && rows.length ? dashBoardRows(rows) : `<p class="mini" style="margin:0">${empty}</p>`) : '<p class="mini" style="margin:0">Loading…</p>') : '<p class="mini" style="margin:0">The rankings need the game server.</p>'}${foot || ''}</div>`;
+  const board = (title, rows, empty, foot, prizes) => `<div class="card"><h3 class="h3">${title}</h3>${LIVE() ? (B ? (rows && rows.length ? dashBoardRows(rows, prizes) : `<p class="mini" style="margin:0">${empty}</p>`) : '<p class="mini" style="margin:0">Loading…</p>') : '<p class="mini" style="margin:0">The rankings need the game server.</p>'}${foot || ''}</div>`;
   const overall = A && (A.on || A.done);
   return `<div class="card dashhero dash-${th}">
       ${th === 'sleigh' ? '<i class="dashsnow" aria-hidden="true"></i><i class="dashmoon" aria-hidden="true"></i>' : ''}
@@ -4779,10 +4787,11 @@ function dashView(){
     ${dashAdvent(A)}
     ${board("🏆 TODAY'S RANKING", B && B.today && B.today.top, 'No runs yet today — the first one takes the top spot.',
       `${B && B.yesterday && B.yesterday.top.length ? `<p class="mini" style="margin:10px 0 4px"><b>Yesterday (${esc(B.yesterday.day)})</b></p>${dashBoardRows(B.yesterday.top)}` : ''}<p class="mini" style="margin:8px 0 0">Your best run of the day counts. A new day starts at 00:00 UTC.</p>`)}
-    ${overall ? board('🎄 ADVENT OVERALL', A.overall.top, 'Nobody on the overall ranking yet.', `<p class="mini" style="margin:8px 0 0">Your best run of each Advent day, added up${om && om.days ? ` — you've played ${om.days} of ${Math.min(24, A.n)} days` : ''}.</p>`)
+    ${overall ? board('🎄 ADVENT OVERALL — TOP ' + A.grandPlaces + ' WIN', A.overall.top, 'Nobody on the overall ranking yet.', `<p class="mini" style="margin:8px 0 0">Your best run of each Advent day, added up${om && om.days ? ` — you've played ${om.days} of ${Math.min(24, A.n)} days` : ''}. Prizes: ${dashGrandText(A)}.</p>`, A.grand)
       : board("📅 THIS WEEK", B && B.week && B.week.top, 'No runs yet this week.', '<p class="mini" style="margin:8px 0 0">Best run of the week. Resets Monday 00:00 UTC.</p>')}
     <div class="card"><h3 class="h3">PILOT</h3>
       <div class="pick">${pick}</div>
+      <p class="mini" style="margin:8px 0 0"><b>Scrappy bonus:</b> fly your own Pixel Scrappy and every run scores a little more, by its rarity — Common +5 %, Uncommon +6 %, Rare +7 %, Epic +8 %, Legendary/Mythic +10 %. Small on purpose: a better run still beats a rarer dog. Borrowed, starter and demo dogs fly without it.</p>
       <p class="mini" style="margin:8px 0 0">${post ? `Each run gives your dog a little bond XP (score ÷ 150, up to ${DASH_XP_RUN} a run, ${DASH_XP_DAY} a day — ${Math.max(0, DASH_XP_DAY - sv.xp)} left today). Borrowed dogs fly for fun. Every run is replayed on the server from your taps, so the rankings are fair.` : 'Sign in with your wallet to enter the rankings and earn bond XP. The demo dogs fly for fun.'}</p></div>`;
 }
 function dashWire(){
@@ -4847,7 +4856,7 @@ function dashSize(G){
 }
 function dashReset(G, seed){
   Object.assign(G, {ms: 0, msN: 0, bq: [], banner: null, glow: 0, flash: 0, maxShown: false, fx: [], posted: null, xp: 0, ups: null,
-    acc: 0, want: false, pendingDrop: false, startPress: false, inp: [], recHold: false, runId: null, runSeed: null, passedN: 0});
+    acc: 0, want: false, pendingDrop: false, startPress: false, inp: [], recHold: false, runId: null, runSeed: null, passedN: 0, bonus: 0});
   dashInit(G, seed != null ? seed : (Math.random() * 4294967296) >>> 0, DASH_W, DASH_PX, (type, a, b, c) => dashOn(G, type, a, b, c));
   G.targets = dashTargets();
 }
@@ -4966,17 +4975,17 @@ function dashPress(G, on){
 // a run id + seed from the server: fetched for the ready screen, and the next one while the result card shows
 function dashFetchRun(G, next){
   if (!dashCanPost()) return;
-  api('/dash/start', {method: 'POST', body: {dog: {name: G.dog.name, token: tokenOf(G.dog) || null}}})
+  api('/dash/start', {method: 'POST', body: {dogId: G.dog.borrowed ? null : G.dog.id, dog: {name: G.dog.name, token: tokenOf(G.dog) || null}}})
     .then(r => r.ok ? r.json() : null).then(j => {
       if (!j || DASH.g !== G || !(j.seed >= 0)) return;
-      if (next) G.next = {id: j.id, seed: j.seed};
-      else if (G.state === 'ready'){ dashReset(G, j.seed); G.runId = j.id; G.runSeed = j.seed; }
+      if (next) G.next = {id: j.id, seed: j.seed, bonus: j.bonus || 0};
+      else if (G.state === 'ready'){ dashReset(G, j.seed); G.runId = j.id; G.runSeed = j.seed; G.bonus = j.bonus || 0; }
     }).catch(() => {});
 }
 function dashAgain(G){
   const n = G.next; G.next = null;
   dashReset(G, n ? n.seed : null);
-  if (n){ G.runId = n.id; G.runSeed = n.seed; }
+  if (n){ G.runId = n.id; G.runSeed = n.seed; G.bonus = n.bonus; }
   G.state = 'run'; dashOverlay(G);
 }
 function dashDrop(G){ G.pendingDrop = true; }
@@ -4993,8 +5002,8 @@ function dashStep(G, dt){
   }
   G.ms = G.tick * DASH_TICK * 1000;
   if (G.over) return dashOver(G);
-  while (G.score >= dashScoreMs(G.msN)){ const v = dashScoreMs(G.msN++); dashCelebrate(G, v.toLocaleString() + ' POINTS', v >= 5000 ? 'LEGENDARY!' : v >= 2000 ? 'AMAZING!' : v >= 1000 ? 'GREAT!' : 'NICE!', v >= 1000 ? 2 : 1); }
-  while (G.targets.length && G.score > G.targets[0].score){   // overtaking someone on today's board
+  while (dashFinal(G) >= dashScoreMs(G.msN)){ const v = dashScoreMs(G.msN++); dashCelebrate(G, v.toLocaleString() + ' POINTS', v >= 5000 ? 'LEGENDARY!' : v >= 2000 ? 'AMAZING!' : v >= 1000 ? 'GREAT!' : 'NICE!', v >= 1000 ? 2 : 1); }
+  while (G.targets.length && dashFinal(G) > G.targets[0].score){   // overtaking someone on today's board
     const t = G.targets.shift(); G.passedN++;
     dashCelebrate(G, 'PASSED ' + t.name.toUpperCase().slice(0, 14), G.targets.length ? 'NOW #' + (t.rank) + ' TODAY' : '#1 TODAY!', G.targets.length ? 1 : 2);
   }
@@ -5052,7 +5061,7 @@ function dashOver(G){
   G.state = 'over'; G.overAt = Date.now(); G.hold = false;
   S.dashCrash(true);
   for (let i = 0; i < 18; i++) G.fx.push({k: 'spark', x: DASH_PX, y: G.y, vx: drand(-120, 120), vy: drand(-200, 0), t: 0, c: i % 3 ? '#ffb74d' : '#fff'});
-  const sv = dashSave(), score = Math.floor(G.score);
+  const sv = dashSave(), score = dashFinal(G);
   const before = Math.max(sv.best, (DASH.board && DASH.board.today && DASH.board.today.mine && DASH.board.today.mine.best) || 0);
   G.pb = score > before; sv.best = Math.max(sv.best, score); sv.runs++;
   // bond XP for an own dog, signed in only
@@ -5066,7 +5075,7 @@ function dashOver(G){
   dashOverlay(G);
   if (G.runId){
     const d = []; for (let i = 0, t = 0; i < G.inp.length; i += 2){ d.push(G.inp[i] - t, G.inp[i + 1]); t = G.inp[i]; }   // ticks as deltas
-    api('/dash/end', {method: 'POST', body: {id: G.runId, score, ticks: G.tick, w: DASH_W, inp: d}})
+    api('/dash/end', {method: 'POST', body: {id: G.runId, score: G.score, ticks: G.tick, w: DASH_W, inp: d}})
       .then(r => r.json()).then(j => { G.posted = j; dashLoad(true); if (DASH.g === G) dashOverlay(G); }).catch(() => { G.posted = {error: 'offline'}; if (DASH.g === G) dashOverlay(G); });
   }
   dashFetchRun(G, true);
@@ -5082,7 +5091,7 @@ function dashOverlay(G){
       <p class="big">TAP TO ${G.state === 'pause' ? 'GO ON' : 'START'}</p></div>`;
     return;
   }
-  const P = G.posted, sv = dashSave(), score = Math.floor(G.score), best = Math.max(sv.best, P && P.best || 0);
+  const P = G.posted, sv = dashSave(), score = dashFinal(G), best = Math.max(sv.best, P && P.best || 0);
   const post = !dashCanPost() ? '<p class="mini2">Sign in to put your runs on the daily ranking.</p>'
     : !G.runId ? '<p class="mini2">The server was not reachable — this run counts for fun only.</p>'
     : !P ? '<p class="mini2">The server checks your run…</p>'
@@ -5090,6 +5099,7 @@ function dashOverlay(G){
     : `<p class="mini2">${P.pb ? '🏅 New best today! ' : ''}Today: <b>#${P.rank}</b> of ${P.players} · your best ${P.best.toLocaleString()}${P.total != null ? ` · Advent total <b>${P.total.toLocaleString()}</b> (#${P.totalRank})` : ''}</p>`;
   ov.innerHTML = `<div class="dashcard"><div class="dashtitle sm">${G.pb ? '🏅 NEW BEST!' : 'CRASH!'}</div>
     <p class="big">${score.toLocaleString()}</p>
+    ${G.bonus ? `<p class="mini2">${G.score.toLocaleString()} + ${G.bonus} % Scrappy bonus (${esc(G.dog.name)})</p>` : ''}
     <p>${G.delivered} ${K.ammos} delivered · ${G.coinsN} ${K.coins} · ${Math.round(G.ms / 1000)} s · best ${best.toLocaleString()}</p>
     ${G.xp ? `<p class="mini2">${esc(G.dog.name)} +${G.xp} bond XP${G.ups && G.ups.length ? ` · reached Bond ${G.ups[G.ups.length - 1]}!` : ''}</p>` : ''}
     ${post}
@@ -5291,7 +5301,8 @@ function dashDraw(G){
   c.textAlign = 'left'; c.font = '10px "Press Start 2P", monospace';
   const tg = G.targets && G.targets[0];
   c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(6, 6, 150, tg || G.passedN ? 46 : 34);
-  c.fillStyle = G.glow > 0 && Math.floor(T * 8) % 2 ? '#ffd54f' : '#fff'; c.fillText(String(Math.floor(G.score)).padStart(6, '0'), 12, 21);
+  c.fillStyle = G.glow > 0 && Math.floor(T * 8) % 2 ? '#ffd54f' : '#fff'; c.fillText(String(dashFinal(G)).padStart(6, '0'), 12, 21);
+  if (G.bonus){ c.font = '7px "Press Start 2P", monospace'; c.fillStyle = '#69f0ae'; c.fillText('+' + G.bonus + '%', 112, 21); c.font = '10px "Press Start 2P", monospace'; }
   c.font = '8px "Press Start 2P", monospace';
   c.fillStyle = G.combo > 1 ? K.glow : 'rgba(255,255,255,.55)'; c.fillText('COMBO ×' + Math.max(1, G.combo), 12, 34);
   if (tg){ c.fillStyle = '#9be7ff'; c.fillText('#' + tg.rank + ' ▸ ' + tg.score.toLocaleString(), 12, 46); }

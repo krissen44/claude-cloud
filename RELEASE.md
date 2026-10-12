@@ -26,13 +26,22 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
 - **🎄 Advent Dash — a prize every day for 24 days + an overall ranking (owner: "every day something to win until
   Christmas — daily ranking and an overall ranking"):** from **1 Dec to 24 Dec** (env `DASH_ADVENT`, default 2026-12-01)
   the best run of each UTC day wins (`DASH_DAY_PRIZE`, default "a Pixel Scrappy"; `DASH_DAY_PLACES`, default 1), and
-  after the 24th the **overall ranking = each player's best run of every day, added up** wins (`DASH_GRAND_PRIZE`,
-  default "a rare Pixel Scrappy"; `DASH_GRAND_PLACES`, default 3) — so coming back every day pays. Team wallets never
+  after the 24th the **overall ranking = each player's best run of every day, added up** — top 5 win (see below) — so coming back every day pays. Team wallets never
   win. The Dash tab shows an **Advent calendar** (24 doors: today's glows, past ones show the day's winner, ⭐ where you
   played), **today's ranking** (+ yesterday's top 3) and the **Advent overall** ranking (before December: this week's
   board and a "starts 1 Dec" teaser). `/admin` → "🎄 Advent Dash": a day is frozen 30 min after it ends, the winner
   is listed with a treasury pick and "🎁 Send (Xaman)" — same flow as the weekly prizes; the winner gets a prize card in
   the kennel ("Advent Dash day 3 (2026-12-03)") and accepts it.
+- **Scrappy bonus + overall top 5 (owner: "players with a Scrappy should get a points bonus, but not so high that
+  players without one still have a chance; the overall top 5 win: 1st Epic, 2nd & 3rd Rare, 4th & 5th Uncommon"):**
+  a run flown with an **own** Pixel Scrappy is booked with a bonus by its rarity — Common +5 %, Uncommon +6 %, Rare +7 %,
+  Epic +8 %, Legendary/Mythic +10 % (`DASH_BONUS` in `worker.js`). The server looks the dog up in the player's holdings
+  at `/dash/start` (borrowed, starter, demo or someone else's dog = no bonus) and books `raw × (100 + bonus) / 100` after
+  the replay. Shown on the pilot cards ("+7 % points"), in the HUD ("+7%") and on the result card ("436 + 5 % Scrappy
+  bonus"). The overall ranking's **top 5** win, one rarity per place: env `DASH_GRAND_PRIZES` (default
+  `Epic,Rare,Rare,Uncommon,Uncommon`) — shown in the calendar text, as 🎁 tags on the overall board and on the website;
+  `/admin` pre-picks a treasury piece of that rarity for each place (daily winners get the most common piece left) and
+  warns when the treasury has none. (`DASH_GRAND_PRIZE` / `DASH_GRAND_PLACES` are gone.)
 - **Fair rankings — every run is replayed on the server.** With real prizes a score check isn't enough: the run's
   simulation is now deterministic (fixed 1/60 s ticks, dice from a seed the server hands out, no sin/random inside;
   `//@dash` section of `public/index.html`), the page sends only its taps (press/release/drop per tick), and the server

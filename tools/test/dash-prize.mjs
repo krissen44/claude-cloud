@@ -41,5 +41,21 @@ s = await get("/admin/season?key=adm");
 ok(!s.treasury.some(n => n.nftId === free0[0]), "the piece is no longer offered as free treasury");
 d = await get("/admin/dash?key=adm");
 ok(d.results.find(x => x.key === r1.key).winners[0].status === "claimed", "admin shows it claimed");
+// a finished season: the overall top 5, each place with the rarity it's promised (Epic, Rare, Rare, Uncommon, Uncommon)
+srv.kill(); await new Promise(r => setTimeout(r, 500));
+const D2 = S + "/dataDashGrand"; fs.rmSync(D2, {recursive: true, force: true}); fs.mkdirSync(D2, {recursive: true}); fs.writeFileSync(D2 + "/session.secret", "testsecret");
+const blobs = {};
+for (let k = 0; k < 24; k++) { const m = {}; for (let n = 1; n <= 7; n++) m[acc(n)] = {best: 100 * n + k, runs: 1, at: k * 1000 + n}; m.rI = {best: 99999, runs: 1, at: 1}; blobs["dashday:" + day(-40 + k)] = m; }
+fs.writeFileSync(D2 + "/store.json", JSON.stringify({players: {}, weekly: {}, holdings: {}, profiles: {}, blobs}));
+const srv2 = spawn("node", [new URL("./season-mock.mjs", import.meta.url).pathname], {env: {...process.env, PORT: "3973", DATA_DIR: D2, ISSUER: "rI", TAXON: "369", ADMIN_KEY: "adm", XUMM_API_KEY: "k", XUMM_API_SECRET: "s", DASH_ADVENT: day(-40)}, stdio: ["ignore", "ignore", "inherit"]});
+await new Promise(r => setTimeout(r, 1500));
+d = await get("/admin/dash?key=adm");
+const g = d.results.find(x => x.grand);
+ok(d.advent.done && g && g.winners.length === 5, "season over: overall top 5 frozen");
+ok(g.winners.map(w => w.want).join(",") === "Epic,Rare,Rare,Uncommon,Uncommon", "prizes by place: " + g.winners.map(w => w.place + "=" + w.want).join(" "));
+ok(g.winners[0].account === acc(7) && g.winners[4].account === acc(3) && !g.winners.some(w => w.account === "rI"), "ranked by daily bests added up, team skipped: 1st " + g.winners[0].score);
+const pub = await get("/public/dash");
+ok(pub.advent.grand.join(",") === "Epic,Rare,Rare,Uncommon,Uncommon" && pub.advent.overall.top.length >= 5, "the game and website get the prize list");
+srv2.kill();
 console.log(fails ? fails + " FAILED" : "ALL PASS");
-bye(fails ? 1 : 0);
+process.exit(fails ? 1 : 0);

@@ -966,10 +966,26 @@ function dashAdvent(env) {
   const from = /^\d{4}-\d{2}-\d{2}$/.test(env.DASH_ADVENT || "") ? env.DASH_ADVENT : "2026-12-01";
   const n = Math.round((Date.parse(today() + "T12:00:00Z") - Date.parse(from + "T12:00:00Z")) / 864e5) + 1;
   const cl = (v, a, b, d) => Math.max(a, Math.min(b, Math.floor(+v) || d));
+  // the overall ranking's prizes, one rarity per place (owner: 1st Epic, 2nd + 3rd Rare, 4th + 5th Uncommon)
+  const grand = String(env.DASH_GRAND_PRIZES || "Epic,Rare,Rare,Uncommon,Uncommon").split(",").map(x => x.trim()).filter(Boolean).slice(0, 10);
   return {from, to: dayAdd(from, 23), n, on: n >= 1 && n <= 24, done: n > 24,
-    dayPrize: env.DASH_DAY_PRIZE || "a Pixel Scrappy", grandPrize: env.DASH_GRAND_PRIZE || "a rare Pixel Scrappy",
-    dayPlaces: cl(env.DASH_DAY_PLACES, 1, 5, 1), grandPlaces: cl(env.DASH_GRAND_PLACES, 1, 10, 3)};
+    dayPrize: env.DASH_DAY_PRIZE || "a Pixel Scrappy", dayPlaces: cl(env.DASH_DAY_PLACES, 1, 5, 1),
+    grand, grandPlaces: grand.length, bonus: DASH_BONUS};
 }
+/* Flying your own Pixel Scrappy adds a little to the run's score, by its rarity — kept small (max +10 %) so players
+   without one still win with a better run. Borrowed, starter and demo dogs fly without it. The server looks the dog
+   up in the player's holdings itself. */
+const DASH_BONUS = {Common: 5, Uncommon: 6, Rare: 7, Epic: 8, Legendary: 10, Mythic: 10};
+async function dashBonusOf(env, account, dogId) {
+  const own = (((await storeOf(env).allHoldings())[account] || {}).dogs || []).find(d => d.id === String(dogId || ""));
+  if (!own) return {bonus: 0};
+  const token = +((own.uri || "").match(/(\d+)\.json$/) || [])[1] || 0;
+  let rarity = token >= 1 && token <= 20 ? "Legendary" : null;
+  if (!rarity) try { rarity = (await defOfUri(env, own.id, own.uri)).rarity; } catch {}
+  rarity = DASH_BONUS[rarity] ? rarity : "Common";
+  return {bonus: DASH_BONUS[rarity], rarity};
+}
+const dashBoosted = (raw, bonus) => Math.floor(raw * (100 + (bonus || 0)) / 100);
 async function dashRunPut(env, id, v) {
   if (dashKV(env)) return env.KV.put("dashrun:" + id, JSON.stringify(v), {expirationTtl: DASH_RUN_TTL});
   DASH_RUNS.set(id, v);
@@ -988,9 +1004,9 @@ const dashDog = d => {
 };
 async function dashStart(env, account, b) {
   const id = rid(), seed = crypto.getRandomValues(new Uint32Array(1))[0];
-  // an open run per player at a time is plenty; the newest wins
-  await dashRunPut(env, id, {a: account, at: Date.now(), dog: dashDog(b.dog), seed});
-  return json({id, seed, theme: dashTheme(env)});
+  const {bonus, rarity} = await dashBonusOf(env, account, b.dogId);
+  await dashRunPut(env, id, {a: account, at: Date.now(), dog: dashDog(b.dog), seed, bonus});
+  return json({id, seed, bonus, rarity: rarity || null, theme: dashTheme(env)});
 }
 // the player's inputs: [Δtick, code, …] (code 1 press, 0 release, 2 drop) → absolute [tick, code, …]
 function dashInputs(d) {
@@ -1026,7 +1042,7 @@ async function dashEnd(env, account, b) {
       console.log("dash desync", account, JSON.stringify({ticks, client: b.score, server: r}));
       return json({error: "desync"}, 409);
     }
-    score = r.score;
+    score = dashBoosted(r.score, run.bonus);
   } else {
     const ms = Math.max(0, +b.ms || (+b.ticks || 0) * 1000 / 60); score = Math.floor(+b.score || 0);
     if (!(ms >= 1000) || ms > elapsed + 3000) return json({error: "bad_time"}, 400);
@@ -1035,7 +1051,7 @@ async function dashEnd(env, account, b) {
   const day = new Date(run.at).toISOString().slice(0, 10), A = dashAdvent(env);
   const d = await dashBook(env, "dashday:" + day, account, score, run.dog);
   await dashBook(env, "dash:" + weekOf(new Date(run.at)), account, score, run.dog);
-  const out = {ok: true, score, ...d};
+  const out = {ok: true, score, raw: Math.floor(+b.score || 0), bonus: run.bonus || 0, ...d};
   if (day >= A.from && day <= A.to) { const o = await dashOverall(env, A), me = o[account]; out.total = me.total; out.totalRank = dashRankBy(o, account, "total"); }
   return json(out);
 }
@@ -1097,10 +1113,11 @@ async function dashResult(env, key) {
   const names = await st.profiles(), m = grand ? await dashOverall(env, {...A, done: true}) : ((await st.blobGet("dashday:" + day)) || {});
   const k = grand ? "total" : "best", list = dashSort(m, k), places = grand ? A.grandPlaces : A.dayPlaces;
   const n = Math.round((Date.parse(day) - Date.parse(A.from)) / 864e5) + 1;
-  const winners = list.filter(([a]) => !isTeam(env, a)).slice(0, places).map(([a, r], i) => ({place: String(i + 1), account: a, name: displayName(names, a), score: r[k]}));
+  const winners = list.filter(([a]) => !isTeam(env, a)).slice(0, places).map(([a, r], i) => ({place: String(i + 1), account: a, name: displayName(names, a), score: r[k],
+    ...(grand ? {want: A.grand[i]} : {})}));
   const label = grand ? `Advent Dash overall ranking (${A.from} – ${A.to})` : `Advent Dash day ${n} (${day})`;
   const players = list.slice(0, 20).map(([a, r]) => ({name: displayName(names, a), score: r[k], ...(isTeam(env, a) ? {team: true} : {})}));
-  const canon = JSON.stringify({key, label, players, winners: winners.map(w => ({place: w.place, name: w.name, score: w.score}))});
+  const canon = JSON.stringify({key, label, players, winners: winners.map(w => ({place: w.place, name: w.name, score: w.score, ...(w.want ? {prize: w.want} : {})}))});
   rec = {week: key, kind: "dash", label, json: canon, sha256: await sha256hex(canon), winners, prizes: {}, frozen: Date.now()};
   await st.resultSet(key, rec);
   return rec;
@@ -1114,7 +1131,7 @@ async function adminDash(env) {
     const rec = await dashResult(env, key);
     if (!rec) {   // still running: who leads
       const m = grand ? await dashOverall(env, A) : ((await storeOf(env).blobGet("dashday:" + day)) || {});
-      const kk = grand ? "total" : "best", lead = dashSort(m, kk).filter(([a]) => !isTeam(env, a)).slice(0, 3).map(([a, r]) => ({name: displayName(names, a), account: a, score: r[kk]}));
+      const kk = grand ? "total" : "best", lead = dashSort(m, kk).filter(([a]) => !isTeam(env, a)).slice(0, grand ? A.grandPlaces : 3).map(([a, r]) => ({name: displayName(names, a), account: a, score: r[kk]}));
       out.push({key, day, grand, open: true, lead});
       continue;
     }

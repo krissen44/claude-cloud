@@ -64,7 +64,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 
 ### Environment variables (Hostinger)
 `ISSUER=rGAVUGyhdbxQs1G7nwCCFU4w8P4HfgFKD6`, `TAXON=369` (empty/`*` = any taxon), `XUMM_API_KEY`, `XUMM_API_SECRET`,
-`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK_FIGHTS` (#fights) / `_STATS` (#arena-stats) / `_CLUB` (#search-arena-fight), fallback `DISCORD_WEBHOOK`, `DISCORD_CLIPS` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `DASH_THEME` (v33, sleigh|rocket), `DASH_ADVENT` (start day, default 2026-12-01), `DASH_DAY_PRIZE` / `DASH_GRAND_PRIZE` (texts), `DASH_DAY_PLACES` (1) / `DASH_GRAND_PLACES` (3), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
+`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK_FIGHTS` (#fights) / `_STATS` (#arena-stats) / `_CLUB` (#search-arena-fight), fallback `DISCORD_WEBHOOK`, `DISCORD_CLIPS` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `DASH_THEME` (v33, sleigh|rocket), `DASH_ADVENT` (start day, default 2026-12-01), `DASH_DAY_PRIZE` (text) / `DASH_DAY_PLACES` (1), `DASH_GRAND_PRIZES` (rarity per overall place, default `Epic,Rare,Rare,Uncommon,Uncommon`), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
 `META_HOSTS`, `ORIGIN`, `PORT`.
 
 ### API (`/api/...`)
@@ -277,6 +277,9 @@ hand over one combined package for the week start; don't tell the owner to uploa
   (`dashTargets`, "PASSED …" banner). **Advent Dash**: 24 days from `DASH_ADVENT`, daily winner(s) + overall = daily bests
   summed (`dashOverall`), team skipped; frozen 30 min after a day (`dashResult`), prizes via `/admin` like weekly ones
   (`myPrizes` adds `label`). Client `dashAdvent` (calendar), boards today/yesterday/overall or week.
+  **Scrappy bonus**: own dog only (holdings, checked at `/dash/start` → `run.bonus`), by rarity `DASH_BONUS` Common 5 … Legendary/
+  Mythic 10 %; booked = `floor(raw × (100 + bonus) / 100)` (`dashBoosted`; page `dashFinal`, HUD/targets/milestones use it,
+  `/dash/end` gets the raw score to compare with the replay). Overall prizes per place `A.grand` → winners `want`, admin pre-pick.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 

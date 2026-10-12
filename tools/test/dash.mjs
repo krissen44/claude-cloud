@@ -42,13 +42,17 @@ r = await call(A, "/dash/start", {});
 ok((await call(A, "/dash/end", {id: r.id, score: 5, ticks: 60, w: 480, inp: [1, 7]})).error === "bad_input", "bad input codes are refused");
 r = await call(A, "/dash/start", {}); await sleep(600);
 ok((await call(B, "/dash/end", {id: r.id, score: 5, ticks: 30, w: 480, inp: []})).error === "no_run", "someone else's run id is refused");
-// a played run: climb for 20 ticks, then fall
-r = await call(A, "/dash/start", {dog: {name: "Pixel Scrappy #77", token: 77}});
+// the Scrappy bonus: only for a dog the player holds, by rarity
+await call(A, "/me/kennel");
+const own = await call(A, "/dash/start", {dogId: "000800003101"}), notOwn = await call(A, "/dash/start", {dogId: "000800004999"});
+ok(own.bonus >= 5 && own.bonus <= 10 && own.rarity && notOwn.bonus === 0, `own Scrappy bonus +${own.bonus} % (${own.rarity}), someone else's dog +${notOwn.bonus} %`);
+// a played run: climb for 20 ticks, then fall — with the own dog, booked with the bonus
+r = await call(A, "/dash/start", {dogId: "000800003101", dog: {name: "Pixel Scrappy #3101", token: 3101}});
 const inp = [1, 1, 21, 0];
 sim = DASHSIM.replay(r.seed, 480, 110, [1, 1, 21, 0], 100000);
 await sleep(sim.ticks * 1000 / 60 + 300);
 let e = await call(A, "/dash/end", {id: r.id, score: sim.score, ticks: sim.ticks, w: 480, inp: [1, 1, 20, 0]});
-ok(e.ok && e.score === sim.score && e.rank >= 1 && e.total != null, `a replayed run lands on today's board: ${e.score} #${e.rank}, Advent total ${e.total} #${e.totalRank}`);
+ok(e.ok && e.raw === sim.score && e.score === Math.floor(sim.score * (100 + r.bonus) / 100) && e.rank >= 1 && e.total != null, `a replayed run lands on today's board: ${e.raw} + ${e.bonus} % = ${e.score} #${e.rank}, Advent total ${e.total} #${e.totalRank}`);
 ok((await call(A, "/dash/end", {id: r.id, score: sim.score, ticks: sim.ticks, w: 480, inp: [1, 1, 20, 0]})).error === "no_run", "a run id counts once");
 // boards
 let bd = await call(B, "/dash/board");
@@ -110,7 +114,8 @@ ok(mid.s > 200 && mid.inp > 10, `bot run: ${mid.s} points, ${mid.del} delivered,
 await crash(p);
 await p.waitForFunction(() => DASH.g && DASH.g.state === "over" && DASH.g.posted, null, {timeout: 20000});
 let post = await p.evaluate(() => DASH.g.posted);
-ok(post.ok && post.score === mid.s || post.ok, "the server replayed the browser run to the same score: " + JSON.stringify(post));
+const fin = await p.evaluate(() => ({raw: DASH.g.score, bonus: DASH.g.bonus, shown: dashFinal(DASH.g)}));
+ok(post.ok && post.raw === fin.raw && post.bonus === fin.bonus && fin.bonus > 0 && post.score === fin.shown, "the server replayed the browser run: " + JSON.stringify(post) + " page " + JSON.stringify(fin));
 ok(await p.locator("#dashAgain").count() === 1, "result card with Again");
 await p.screenshot({path: S + "/shots/dash-over.png"});
 const xp = await p.evaluate(() => ({xp: DASH.g.xp, day: SAVE.data.dash.xp, can: dashCanPost(), bor: !!DASH.g.dog.borrowed, own: OWNED.some(f => f.id === DASH.g.dog.id), dog: DASH.g.dog.id, ids: OWNED.map(f => f.id + (f.borrowed ? "b" : "")), score: DASH.g.score}));

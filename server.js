@@ -182,8 +182,8 @@ const env = {
   FAIRPLAY: process.env.FAIRPLAY || "", FAIR_SINCE: process.env.FAIR_SINCE || "",
   // Scrappy Dash: skin override, Advent start day, prizes and how many places win
   DASH_THEME: process.env.DASH_THEME || "", DASH_ADVENT: process.env.DASH_ADVENT || "",
-  DASH_DAY_PRIZE: process.env.DASH_DAY_PRIZE || "", DASH_GRAND_PRIZE: process.env.DASH_GRAND_PRIZE || "",
-  DASH_DAY_PLACES: process.env.DASH_DAY_PLACES || "", DASH_GRAND_PLACES: process.env.DASH_GRAND_PLACES || "",
+  DASH_DAY_PRIZE: process.env.DASH_DAY_PRIZE || "", DASH_DAY_PLACES: process.env.DASH_DAY_PLACES || "",
+  DASH_GRAND_PRIZES: process.env.DASH_GRAND_PRIZES || "",   // rarity per overall place, default Epic,Rare,Rare,Uncommon,Uncommon
   STORE, KV, FILES,
   ENGINE: loadEngine(path.join(ROOT, "public", "index.html")),   // Fight Club referee: the game's own engine
   DASH: loadDash(path.join(ROOT, "public", "index.html")),       // Scrappy Dash: replays every ranked run
@@ -438,19 +438,28 @@ async function dashAdmin(){
   const j = await api("dash").catch(() => null);
   if (!j || !j.advent){ $("dash").innerHTML = "<p class='muted'>No data.</p>"; return; }
   const A = j.advent, T = ((SEASON && SEASON.treasury) || []).slice().sort((a, b) => (b.rank || 0) - (a.rank || 0) || (a.token || 0) - (b.token || 0));
-  const opts = T.map(n => "<option value='" + n.nftId + "'>#" + (n.token || "?") + " · " + esc(RLAB(n)) + "</option>").join("");
+  // pre-pick: the overall places get a piece of the rarity they're promised (Epic, Rare, …), the daily winners the
+  // most common piece left — every pick can be changed
+  const used = new Set(), byRank = (a, b) => (a.rank || 0) - (b.rank || 0) || (a.token || 0) - (b.token || 0);
+  const pickFor = w => { const free = T.filter(n => !used.has(n.nftId) && !n.handmade);
+    const n = w.want ? free.find(x => (x.rarity || "").toLowerCase() === w.want.toLowerCase()) : free.slice().sort(byRank)[0];
+    if (n) used.add(n.nftId); return n ? n.nftId : null; };
+  const opts = (sel, w) => T.slice().sort((a, b) => (w && w.want ? ((b.rarity || "").toLowerCase() === w.want.toLowerCase()) - ((a.rarity || "").toLowerCase() === w.want.toLowerCase()) : 0))
+    .map(n => "<option value='" + n.nftId + "'" + (n.nftId === sel ? " selected" : "") + ">#" + (n.token || "?") + " · " + esc(RLAB(n)) + "</option>").join("");
   const rows = j.results.slice().reverse();
   $("dash").innerHTML = "<p class='muted'>Season " + A.from + " – " + A.to + " · " + (A.on ? "day <b>" + A.n + "</b> of 24" : A.done ? "finished" : "starts in " + (1 - A.n) + " days") +
-    " · daily prize: " + esc(A.dayPrize) + " (top " + A.dayPlaces + ") · overall: " + esc(A.grandPrize) + " (top " + A.grandPlaces + ")" + (j.xaman ? "" : " · <b>XUMM keys missing</b>") + "</p>" +
+    " · daily prize: " + esc(A.dayPrize) + " (top " + A.dayPlaces + ") · overall top " + A.grandPlaces + ": " + A.grand.map((g, i) => (i + 1) + ". " + esc(g)).join(", ") + (j.xaman ? "" : " · <b>XUMM keys missing</b>") + "</p>" +
     (rows.length ? "<table><tr><th>Day</th><th>Place</th><th>Winner</th><th>Score</th><th>Status</th><th></th></tr>" + rows.map(r => {
       const title = r.grand ? "🎄 Overall" : "Day " + r.day;
       if (r.open) return "<tr><td>" + title + "</td><td colspan='5' class='muted' style='text-align:left'>running — leading: " +
         (r.lead.length ? r.lead.map(x => esc(x.name) + " " + x.score).join(" · ") : "nobody yet") + "</td></tr>";
       if (!r.winners.length) return "<tr><td>" + title + "</td><td colspan='5' class='muted'>no eligible runs</td></tr>";
-      return r.winners.map(w => "<tr><td>" + title + "</td><td>" + w.place + "</td><td>" + esc(w.name) + "<br><span class='mono'>" + esc(w.account) + "</span></td><td>" + w.score + "</td><td>" +
+      return r.winners.map(w => { const done = w.status === "offered" || w.status === "claimed", sel = done ? null : pickFor(w);
+        const miss = w.want && !done && !T.some(n => (n.rarity || "").toLowerCase() === w.want.toLowerCase());
+        return "<tr><td>" + title + "</td><td>" + w.place + (w.want ? "<br><b>" + esc(w.want) + "</b>" : "") + (miss ? "<br><span class='muted'>no " + esc(w.want) + " in the treasury</span>" : "") + "</td><td>" + esc(w.name) + "<br><span class='mono'>" + esc(w.account) + "</span></td><td>" + w.score + "</td><td>" +
         (w.status === "claimed" ? "<span class='ok'>✅ claimed #" + w.token + "</span>" : w.status === "offered" ? "🎁 offered #" + w.token + " " + (w.offerTx ? txLink(w.offerTx) : "") : "—") + "</td><td>" +
-        (w.status === "offered" || w.status === "claimed" ? "" : T.length ? "<select data-dnft='" + r.key + "|" + w.place + "'>" + opts + "</select> <button class='btn' data-dprize='" + r.key + "|" + w.place + "'>🎁 Send (Xaman)</button>" : "<span class='muted'>treasury empty</span>") +
-        "</td></tr>").join("");
+        (done ? "" : T.length ? "<select data-dnft='" + r.key + "|" + w.place + "'>" + opts(sel, w) + "</select> <button class='btn' data-dprize='" + r.key + "|" + w.place + "'>🎁 Send (Xaman)</button>" : "<span class='muted'>treasury empty</span>") +
+        "</td></tr>"; }).join("");
     }).join("") + "</table>" : "<p class='muted'>The season hasn't started yet.</p>");
   $("dash").querySelectorAll("[data-dprize]").forEach(b => b.onclick = () => {
     const [key, place] = b.dataset.dprize.split("|"), sel = $("dash").querySelector("[data-dnft='" + b.dataset.dprize + "']");
