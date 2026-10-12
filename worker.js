@@ -948,16 +948,28 @@ async function bossPublic(env, account) {
 
 /* ------------------------------------------------------------------ Scrappy Dash (mini game) */
 /* A one-tap endless runner in the game page (tab "Dash"): the dog flies a sleigh over the roofs — after
-   Christmas a rocket to the moon, same mechanics. It runs in the page; the server hands out a run id
-   (/dash/start), checks the reported run against the clock (/dash/end: the run can't be longer than the time
-   since its start, the score can't beat the fastest possible run of that length) and keeps each player's best of
-   the week in blob `dash:<week>`. No ladder XP, no tickets; the page gives the dog a little bond XP (capped per day). */
+   Christmas a rocket to the moon, same mechanics. /dash/start hands out a run id and a seed; the page plays the
+   deterministic simulation (the //@dash section of public/index.html) and sends back its inputs; /dash/end replays
+   the run on the server (env.DASH from fight-engine.js) and books the server's score — a faked score or input log
+   doesn't survive the replay. Each player's best run per UTC day (blob `dashday:<day>`) and per week (`dash:<week>`).
+   Advent Dash: DASH_ADVENT (default 2026-12-01) + 24 days — a prize for the best run of each day, and the overall
+   ranking (the daily bests added up) after the 24th. Finished days/the season are frozen into results
+   `dash-<day>` / `dash-grand-<from>` and sent like the weekly prizes (Xaman offer from the treasury). */
 const DASH_ROCKET_FROM = Date.parse("2026-12-27T00:00:00Z");
-const DASH_RATE = 260, DASH_SLACK = 500;            // max points per second of play (see dashScore in the page) + slack
-const DASH_RUN_TTL = 20 * 60;                       // a run id is good for 20 minutes
+const DASH_RATE = 260, DASH_SLACK = 500;            // fallback check without the replay engine (Cloudflare path)
+const DASH_RUN_TTL = 2 * 3600;                      // a run id is good for 2 hours
 const DASH_RUNS = new Map();                        // run ids on Node (in memory); the Cloudflare path uses KV
 const dashKV = env => env.KV && !env.STORE ? env.KV : null;
 const dashTheme = env => ["sleigh", "rocket"].includes(env.DASH_THEME) ? env.DASH_THEME : (Date.now() < DASH_ROCKET_FROM ? "sleigh" : "rocket");
+const dayAdd = (d, k) => new Date(Date.parse(d + "T12:00:00Z") + k * 864e5).toISOString().slice(0, 10);
+function dashAdvent(env) {
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(env.DASH_ADVENT || "") ? env.DASH_ADVENT : "2026-12-01";
+  const n = Math.round((Date.parse(today() + "T12:00:00Z") - Date.parse(from + "T12:00:00Z")) / 864e5) + 1;
+  const cl = (v, a, b, d) => Math.max(a, Math.min(b, Math.floor(+v) || d));
+  return {from, to: dayAdd(from, 23), n, on: n >= 1 && n <= 24, done: n > 24,
+    dayPrize: env.DASH_DAY_PRIZE || "a Pixel Scrappy", grandPrize: env.DASH_GRAND_PRIZE || "a rare Pixel Scrappy",
+    dayPlaces: cl(env.DASH_DAY_PLACES, 1, 5, 1), grandPlaces: cl(env.DASH_GRAND_PLACES, 1, 10, 3)};
+}
 async function dashRunPut(env, id, v) {
   if (dashKV(env)) return env.KV.put("dashrun:" + id, JSON.stringify(v), {expirationTtl: DASH_RUN_TTL});
   DASH_RUNS.set(id, v);
@@ -975,34 +987,156 @@ const dashDog = d => {
   return name || token ? {name, token} : null;
 };
 async function dashStart(env, account, b) {
-  const id = rid();
-  await dashRunPut(env, id, {a: account, at: Date.now(), dog: dashDog(b.dog)});
-  return json({id, theme: dashTheme(env)});
+  const id = rid(), seed = crypto.getRandomValues(new Uint32Array(1))[0];
+  // an open run per player at a time is plenty; the newest wins
+  await dashRunPut(env, id, {a: account, at: Date.now(), dog: dashDog(b.dog), seed});
+  return json({id, seed, theme: dashTheme(env)});
+}
+// the player's inputs: [Δtick, code, …] (code 1 press, 0 release, 2 drop) → absolute [tick, code, …]
+function dashInputs(d) {
+  if (!Array.isArray(d) || d.length > 40000 || d.length % 2) return null;
+  const out = []; let t = 0;
+  for (let i = 0; i < d.length; i += 2) {
+    const dt = d[i], c = d[i + 1];
+    if (!Number.isInteger(dt) || dt < 0 || ![0, 1, 2].includes(c)) return null;
+    t += dt; if (t < 1) return null; out.push(t, c);
+  }
+  return out;
+}
+async function dashBook(env, key, account, score, dog) {
+  const st = storeOf(env), m = (await st.blobGet(key)) || {};
+  const r = m[account] = m[account] || {best: 0, runs: 0};
+  r.runs++;
+  const pb = score > r.best;
+  if (pb) { r.best = score; r.dog = dog; r.at = Date.now(); }
+  await st.blobSet(key, m);
+  return {pb, best: r.best, rank: dashRank(m, account), players: Object.keys(m).length};
 }
 async function dashEnd(env, account, b) {
   const run = await dashRunTake(env, String(b.id || ""));
   if (!run || run.a !== account) return json({error: "no_run"}, 400);
-  const elapsed = Date.now() - run.at, ms = Math.max(0, +b.ms || 0), score = Math.floor(+b.score || 0);
-  if (!(ms >= 1000) || ms > elapsed + 3000) return json({error: "bad_time"}, 400);
-  if (!(score >= 0) || score > DASH_RATE * ms / 1000 + DASH_SLACK) return json({error: "bad_score"}, 400);
-  const st = storeOf(env), wk = weekOf(), k = "dash:" + wk, m = (await st.blobGet(k)) || {};
-  const r = m[account] = m[account] || {best: 0, runs: 0, gifts: 0};
-  r.runs++; r.gifts += Math.max(0, Math.min(500, b.gifts | 0));
-  const pb = score > r.best;
-  if (pb) { r.best = score; r.dog = run.dog; r.at = Date.now(); }
-  await st.blobSet(k, m);
-  return json({ok: true, pb, best: r.best, rank: dashRank(m, account), players: Object.keys(m).length});
+  const elapsed = Date.now() - run.at;
+  let score;
+  if (env.DASH && run.seed != null) {
+    const inp = dashInputs(b.inp), ticks = Math.floor(+b.ticks || 0), W = b.w === 340 ? 340 : 480, PX = W === 340 ? 84 : 110;
+    if (!inp) return json({error: "bad_input"}, 400);
+    if (ticks < 1 || ticks * 1000 / 60 > elapsed + 3000) return json({error: "bad_time"}, 400);
+    const r = env.DASH.replay(run.seed, W, PX, inp, ticks);
+    if (!r.over || r.ticks !== ticks || r.score !== Math.floor(+b.score)) {
+      console.log("dash desync", account, JSON.stringify({ticks, client: b.score, server: r}));
+      return json({error: "desync"}, 409);
+    }
+    score = r.score;
+  } else {
+    const ms = Math.max(0, +b.ms || (+b.ticks || 0) * 1000 / 60); score = Math.floor(+b.score || 0);
+    if (!(ms >= 1000) || ms > elapsed + 3000) return json({error: "bad_time"}, 400);
+    if (!(score >= 0) || score > DASH_RATE * ms / 1000 + DASH_SLACK) return json({error: "bad_score"}, 400);
+  }
+  const day = new Date(run.at).toISOString().slice(0, 10), A = dashAdvent(env);
+  const d = await dashBook(env, "dashday:" + day, account, score, run.dog);
+  await dashBook(env, "dash:" + weekOf(new Date(run.at)), account, score, run.dog);
+  const out = {ok: true, score, ...d};
+  if (day >= A.from && day <= A.to) { const o = await dashOverall(env, A), me = o[account]; out.total = me.total; out.totalRank = dashRankBy(o, account, "total"); }
+  return json(out);
 }
-const dashRank = (m, a) => !m[a] ? null : 1 + Object.values(m).filter(r => r.best > m[a].best).length;
-async function dashBoard(env, account, week) {
-  const st = storeOf(env), names = await st.profiles(), wk = weekOf();
-  const prev = weekOf(new Date(Date.parse(wk + "T12:00:00Z") - 7 * 864e5));
-  const rows = (m, n) => Object.entries(m).filter(([, r]) => r.best > 0).sort((x, y) => y[1].best - x[1].best || x[1].at - y[1].at).slice(0, n)
-    .map(([a, r]) => ({name: displayName(names, a), score: r.best, dog: r.dog || null, ...(isTeam(env, a) ? {team: true} : {}), ...(a === account ? {you: true} : {})}));
-  const m = (await st.blobGet("dash:" + wk)) || {}, p = (await st.blobGet("dash:" + prev)) || {};
-  const out = {week: wk, theme: dashTheme(env), players: Object.keys(m).length, top: rows(m, 10), last: {week: prev, top: rows(p, 3)}};
-  if (account) out.mine = m[account] ? {best: m[account].best, runs: m[account].runs, rank: dashRank(m, account)} : {best: 0, runs: 0, rank: null};
+const dashRank = (m, a) => !m[a] ? null : 1 + Object.values(m).filter(r => r.best > m[a].best || (r.best === m[a].best && r.at < m[a].at)).length;
+const dashRankBy = (m, a, k) => !m[a] ? null : 1 + Object.values(m).filter(r => r[k] > m[a][k] || (r[k] === m[a][k] && r.at < m[a].at)).length;
+// the Advent overall ranking: every player's best run of each season day, added up (up to today)
+async function dashOverall(env, A) {
+  const st = storeOf(env), tot = {}, last = A.done ? A.to : today();
+  for (let k = 0; k < 24; k++) {
+    const d = dayAdd(A.from, k); if (d > last) break;
+    const m = (await st.blobGet("dashday:" + d)) || {};
+    for (const [a, r] of Object.entries(m)) if (r.best > 0) {
+      const t = tot[a] = tot[a] || {total: 0, days: 0, at: 0};
+      t.total += r.best; t.days++; t.at = Math.max(t.at, r.at || 0);
+    }
+  }
+  return tot;
+}
+const dashSort = (m, k) => Object.entries(m).filter(([, r]) => r[k] > 0).sort((x, y) => y[1][k] - x[1][k] || (x[1].at || 0) - (y[1].at || 0));
+const dashRows = (env, names, account, list, k, n) => list.slice(0, n).map(([a, r]) => ({name: displayName(names, a), score: r[k], ...(r.dog ? {dog: r.dog} : {}),
+  ...(r.days ? {days: r.days} : {}), ...(isTeam(env, a) ? {team: true} : {}), ...(a === account ? {you: true} : {})}));
+async function dashBoard(env, account) {
+  const st = storeOf(env), names = await st.profiles(), day = today(), yday = dayAdd(day, -1), A = dashAdvent(env);
+  const m = (await st.blobGet("dashday:" + day)) || {}, y = (await st.blobGet("dashday:" + yday)) || {}, w = (await st.blobGet("dash:" + weekOf())) || {};
+  const out = {theme: dashTheme(env), day,
+    today: {top: dashRows(env, names, account, dashSort(m, "best"), "best", 10), players: Object.keys(m).length},
+    yesterday: {day: yday, top: dashRows(env, names, account, dashSort(y, "best"), "best", 3)},
+    week: {top: dashRows(env, names, account, dashSort(w, "best"), "best", 10)}};
+  if (account) out.today.mine = m[account] ? {best: m[account].best, runs: m[account].runs, rank: dashRank(m, account)} : {best: 0, runs: 0, rank: null};
+  // the Advent calendar and, once it runs, the overall ranking
+  const adv = {...A, days: []};
+  for (let k = 0; k < 24; k++) {
+    const d = dayAdd(A.from, k), state = d < day ? "past" : d === day ? "today" : "future", row = {day: d, n: k + 1, state};
+    if (state !== "future") {
+      const dm = d === day ? m : d === yday ? y : ((await st.blobGet("dashday:" + d)) || {});
+      const top = dashSort(dm, "best").find(([a]) => !isTeam(env, a));
+      if (top) row.winner = {name: displayName(names, top[0]), score: top[1].best};
+      if (account && dm[account]) row.mine = dm[account].best;
+    }
+    adv.days.push(row);
+  }
+  if (A.on || A.done) {
+    const o = await dashOverall(env, A);
+    adv.overall = {top: dashRows(env, names, account, dashSort(o, "total"), "total", 10), players: Object.keys(o).length};
+    if (account) adv.overall.mine = o[account] ? {total: o[account].total, days: o[account].days, rank: dashRankBy(o, account, "total")} : {total: 0, days: 0, rank: null};
+  }
+  out.advent = adv;
   return out;
+}
+/* Freezing a finished day (30 min after its end, so runs started before midnight are in) and the whole season
+   (after the 24th). The record looks like a week's result, so claiming and the Xaman flow work unchanged. */
+const DASH_FREEZE_MS = 30 * 60 * 1000;
+async function dashResult(env, key) {
+  const st = storeOf(env), A = dashAdvent(env);
+  let rec = await st.resultGet(key); if (rec) return rec;
+  const grand = key === "dash-grand-" + A.from, day = grand ? A.to : key.slice(5);
+  if (!grand && !(/^\d{4}-\d{2}-\d{2}$/.test(day) && day >= A.from && day <= A.to)) return null;
+  if (Date.now() < Date.parse(day + "T00:00:00Z") + 864e5 + DASH_FREEZE_MS) return null;
+  const names = await st.profiles(), m = grand ? await dashOverall(env, {...A, done: true}) : ((await st.blobGet("dashday:" + day)) || {});
+  const k = grand ? "total" : "best", list = dashSort(m, k), places = grand ? A.grandPlaces : A.dayPlaces;
+  const n = Math.round((Date.parse(day) - Date.parse(A.from)) / 864e5) + 1;
+  const winners = list.filter(([a]) => !isTeam(env, a)).slice(0, places).map(([a, r], i) => ({place: String(i + 1), account: a, name: displayName(names, a), score: r[k]}));
+  const label = grand ? `Advent Dash overall ranking (${A.from} – ${A.to})` : `Advent Dash day ${n} (${day})`;
+  const players = list.slice(0, 20).map(([a, r]) => ({name: displayName(names, a), score: r[k], ...(isTeam(env, a) ? {team: true} : {})}));
+  const canon = JSON.stringify({key, label, players, winners: winners.map(w => ({place: w.place, name: w.name, score: w.score}))});
+  rec = {week: key, kind: "dash", label, json: canon, sha256: await sha256hex(canon), winners, prizes: {}, frozen: Date.now()};
+  await st.resultSet(key, rec);
+  return rec;
+}
+const dashKeys = env => { const A = dashAdvent(env); return [...Array.from({length: 24}, (_, k) => "dash-" + dayAdd(A.from, k)), "dash-grand-" + A.from]; };
+async function adminDash(env) {
+  const A = dashAdvent(env), names = await storeOf(env).profiles(), out = [];
+  for (const key of dashKeys(env)) {
+    const grand = key.startsWith("dash-grand-"), day = grand ? A.to : key.slice(5);
+    if (day > today()) continue;
+    const rec = await dashResult(env, key);
+    if (!rec) {   // still running: who leads
+      const m = grand ? await dashOverall(env, A) : ((await storeOf(env).blobGet("dashday:" + day)) || {});
+      const kk = grand ? "total" : "best", lead = dashSort(m, kk).filter(([a]) => !isTeam(env, a)).slice(0, 3).map(([a, r]) => ({name: displayName(names, a), account: a, score: r[kk]}));
+      out.push({key, day, grand, open: true, lead});
+      continue;
+    }
+    out.push({key, day, grand, label: rec.label, sha256: rec.sha256, winners: rec.winners.map(w => ({...w, ...(rec.prizes[w.place] || {})}))});
+  }
+  return json({advent: A, results: out, xaman: !!(env.XUMM_API_KEY && env.XUMM_API_SECRET)});
+}
+async function adminDashPrize(env, b) {
+  const key = String(b.key || ""), rec = key.startsWith("dash-") ? await dashResult(env, key) : null;
+  if (!rec) return json({error: "not_closed"}, 409);
+  const place = String(b.place || ""), win = (rec.winners || []).find(w => w.place === place);
+  if (!win) return json({error: "no_such_prize"}, 404);
+  if (["offered", "claimed"].includes((rec.prizes[place] || {}).status)) return json({error: "already_offered"}, 409);
+  const nft = (await accountNfts(env, env.ISSUER)).find(n => n.nft_id === String(b.nftId || ""));
+  if (!nft) return json({error: "not_in_treasury"}, 404);
+  const token = +(nft.uri.match(/(\d+)\.json$/) || [])[1] || null;
+  rec.prizes[place] = {account: win.account, nftId: nft.nft_id, token, status: "signing"};
+  await storeOf(env).resultSet(key, rec);
+  return xamanPayload(env, {TransactionType: "NFTokenCreateOffer", Account: env.ISSUER, NFTokenID: nft.nft_id,
+      Amount: "0", Flags: 1, Destination: win.account},
+    `${rec.label}, place ${place}: Pixel Scrappy #${token} for ${win.name}. A free sell offer only this player can accept.`,
+    env.ISSUER, {kind: "offer", week: key, place});
 }
 
 /* ------------------------------------------------------------------ starter dogs */
@@ -1693,7 +1827,7 @@ async function adminSeason(env) {
   let treasury = [], treasuryError = null;
   try {
     const used = new Set();
-    for (const wk of lastWeeks(60)) {
+    for (const wk of [...lastWeeks(60), ...dashKeys(env)]) {
       const rec = await storeOf(env).resultGet(wk);
       if (rec) for (const x of Object.values(rec.prizes || {})) if (x.nftId) used.add(x.nftId);
     }
@@ -1758,6 +1892,12 @@ async function myPrizes(env, account) {
     for (const [place, x] of Object.entries(rec.prizes || {}))
       if (x.account === account && (x.status === "offered" || x.status === "claimed"))
         out.push({week: wk, place, token: x.token, nftId: x.nftId, status: x.status});
+  }
+  for (const key of dashKeys(env)) {
+    const rec = await storeOf(env).resultGet(key); if (!rec) continue;
+    for (const [place, x] of Object.entries(rec.prizes || {}))
+      if (x.account === account && (x.status === "offered" || x.status === "claimed"))
+        out.push({week: key, place, token: x.token, nftId: x.nftId, status: x.status, label: rec.label + (rec.winners.length > 1 ? ", place " + place : "")});
   }
   return json({prizes: out});
 }
@@ -2088,6 +2228,8 @@ export default {
         if (p === "/admin/prize" && req.method === "POST") r = await adminPrize(env, b);
         if (p === "/admin/xaman") r = await xamanResolve(env, url.searchParams.get("uuid"));
         if (p === "/admin/funnel") r = await adminFunnel(env);
+        if (p === "/admin/dash") r = await adminDash(env);
+        if (p === "/admin/dash/prize" && req.method === "POST") r = await adminDashPrize(env, b);
         if (p === "/admin/fair") r = await adminFair(env, url.searchParams.get("week"));
         if (p === "/admin/tickets" || p === "/admin/tickets/scan" || (p === "/admin/tickets/grant" && req.method === "POST")) r = await adminBonus(env, p, b, url);
         if (p === "/admin/chat" || ((p === "/admin/chat/del" || p === "/admin/chat/mute") && req.method === "POST")) r = await adminChat(env, p, b);
@@ -2121,7 +2263,7 @@ export default {
         return r;
       }
       if (p === "/public/dash") {
-        const r = json(await dashBoard(env, null));
+        const r = json(await dashBoard(env, null));   // names only, never wallets
         r.headers.set("access-control-allow-origin", "*"); r.headers.set("cache-control", "public, max-age=60");
         return r;
       }

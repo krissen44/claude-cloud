@@ -10,7 +10,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import worker from "./worker.js";
-import { loadEngine } from "./fight-engine.js";
+import { loadEngine, loadDash } from "./fight-engine.js";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
@@ -180,8 +180,13 @@ const env = {
   DISCORD_WEBHOOK_FIGHTS: process.env.DISCORD_WEBHOOK_FIGHTS || "", DISCORD_WEBHOOK_STATS: process.env.DISCORD_WEBHOOK_STATS || "",
   DISCORD_WEBHOOK_CLUB: process.env.DISCORD_WEBHOOK_CLUB || "",
   FAIRPLAY: process.env.FAIRPLAY || "", FAIR_SINCE: process.env.FAIR_SINCE || "",
+  // Scrappy Dash: skin override, Advent start day, prizes and how many places win
+  DASH_THEME: process.env.DASH_THEME || "", DASH_ADVENT: process.env.DASH_ADVENT || "",
+  DASH_DAY_PRIZE: process.env.DASH_DAY_PRIZE || "", DASH_GRAND_PRIZE: process.env.DASH_GRAND_PRIZE || "",
+  DASH_DAY_PLACES: process.env.DASH_DAY_PLACES || "", DASH_GRAND_PLACES: process.env.DASH_GRAND_PLACES || "",
   STORE, KV, FILES,
   ENGINE: loadEngine(path.join(ROOT, "public", "index.html")),   // Fight Club referee: the game's own engine
+  DASH: loadDash(path.join(ROOT, "public", "index.html")),       // Scrappy Dash: replays every ranked run
 };
 
 // every 5 minutes: freeze a finished week on time, post the daily summary to Discord (worker.scheduled)
@@ -233,6 +238,11 @@ select{border:2px solid var(--ink);border-radius:999px;padding:6px 10px;font:inh
     <p class="muted" style="margin:4px 0 0">A finished week is frozen 15 minutes after Monday 00:00 UTC. Anchor its SHA-256 on the XRPL and send the prizes
       (top 3 XP + most active member of the winning pack) from the treasury — every step is a Xaman QR you sign with the issuer wallet.</p>
     <div id="season"><p class="muted">Loading…</p></div></div>
+  <div class="card"><h2 style="margin:0;font-size:18px">🎄 Advent Dash — daily &amp; overall prizes</h2>
+    <p class="muted" style="margin:4px 0 0">Scrappy Dash, 24 days before Christmas: the best run of each day wins, and after the 24th the overall
+      ranking (daily bests added up). A day is frozen 30 min after it ends (UTC). Team wallets are skipped. Send a prize from the treasury
+      like the weekly ones — a Xaman QR you sign with the issuer wallet; the winner accepts it in the game.</p>
+    <div id="dash"><p class="muted">Loading…</p></div></div>
   <div class="card"><h2 style="margin:0;font-size:18px">📱 Clips for Shorts, TikTok &amp; Reels</h2>
     <p class="muted" style="margin:4px 0 0">Made every morning by the Shorts factory on the VPS. Download a clip, copy its text, post it — then tick where it went.
       Bio / channel links: TikTok <b>scrappyxrp.fun/barkarena/?src=tt</b> · Instagram <b>…?src=ig</b> · YouTube <b>…?src=yt</b>. Pin the "comment" as the first comment.</p>
@@ -375,6 +385,7 @@ function suggest(){
 }
 async function season(){
   SEASON = await api("season");
+  dashAdmin();
   const T = (SEASON.treasury || []).slice().sort((a, b) => (b.rank || 0) - (a.rank || 0) || (a.token || 0) - (b.token || 0));
   const SUG = suggest();
   const opts = key => T.map(n => "<option value='" + n.nftId + "'" + (SUG[key] === n.nftId ? " selected" : "") + ">#" + (n.token || "?") + " · " + esc(RLAB(n)) +
@@ -422,6 +433,32 @@ async function season(){
   });
 }
 let ONDONE = null;
+/* Advent Dash prizes: frozen days with their winners, a treasury pick and a Send button per prize */
+async function dashAdmin(){
+  const j = await api("dash").catch(() => null);
+  if (!j || !j.advent){ $("dash").innerHTML = "<p class='muted'>No data.</p>"; return; }
+  const A = j.advent, T = ((SEASON && SEASON.treasury) || []).slice().sort((a, b) => (b.rank || 0) - (a.rank || 0) || (a.token || 0) - (b.token || 0));
+  const opts = T.map(n => "<option value='" + n.nftId + "'>#" + (n.token || "?") + " · " + esc(RLAB(n)) + "</option>").join("");
+  const rows = j.results.slice().reverse();
+  $("dash").innerHTML = "<p class='muted'>Season " + A.from + " – " + A.to + " · " + (A.on ? "day <b>" + A.n + "</b> of 24" : A.done ? "finished" : "starts in " + (1 - A.n) + " days") +
+    " · daily prize: " + esc(A.dayPrize) + " (top " + A.dayPlaces + ") · overall: " + esc(A.grandPrize) + " (top " + A.grandPlaces + ")" + (j.xaman ? "" : " · <b>XUMM keys missing</b>") + "</p>" +
+    (rows.length ? "<table><tr><th>Day</th><th>Place</th><th>Winner</th><th>Score</th><th>Status</th><th></th></tr>" + rows.map(r => {
+      const title = r.grand ? "🎄 Overall" : "Day " + r.day;
+      if (r.open) return "<tr><td>" + title + "</td><td colspan='5' class='muted' style='text-align:left'>running — leading: " +
+        (r.lead.length ? r.lead.map(x => esc(x.name) + " " + x.score).join(" · ") : "nobody yet") + "</td></tr>";
+      if (!r.winners.length) return "<tr><td>" + title + "</td><td colspan='5' class='muted'>no eligible runs</td></tr>";
+      return r.winners.map(w => "<tr><td>" + title + "</td><td>" + w.place + "</td><td>" + esc(w.name) + "<br><span class='mono'>" + esc(w.account) + "</span></td><td>" + w.score + "</td><td>" +
+        (w.status === "claimed" ? "<span class='ok'>✅ claimed #" + w.token + "</span>" : w.status === "offered" ? "🎁 offered #" + w.token + " " + (w.offerTx ? txLink(w.offerTx) : "") : "—") + "</td><td>" +
+        (w.status === "offered" || w.status === "claimed" ? "" : T.length ? "<select data-dnft='" + r.key + "|" + w.place + "'>" + opts + "</select> <button class='btn' data-dprize='" + r.key + "|" + w.place + "'>🎁 Send (Xaman)</button>" : "<span class='muted'>treasury empty</span>") +
+        "</td></tr>").join("");
+    }).join("") + "</table>" : "<p class='muted'>The season hasn't started yet.</p>");
+  $("dash").querySelectorAll("[data-dprize]").forEach(b => b.onclick = () => {
+    const [key, place] = b.dataset.dprize.split("|"), sel = $("dash").querySelector("[data-dnft='" + b.dataset.dprize + "']");
+    const tok = sel.options[sel.selectedIndex].text;
+    if (!confirm("Offer Pixel Scrappy " + tok + " to the winner (" + key + ", place " + place + ")?")) return;
+    sign(api("dash/prize", {key, place, nftId: sel.value}), "Advent Dash prize: " + tok, "Sign the free sell offer (Amount 0) — only the winner can accept it.");
+  });
+}
 async function sign(req, title, text, onDone){
   const j = await req;
   if (!j.uuid){ alert("Could not create the Xaman request: " + (j.error || "error")); season(); return; }

@@ -267,7 +267,9 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
     <p class="kicker">New mini game · free</p>
     <h2 id="dashH">🛷 Scrappy Sleigh Dash</h2>
     <p class="lead" id="dashLead">Your Scrappy flies a sleigh over the snowy roofs. One button: <b>hold</b> to climb, let go to sink, a <b>quick tap</b> drops a gift. Hit the glowing chimneys for a combo up to ×5, dodge tall chimneys and crows — it gets faster every second. Runs last 30–90 seconds, no tickets, play as often as you like. The best run of the week counts.</p>
-    <div class="boards" style="margin-top:16px"><div class="card board"><h3>This week's best runs</h3><div id="dashTop"><p class="empty">Loading…</p></div></div></div>
+    <p class="lead" id="dashAdv" hidden></p>
+    <div class="boards" style="margin-top:16px"><div class="card board"><h3>Today's best runs</h3><div id="dashTop"><p class="empty">Loading…</p></div></div>
+      <div class="card board" id="dashAllCard" hidden><h3>🎄 Advent overall</h3><div id="dashAll"></div></div></div>
     <div class="row" style="margin-top:14px"><a class="btn" href="https://game.scrappyxrp.fun/dash" data-ev="play">▶ Play the Dash</a></div>
   </section>
 
@@ -477,10 +479,18 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
       document.getElementById("dashToc").textContent = "🚀 Dash";
       document.getElementById("dashLead").innerHTML = "Your Scrappy flies a rocket to the moon. One button: <b>hold</b> to climb, let go to sink, a <b>quick tap</b> drops a bone. Hit the glowing moon-base hatches for a combo up to ×5, grab bones and $SCRAP coins, dodge antenna towers and asteroids — it gets faster every second. Runs last 30–90 seconds, no tickets, play as often as you like. The best run of the week counts.";
     }
-    var rows = (d.top || []).slice(0, 5);
-    document.getElementById("dashTop").innerHTML = rows.length ? '<ol>' + rows.map(function(r, i){
+    var list = function(rows, empty){ rows = (rows || []).slice(0, 5); return rows.length ? '<ol>' + rows.map(function(r, i){
       return '<li><span class="rk">' + (["🥇","🥈","🥉"][i] || (i + 1) + ".") + '</span><span>' + esc(r.name) + (r.team ? ' <small class="team">TEAM</small>' : '') + '</span><b>' + Number(r.score).toLocaleString() + '</b></li>'; }).join("") + '</ol>'
-      : '<p class="empty">No runs yet this week — the first one takes the top spot.</p>';
+      : '<p class="empty">' + empty + '</p>'; };
+    document.getElementById("dashTop").innerHTML = list(d.today && d.today.top, "No runs yet today — the first one takes the top spot.");
+    var A = d.advent;
+    if (A){   // Advent Dash: a prize every day from the 1st to the 24th + the overall ranking (daily bests added up)
+      var adv = document.getElementById("dashAdv"); adv.hidden = false;
+      adv.innerHTML = A.on ? "🎄 <b>Advent Dash — day " + A.n + " of 24.</b> Today's best run wins " + esc(A.dayPrize) + ". The overall ranking adds up everyone's best run of each day; the top " + A.grandPlaces + " after Christmas Eve win " + esc(A.grandPrize) + "."
+        : A.done ? "🎄 <b>Advent Dash is over</b> — thanks for flying! The final overall ranking is below."
+        : "🎄 <b>Advent Dash, " + esc(A.from) + " – " + esc(A.to) + ":</b> win " + esc(A.dayPrize) + " every day with the best run of the day, plus " + esc(A.grandPrize) + " for the top " + A.grandPlaces + " of the overall ranking. Practise now!";
+      if (A.overall){ document.getElementById("dashAllCard").hidden = false; document.getElementById("dashAll").innerHTML = list(A.overall.top, "Nobody on the overall ranking yet."); }
+    }
   }).catch(function(){ document.getElementById("dashTop").innerHTML = '<p class="empty">The board is resting — try again later.</p>'; });
 })();
 (function(){   // the weekly boss

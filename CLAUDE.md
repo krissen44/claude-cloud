@@ -64,7 +64,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 
 ### Environment variables (Hostinger)
 `ISSUER=rGAVUGyhdbxQs1G7nwCCFU4w8P4HfgFKD6`, `TAXON=369` (empty/`*` = any taxon), `XUMM_API_KEY`, `XUMM_API_SECRET`,
-`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK_FIGHTS` (#fights) / `_STATS` (#arena-stats) / `_CLUB` (#search-arena-fight), fallback `DISCORD_WEBHOOK`, `DISCORD_CLIPS` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `DASH_THEME` (v33, sleigh|rocket), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
+`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK_FIGHTS` (#fights) / `_STATS` (#arena-stats) / `_CLUB` (#search-arena-fight), fallback `DISCORD_WEBHOOK`, `DISCORD_CLIPS` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `DASH_THEME` (v33, sleigh|rocket), `DASH_ADVENT` (start day, default 2026-12-01), `DASH_DAY_PRIZE` / `DASH_GRAND_PRIZE` (texts), `DASH_DAY_PLACES` (1) / `DASH_GRAND_PLACES` (3), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
 `META_HOSTS`, `ORIGIN`, `PORT`.
 
 ### API (`/api/...`)
@@ -104,7 +104,8 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/ach` (GET; POST `{ids}`), `/ref` (GET; POST `{name}`) | ✔ | Achievements (server-only: podium, recruiter, bossfall) / invites |
 | `/admin/fair[?week=]` | `?key=ADMIN_KEY` | Claimed vs verified week per player, flags |
 | `/admin/clips` (GET list), `/admin/clips/upload?name=` (PUT), `/admin/clips/file?name=[&download]`, `/admin/clips/posted` / `delete` (POST) | `?key=ADMIN_KEY` | Shorts clips — **handled in `server.js`** (Node only, files in `DATA_DIR/clips`, kept 30 days) |
-| `/dash/start` (POST `{dog}`), `/dash/end` (POST `{id, score, ms, gifts}`), `/dash/board` (optional auth), `/public/dash` (–) | ✔ | Scrappy Dash (v33): run id → clock + score check (≤ 260/s + 500) → weekly best in blob `dash:<week>`; board top 10 + `mine` + last week's top 3, `theme` |
+| `/dash/start` (POST `{dog}` → `{id, seed}`), `/dash/end` (POST `{id, score, ticks, w, inp}`), `/dash/board` (optional auth), `/public/dash` (–) | ✔ | Scrappy Dash (v33): the server replays the run from seed + inputs (`env.DASH`) and books its score; best per day `dashday:<day>` + week `dash:<week>`; board = `today`, `yesterday`, `week`, `advent` (24 days, winners, `overall`) |
+| `/admin/dash`, `/admin/dash/prize` (POST `{key, place, nftId}`) | `?key=ADMIN_KEY` | Advent Dash: frozen days (`dash-<day>`) / season (`dash-grand-<from>`) with winners → Xaman offer from the treasury; claimed via `/prizes` like the weekly ones |
 | `/admin/export[?download=1]`, `/admin/csv` | `?key=ADMIN_KEY` | Everything as JSON backup (summary, per-player rows, raw store + saves) / players as CSV. Dashboard page: **`/admin`** |
 
 ### Game rules (as implemented — keep the website guide in sync)
@@ -269,6 +270,13 @@ hand over one combined package for the week start; don't tell the owner to uploa
   shooting stars (`G.shoot`), moon halo — visuals only, never in collision boxes. Milestones: `dashScoreMs` (`DASH_MS_LIST`), every 10th coin,
   every 5th delivery, first ×5 → `dashCelebrate` (glitter `fx` kind `glit`, banner queue `G.bq`, `G.glow` trail, `G.flash`,
   `S.dashJingle`); `dashGlint` = small burst on pickups. $SCRAP coins are only a picture. Website section `#dash`.
+  **Deterministic sim** (`//@dash … //@/dash`: `dashInit`, `dashSimStep`, `dashReplay`, seeded `dashRng`, fixed `DASH_TICK`,
+  no Math.sin/random — keep it that way, or browser and server disagree → `desync`): the page keeps visuals in `dashOn`
+  (event hook), records inputs `G.inp` [tick, code] (1 press, 0 release, 2 drop; sent as tick deltas), gets the seed from
+  `/dash/start` (`dashFetchRun`, next one prefetched on the result card). Close calls +15, HUD target from today's board
+  (`dashTargets`, "PASSED …" banner). **Advent Dash**: 24 days from `DASH_ADVENT`, daily winner(s) + overall = daily bests
+  summed (`dashOverall`), team skipped; frozen 30 min after a day (`dashResult`), prizes via `/admin` like weekly ones
+  (`myPrizes` adds `label`). Client `dashAdvent` (calendar), boards today/yesterday/overall or week.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 

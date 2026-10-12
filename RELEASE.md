@@ -23,6 +23,28 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
   the dog, a golden shimmer, a popping gold banner ("1,000 POINTS — GREAT!", "10 CANDY CANES — SWEET!",
   "5 GIFTS DELIVERED — HO HO HO!") with dancing sparkles, a bell jingle, and the sleigh trails glitter for 2–3 s
   (the score blinks gold). Every pickup and delivery also gives a small glint.
+- **🎄 Advent Dash — a prize every day for 24 days + an overall ranking (owner: "every day something to win until
+  Christmas — daily ranking and an overall ranking"):** from **1 Dec to 24 Dec** (env `DASH_ADVENT`, default 2026-12-01)
+  the best run of each UTC day wins (`DASH_DAY_PRIZE`, default "a Pixel Scrappy"; `DASH_DAY_PLACES`, default 1), and
+  after the 24th the **overall ranking = each player's best run of every day, added up** wins (`DASH_GRAND_PRIZE`,
+  default "a rare Pixel Scrappy"; `DASH_GRAND_PLACES`, default 3) — so coming back every day pays. Team wallets never
+  win. The Dash tab shows an **Advent calendar** (24 doors: today's glows, past ones show the day's winner, ⭐ where you
+  played), **today's ranking** (+ yesterday's top 3) and the **Advent overall** ranking (before December: this week's
+  board and a "starts 1 Dec" teaser). `/admin` → "🎄 Advent Dash": a day is frozen 30 min after it ends, the winner
+  is listed with a treasury pick and "🎁 Send (Xaman)" — same flow as the weekly prizes; the winner gets a prize card in
+  the kennel ("Advent Dash day 3 (2026-12-03)") and accepts it.
+- **Fair rankings — every run is replayed on the server.** With real prizes a score check isn't enough: the run's
+  simulation is now deterministic (fixed 1/60 s ticks, dice from a seed the server hands out, no sin/random inside;
+  `//@dash` section of `public/index.html`), the page sends only its taps (press/release/drop per tick), and the server
+  replays them (`fight-engine.js` → `loadDash`) and books **its own** score. A score raised in the page, a run longer
+  than the time since its start, someone else's run id or a reused one are refused. Tested: the browser and the server
+  get exactly the same score (desktop and phone field). Left open: a bot that plays in real time with perfect taps.
+- **Challenging but "one more run":** close-call bonus (+15 for skimming a tall chimney or a crow by < 10 px), a
+  target on the HUD ("#2 ▸ 4,210" — the next score to beat on today's ranking) and a glitter banner when you pass
+  someone ("PASSED DASHER — NOW #2 TODAY", "#1 TODAY!"). Difficulty measured with an autopilot over 200 seeded runs:
+  median ~22 s, best ~60–70 s; the first seconds are calm, then it keeps getting faster.
+- **Fix:** `DASH_THEME` (and the new `DASH_*` variables) are now passed from Hostinger to the API — before, the server
+  never saw `DASH_THEME`.
 - **Free, unlimited, no tickets.** Signed-in runs go to a **weekly Dash board** (best run of the week, resets Monday
   00:00 UTC, last week's top 3 shown). Guests/demo can play for fun. The dog earns a little **bond XP** (score ÷ 150, max
   15 per run, 40 per day; own dogs only, not borrowed/demo). No ladder XP, no influence on fights' fairness.
@@ -34,8 +56,9 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
   from 1 Dec). Preview either skin with `?dash=rocket` / `?dash=sleigh`.
 - **Website** `/barkarena/`: section "🛷 Scrappy Sleigh Dash" with this week's top 5 (`/api/public/dash`, switches its
   text to Rocket Dash with the server) + "▶ Play the Dash" button, TOC link.
-- Test: `tools/test/dash.mjs` (API checks, hangar, a bot run with deliveries, game over + board post + bond XP, Again,
-  rocket skin on a phone viewport).
+- Tests: `tools/test/dash.mjs` (run ids + seeds, faked score/time/inputs refused, browser bot runs replayed by the
+  server on desktop and phone width, daily/overall rankings, Advent calendar, frozen days, team skipped),
+  `tools/test/dash-prize.mjs` (a frozen day's prize offered via Xaman, seen and accepted by the winner only).
 - Upload: full project ZIP `bark-arena-game-v33-komplett.zip` (Node.js app, "Neue Dateien hochladen"),
   `scrappyxrp-website-v33.zip` → `public_html/` (replaces `barkarena/index.html`).
 

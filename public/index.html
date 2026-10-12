@@ -423,6 +423,19 @@ button.dashgo:active{transform:translateY(3px);box-shadow:0 1px 0 #0e1726}
 .dashcard .mini2{font-size:10px;color:#b9c6e6}
 .dashcard button{pointer-events:auto}
 .dashrow{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap}
+.advent{background:linear-gradient(180deg,rgba(198,40,40,.07),rgba(46,125,50,.07))}
+.adoors{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+.adoor{position:relative;border:2px solid var(--panelB);border-radius:7px;min-height:46px;padding:4px 2px;text-align:center;
+  background:var(--panel);overflow:hidden}
+.adoor b{display:block;font-family:'Press Start 2P',monospace;font-size:10px;color:var(--ink2)}
+.adoor small{display:block;font-size:8.5px;line-height:1.2;margin-top:3px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.adoor i{position:absolute;top:1px;right:2px;font-style:normal;font-size:9px}
+.adoor.past{background:rgba(46,125,50,.1);border-color:#7cb987}
+.adoor.today{border-color:#e53935;background:rgba(229,57,53,.08);animation:doorGlow 1.6s ease-in-out infinite}
+.adoor.today b{color:#e53935}
+@keyframes doorGlow{50%{box-shadow:0 0 0 3px rgba(255,213,79,.55),0 0 14px rgba(255,213,79,.6)}}
+@media (max-width:560px){.adoors{grid-template-columns:repeat(6,1fr)}}
+@media (prefers-reduced-motion:reduce){.adoor.today{animation:none}}
 .dashrow button.sm{color:#fff;border-color:rgba(255,255,255,.4);margin-top:14px}
 .tabs button{font-size:10.5px;padding:9px 3px}
 .pkh{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px;margin-bottom:5px}
@@ -1430,6 +1443,7 @@ const S = (() => {
     dashEmpty(){ tone(180, 140, .08, 'square', .1); },
     dashJingle(big){ [1047,1319,1568,2093].concat(big ? [2637] : []).forEach((f,i)=>tone(f,f,.16,'triangle',.16,i*.06));
       for (let i = 0; i < (big ? 6 : 3); i++) tone(3000 + i * 400, 3000 + i * 400, .05, 'sine', .05, .3 + i * .07); },
+    dashClose(){ tone(900, 1800, .08, 'triangle', .12); tone(1800, 2400, .06, 'sine', .08, .05); },
     dashCrash(big){ noise(big ? .5 : .2, 'lowpass', big ? 700 : 1400, big ? .45 : .25); if (big) tone(220, 50, .5, 'sawtooth', .18); },
     lose(){ [392,330,262].forEach((f,i)=>tone(f,f,.24,'triangle',.22,i*.14)); }
   };
@@ -1566,7 +1580,7 @@ function prizeCards(){
   return done + PRIZE.list.map(p => {
     const key = p.week + '|' + p.place, c = PRIZE.claim && PRIZE.claim.key === key ? PRIZE.claim : null;
     return `<div class="card"><div class="wal"><div><b style="font-size:12px">🏆 You won a Pixel Scrappy!</b>
-      <div class="mini">Week of ${esc(p.week)} — ${PLACE_TXT[p.place] || 'a lender’s share — a Scrappy you lent helped win a weekly prize'}. <b>Pixel Scrappy #${p.token}</b> is waiting for you as a free offer (0 XRP) that only your wallet can accept.</div></div>
+      <div class="mini">${p.label ? esc(p.label) : `Week of ${esc(p.week)} — ${PLACE_TXT[p.place] || 'a lender’s share — a Scrappy you lent helped win a weekly prize'}`}. <b>Pixel Scrappy #${p.token}</b> is waiting for you as a free offer (0 XRP) that only your wallet can accept.</div></div>
       ${c && c.qr ? '' : `<button data-prize="${key}" ${c ? 'disabled' : ''}>🎁 Accept</button>`}</div>
       ${c ? (c.qr ? `<div style="text-align:center;margin-top:10px"><img src="${c.qr}" alt="Xaman QR" style="width:200px;height:200px;max-width:100%">
           <div class="mini"><a href="${c.link}" target="_blank" rel="noopener">Open in Xaman</a> · ${esc(c.msg)}</div></div>`
@@ -4546,6 +4560,146 @@ function menu(){
     if (confirm('Wipe all progress?')){ SAVE.reset(); menu(); }
   };
 }
+//@dash — the Scrappy Dash simulation. Deterministic on purpose: fixed 1/60 s ticks, dice from a seeded generator,
+// only + − × ÷ and floor (no Math.sin/random), so the server (fight-engine.js → loadDash) replays a run from its seed
+// and the player's inputs and gets exactly the same score. No DOM, no sound, no visuals in here — the page hooks in
+// through `ev(type, …)` (house, coin, ammo, star, deliver, waste, empty, drop, shieldhit, close, crash).
+const DASH_TICK = 1 / 60, DASH_FH = 300, DASH_DROP_TICKS = 13, DASH_MAX_TICKS = 60 * 60 * 15;
+function dashRng(seed){
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+const dashTri = p => { const q = p % 4; return q < 2 ? q - 1 : 3 - q; };     // a triangle wave −1…1 instead of sin
+function dashInit(s, seed, W, PX, ev){
+  Object.assign(s, {seed: seed >>> 0, W, PX, rnd: dashRng(seed), ev: ev || null, tick: 0, t: 0, dist: 0, v: 150, y: 120, vy: 0,
+    hold: false, ammo: 3, score: 0, combo: 0, delivered: 0, coinsN: 0, close: 0, shield: false, blink: 0,
+    houses: [], gifts: [], items: [], foes: [], nextX: 0, distPts: 0, nextCoin: 1.2, nextAmmo: 3.5, nextFoe: 6, nextStar: 22,
+    lastDrop: -99, over: false});
+  while (s.nextX < W + 200) dashHouseNew(s, true);
+  return s;
+}
+const dashR = (s, a, b) => a + s.rnd() * (b - a);
+function dashHouseNew(s, calm){
+  const t = s.t, w = Math.round(dashR(s, 64, 120)), gap = s.rnd() < .18 ? dashR(s, 40, 80) : dashR(s, 4, 22);
+  const top = DASH_FH - Math.round(dashR(s, 40, Math.min(130, 90 + t)));
+  const tall = !calm && s.rnd() < Math.min(.46, .08 + t * .006);
+  const ch = tall ? Math.round(dashR(s, Math.min(70, top - 110), Math.max(70, top - 95))) : Math.round(dashR(s, 12, 22));
+  const h = {x: s.nextX + gap, w, top, cx: Math.round(dashR(s, 14, w - 32)), cw: 18, ch, tall,
+    wants: !tall && s.rnd() < (calm ? .5 : .32), done: false, gap: 99, passed: false};
+  s.houses.push(h);
+  s.nextX = h.x + w;
+  if (s.ev) s.ev('house', h);
+}
+function dashSimDrop(s){
+  if (s.tick - s.lastDrop < DASH_DROP_TICKS) return;
+  if (s.ammo <= 0){ if (s.ev) s.ev('empty'); return; }
+  s.lastDrop = s.tick; s.ammo--;
+  s.gifts.push({x: s.PX + 4, y: s.y + 8, vy: Math.max(-40, s.vy * .3)});
+  if (s.ev) s.ev('drop');
+}
+// points: distance / 10 + 25 × combo per delivery (combo up to ×5) + 5 per pickup + 15 per close call
+function dashSimStep(s, hold, drop){
+  const dt = DASH_TICK, ev = s.ev || (() => {}), PX = s.PX, W = s.W, H = DASH_FH;
+  s.tick++; s.t = s.tick * DASH_TICK; s.hold = !!hold;
+  if (drop) dashSimDrop(s);
+  s.v = Math.min(430, 150 + 4.2 * s.t);
+  const dx = s.v * dt;
+  s.dist += dx;
+  s.vy += (s.hold ? -1050 : 820) * dt;
+  s.vy = Math.max(-300, Math.min(340, s.vy));
+  s.y += s.vy * dt;
+  if (s.y < 16){ s.y = 16; s.vy = Math.max(0, s.vy); }
+  if (s.blink > 0) s.blink -= dt;
+  for (const h of s.houses) h.x -= dx;
+  s.nextX -= dx;
+  while (s.nextX < W + 200) dashHouseNew(s, s.t < 3);
+  s.houses = s.houses.filter(h => h.x + h.w > -10);
+  if ((s.nextCoin -= dt) <= 0){
+    s.nextCoin = dashR(s, 1.1, 1.9);
+    const n = 3 + Math.floor(s.rnd() * 3), y0 = dashR(s, 36, 140), arc = s.rnd() < .5;
+    for (let i = 0; i < n; i++){ const u = i / (n - 1); s.items.push({k: 'coin', x: W + 20 + i * 22, y: y0 - (arc ? 96 * u * (1 - u) : 0)}); }
+  }
+  if ((s.nextAmmo -= dt) <= 0){ s.nextAmmo = dashR(s, 3.5, 5); s.items.push({k: 'ammo', x: W + 20, y: dashR(s, 40, 135), p: s.rnd() * 6}); }
+  if ((s.nextStar -= dt) <= 0){ s.nextStar = dashR(s, 20, 30); if (!s.shield) s.items.push({k: 'star', x: W + 20, y: dashR(s, 40, 120), p: 0}); }
+  if (s.t > 7 && (s.nextFoe -= dt) <= 0){
+    s.nextFoe = Math.max(1.3, dashR(s, 2.6, 4.6) - s.t * .03);
+    s.foes.push({x: W + 20, y0: dashR(s, 34, 150), y: 0, p: s.rnd() * 6, v: dashR(s, 30, 75), r: s.rnd() * 6, gap: 99, passed: false});
+  }
+  for (const it of s.items){ it.x -= dx; if (it.p != null) it.p += dt * 4; }
+  for (const f of s.foes){ f.x -= dx + f.v * dt; f.p += dt * 5; f.r += dt * 2; f.y = f.y0 + dashTri(f.p * .5) * 12; }
+  s.items = s.items.filter(it => it.x > -20 && !it.got);
+  s.foes = s.foes.filter(f => f.x > -30);
+  const bx = PX - 18, by = s.y - 9, bw = 36, bh = 17;
+  const hit = (x, y, w, h) => bx < x + w && bx + bw > x && by < y + h && by + bh > y;
+  for (const it of s.items){
+    if (Math.abs(it.x - PX) < 20 && Math.abs(it.y - s.y) < 18){
+      it.got = true;
+      if (it.k === 'coin'){ s.score += 5; s.coinsN++; ev('coin', it); }
+      else if (it.k === 'ammo'){ s.ammo = Math.min(9, s.ammo + 2); s.score += 5; ev('ammo', it); }
+      else { s.shield = true; ev('star', it); }
+    }
+  }
+  let crash = s.y > H - 6;
+  for (const h of s.houses){
+    if (h.x > PX + 40 || h.x + h.w < PX - 40) continue;
+    if (hit(h.x, h.top, h.w, H - h.top) || hit(h.x + h.cx, h.top - h.ch, h.cw, h.ch)) crash = crash || h;
+    // close calls: skim a tall chimney's top with less than 10 px to spare
+    if (h.tall && !h.passed && h.x + h.cx < PX + 18 && h.x + h.cx + h.cw > PX - 18) h.gap = Math.min(h.gap, (h.top - h.ch) - (s.y + 8));
+  }
+  for (const f of s.foes){
+    if (Math.abs(f.x - PX) < 20 && Math.abs(f.y - s.y) < 14) crash = crash || f;
+    if (!f.passed && Math.abs(f.x - PX) < 22) f.gap = Math.min(f.gap, Math.abs(f.y - s.y) - 14);
+  }
+  // gifts fall straight down on screen (they keep the sleigh's speed) into the chimney passing below
+  for (const g of s.gifts){
+    const y0 = g.y;
+    g.vy += 900 * dt; g.y += g.vy * dt;
+    if (g.y > H + 10){ g.gone = true; continue; }
+    for (const h of s.houses){
+      if (g.x < h.x - 4 || g.x > h.x + h.w + 4) continue;
+      const ct = h.top - h.ch, inCh = g.x >= h.x + h.cx - 4 && g.x <= h.x + h.cx + h.cw + 4;
+      if (inCh && y0 <= ct && g.y >= ct){
+        g.gone = true;
+        if (h.wants && !h.done){
+          h.done = true; s.combo = Math.min(5, s.combo + 1); s.delivered++;
+          const pts = 25 * s.combo; s.score += pts;
+          ev('deliver', h, pts, ct);
+        } else { const c = s.combo; s.combo = 0; ev('waste', g.x, ct, c); }
+        break;
+      }
+      if (!inCh && g.y >= h.top && y0 < h.top + 4){ g.gone = true; const c = s.combo; s.combo = 0; ev('waste', g.x, h.top, c); break; }
+    }
+  }
+  s.gifts = s.gifts.filter(g => !g.gone);
+  if (crash){
+    const bounce = () => { if (crash === true){ s.y = H - 8; s.vy = -240; }
+      else if (crash.y0 != null){ crash.x = -99; crash.passed = true; }   // knocked away
+      else { s.vy = -260; s.y = Math.max(16, Math.min(s.y, crash.top - crash.ch - 22)); crash.passed = true; } };
+    if (s.blink > 0) bounce();
+    else if (s.shield){ s.shield = false; s.blink = 1.2; ev('shieldhit'); bounce(); }
+    else { s.over = true; ev('crash'); return; }
+  }
+  for (const h of s.houses) if (h.tall && !h.passed && h.x + h.cx + h.cw < PX - 18){
+    h.passed = true; if (h.gap >= 0 && h.gap < 10 && s.blink <= 0){ s.score += 15; s.close++; ev('close', PX, h.top - h.ch, 15); } }
+  for (const f of s.foes) if (!f.passed && f.x < PX - 22){
+    f.passed = true; if (f.gap >= 0 && f.gap < 10 && s.blink <= 0){ s.score += 15; s.close++; ev('close', PX, f.y, 15); } }
+  const dp = Math.floor(s.dist / 10); s.score += dp - s.distPts; s.distPts = dp;
+}
+// the server's side: a run from its seed, field size and inputs [tick, code, …] (code 1 = press, 0 = release, 2 = drop)
+function dashReplay(seed, W, PX, inp, maxTicks){
+  const s = dashInit({}, seed, W, PX, null);
+  let i = 0, hold = false;
+  const lim = Math.min(maxTicks || DASH_MAX_TICKS, DASH_MAX_TICKS);
+  while (!s.over && s.tick < lim){
+    const next = s.tick + 1; let drop = false;
+    while (i < inp.length && inp[i] === next){ const c = inp[i + 1]; if (c === 2) drop = true; else hold = c === 1; i += 2; }
+    dashSimStep(s, hold, drop);
+  }
+  return {score: s.score, ticks: s.tick, over: s.over, delivered: s.delivered, coins: s.coinsN, close: s.close, used: i};
+}
+//@/dash
+
 /* ============================ Scrappy Dash (tab "Dash") ============================
    A one-tap endless runner: your Scrappy flies a sleigh over the roofs at night — hold to climb, let go to
    sink, a quick tap drops a gift. Gifts that land in a glowing chimney score and build a combo (x5); a tall
@@ -4593,27 +4747,43 @@ function dashBoardRows(rows){
   if (!rows || !rows.length) return '<p class="mini" style="margin:0">No runs yet — the first one takes the top spot.</p>';
   return rows.map((r, i) => `<div class="lb${r.you ? ' you' : ''}"><span>${i + 1}</span><span>${esc(r.name)}${r.team ? ' <span class="tag">TEAM</span>' : ''}${r.dog && r.dog.token ? ` <span style="opacity:.6">· #${r.dog.token}</span>` : r.dog && r.dog.name ? ` <span style="opacity:.6">· ${esc(r.dog.name)}</span>` : ''}</span><b>${r.score.toLocaleString()}</b></div>`).join('');
 }
+// the Advent calendar: 24 doors, today's glowing, past ones show the day's winner, a star where you played
+function dashAdvent(A){
+  if (!A) return '';
+  const doors = A.days.map(d => {
+    const cls = d.state === 'today' ? 'today' : d.state === 'past' ? 'past' : '';
+    return `<div class="adoor ${cls}" title="${esc(d.day)}"><b>${d.n}</b>${d.mine ? '<i>⭐</i>' : ''}${d.winner ? `<small>${esc(d.winner.name)}</small>` : d.state === 'today' ? '<small>today</small>' : ''}</div>`;
+  }).join('');
+  const head = A.on ? `🎄 ADVENT DASH · DAY ${A.n} OF 24` : A.done ? '🎄 ADVENT DASH · FINISHED' : `🎄 ADVENT DASH · STARTS ${A.from.slice(8)}.${A.from.slice(5, 7)}.`;
+  const txt = A.on ? `Today's best run wins <b>${esc(A.dayPrize)}</b>${A.dayPlaces > 1 ? ` (top ${A.dayPlaces})` : ''}. The overall ranking adds up your best run of every day — the top ${A.grandPlaces} after Christmas Eve win <b>${esc(A.grandPrize)}</b>. Play every day!`
+    : A.done ? 'The calendar is done — thanks for flying! The winners are below.'
+    : `From ${A.from} to ${A.to}: a prize every single day for the best run of the day (<b>${esc(A.dayPrize)}</b>), plus <b>${esc(A.grandPrize)}</b> for the top ${A.grandPlaces} of the overall ranking (your daily bests added up). ${A.n > -14 ? `Only ${1 - A.n} day${1 - A.n === 1 ? '' : 's'} to go — practise now!` : 'Practise now!'}`;
+  return `<div class="card advent"><h3 class="h3">${head}</h3><p class="mini" style="margin:0 0 10px">${txt}</p><div class="adoors">${doors}</div></div>`;
+}
 function dashView(){
   const th = dashTheme(), K = DASH_SKIN[th], me = dashPickDog(), sv = dashSave(), B = DASH.board;
-  const mine = B && B.mine;
+  const A = B && B.advent, tm = B && B.today && B.today.mine, om = A && A.overall && A.overall.mine;
   const pick = ROSTER().map(f => `<button data-dashdog="${esc(f.id)}" class="${me && me.id === f.id ? 'insq' : ''}"><img src="${f.img}" alt="">
       <span><b>${esc(f.name)}</b><br><span class="lvl">BOND ${SAVE.dog(f.id).lvl}</span>${f.borrowed ? '<br>borrowed' : ''}</span></button>`).join('');
   const post = dashCanPost();
+  const board = (title, rows, empty, foot) => `<div class="card"><h3 class="h3">${title}</h3>${LIVE() ? (B ? (rows && rows.length ? dashBoardRows(rows) : `<p class="mini" style="margin:0">${empty}</p>`) : '<p class="mini" style="margin:0">Loading…</p>') : '<p class="mini" style="margin:0">The rankings need the game server.</p>'}${foot || ''}</div>`;
+  const overall = A && (A.on || A.done);
   return `<div class="card dashhero dash-${th}">
       ${th === 'sleigh' ? '<i class="dashsnow" aria-hidden="true"></i><i class="dashmoon" aria-hidden="true"></i>' : ''}
       <div class="dashtitle">${K.icon} SCRAPPY<br>${K.title}</div>
       <p class="dashsub">Fly ${K.where}. <b>Hold</b> to climb · let go to sink · <b>quick tap</b> drops a ${K.ammo}.</p>
-      <p class="dashsub">Hit the ${K.target} for a combo (up to ×5), grab ${K.ammos} and ${K.coins}, dodge ${K.obst} and ${K.foe}. It gets faster every second.</p>
+      <p class="dashsub">Hit the ${K.target} for a combo (up to ×5), grab ${K.ammos} and ${K.coins}, dodge ${K.obst} and ${K.foe} — skim past them for a close-call bonus. It gets faster every second.</p>
       <button id="dashGo" class="dashgo">▶ PLAY</button>
-      <p class="dashsub" style="margin-top:10px">Your best: <b>${Math.max(sv.best, mine ? mine.best : 0).toLocaleString()}</b>${mine && mine.rank ? ` · #${mine.rank} this week` : ''} · Free, no tickets — play as often as you like.</p>
+      <p class="dashsub" style="margin-top:10px">${tm && tm.best ? `Today: <b>${tm.best.toLocaleString()}</b> · #${tm.rank}` : `Best on this device: <b>${sv.best.toLocaleString()}</b>`}${om && om.total ? ` · Advent total <b>${om.total.toLocaleString()}</b> (#${om.rank})` : ''} · Free, no tickets — play as often as you like.</p>
     </div>
+    ${dashAdvent(A)}
+    ${board("🏆 TODAY'S RANKING", B && B.today && B.today.top, 'No runs yet today — the first one takes the top spot.',
+      `${B && B.yesterday && B.yesterday.top.length ? `<p class="mini" style="margin:10px 0 4px"><b>Yesterday (${esc(B.yesterday.day)})</b></p>${dashBoardRows(B.yesterday.top)}` : ''}<p class="mini" style="margin:8px 0 0">Your best run of the day counts. A new day starts at 00:00 UTC.</p>`)}
+    ${overall ? board('🎄 ADVENT OVERALL', A.overall.top, 'Nobody on the overall ranking yet.', `<p class="mini" style="margin:8px 0 0">Your best run of each Advent day, added up${om && om.days ? ` — you've played ${om.days} of ${Math.min(24, A.n)} days` : ''}.</p>`)
+      : board("📅 THIS WEEK", B && B.week && B.week.top, 'No runs yet this week.', '<p class="mini" style="margin:8px 0 0">Best run of the week. Resets Monday 00:00 UTC.</p>')}
     <div class="card"><h3 class="h3">PILOT</h3>
       <div class="pick">${pick}</div>
-      <p class="mini" style="margin:8px 0 0">${post ? `Each run gives your dog a little bond XP (score ÷ 150, up to ${DASH_XP_RUN} a run, ${DASH_XP_DAY} a day — ${Math.max(0, DASH_XP_DAY - sv.xp)} left today). Borrowed dogs fly for fun.` : 'Sign in with your wallet to enter the weekly Dash board and earn bond XP. The demo dogs fly for fun.'}</p></div>
-    <div class="card"><h3 class="h3">🏆 THIS WEEK'S DASH BOARD</h3>
-      ${LIVE() ? (B ? dashBoardRows(B.top) : '<p class="mini" style="margin:0">Loading…</p>') : '<p class="mini" style="margin:0">The board needs the game server.</p>'}
-      ${B && B.last && B.last.top.length ? `<p class="mini" style="margin:10px 0 4px"><b>Last week</b></p>${dashBoardRows(B.last.top)}` : ''}
-      <p class="mini" style="margin:8px 0 0">Best run of the week counts. The board resets Monday 00:00 UTC.</p></div>`;
+      <p class="mini" style="margin:8px 0 0">${post ? `Each run gives your dog a little bond XP (score ÷ 150, up to ${DASH_XP_RUN} a run, ${DASH_XP_DAY} a day — ${Math.max(0, DASH_XP_DAY - sv.xp)} left today). Borrowed dogs fly for fun. Every run is replayed on the server from your taps, so the rankings are fair.` : 'Sign in with your wallet to enter the rankings and earn bond XP. The demo dogs fly for fun.'}</p></div>`;
 }
 function dashWire(){
   app.querySelectorAll('[data-dashdog]').forEach(b => b.onclick = () => { S.click(); DASH.dog = b.dataset.dashdog; lsSet('ba_dashdog', DASH.dog); menu(); });
@@ -4640,6 +4810,7 @@ function dashPlay(dog){
     stars: Array.from({length: 46}, () => ({x: Math.random() * DASH_W, y: Math.random() * DASH_H * .7, s: Math.random() < .2 ? 2 : 1, p: Math.random() * 6})),
     flakes: Array.from({length: 40}, () => ({x: Math.random() * DASH_W, y: Math.random() * DASH_H, v: drand(18, 42), w: drand(0, 6)}))};
   dashReset(G);
+  dashFetchRun(G);
   dashSize(G);
   G.onResize = () => dashSize(G); addEventListener('resize', G.onResize);
   const down = e => { if (e.button > 0) return; e.preventDefault(); dashPress(G, true); };
@@ -4650,11 +4821,11 @@ function dashPlay(dog){
     if (e.repeat) { if ([' ', 'ArrowUp', 'w', 'W'].includes(e.key)) e.preventDefault(); return; }
     const dn = e.type === 'keydown';
     if ([' ', 'ArrowUp', 'w', 'W'].includes(e.key)) { e.preventDefault(); dashPress(G, dn); }
-    else if (dn && ['ArrowDown', 's', 'S', 'x', 'X', 'Enter'].includes(e.key)) { e.preventDefault(); if (G.state === 'run') dashDrop(G); else { dashPress(G, true); dashPress(G, false); } }
+    else if (dn && ['ArrowDown', 's', 'S', 'x', 'X', 'Enter'].includes(e.key)) { e.preventDefault(); if (G.state === 'run') G.pendingDrop = true; else { dashPress(G, true); dashPress(G, false); } }
     else if (dn && e.key === 'Escape') { dashQuit(); }
   };
   addEventListener('keydown', G.onKey); addEventListener('keyup', G.onKey);
-  G.onVis = () => { if (document.hidden && G.state === 'run') { G.state = 'pause'; G.hold = false; dashOverlay(G); } };
+  G.onVis = () => { if (document.hidden && G.state === 'run') { G.state = 'pause'; G.want = false; dashOverlay(G); } };
   document.addEventListener('visibilitychange', G.onVis);
   document.getElementById('dashQuit').onclick = () => { S.click(); dashQuit(); };
   dashOverlay(G);
@@ -4674,24 +4845,39 @@ function dashSize(G){
   G.ctx.setTransform(G.cv.width / DASH_W, 0, 0, G.cv.height / DASH_H, 0, 0);
   G.ctx.imageSmoothingEnabled = false;
 }
-function dashReset(G){
-  Object.assign(G, {t: 0, ms: 0, dist: 0, v: 150, y: 120, vy: 0, hold: false, downAt: 0, ammo: 3, score: 0, combo: 0, best: 0,
-    delivered: 0, coinsN: 0, msN: 0, bq: [], banner: null, glow: 0, flash: 0, maxShown: false, shield: false, blink: 0, houses: [], gifts: [], items: [], foes: [], fx: [], nextX: 0,
-    distPts: 0, startPress: false, nextCoin: 1.2, nextAmmo: 3.5, nextFoe: 7, nextStar: 22, runId: null, posted: null, xp: 0, lastDrop: 0});
-  G.nextX = 0;
-  while (G.nextX < DASH_W + 200) dashHouse(G, true);
+function dashReset(G, seed){
+  Object.assign(G, {ms: 0, msN: 0, bq: [], banner: null, glow: 0, flash: 0, maxShown: false, fx: [], posted: null, xp: 0, ups: null,
+    acc: 0, want: false, pendingDrop: false, startPress: false, inp: [], recHold: false, runId: null, runSeed: null, passedN: 0});
+  dashInit(G, seed != null ? seed : (Math.random() * 4294967296) >>> 0, DASH_W, DASH_PX, (type, a, b, c) => dashOn(G, type, a, b, c));
+  G.targets = dashTargets();
 }
-function dashHouse(G, calm){
-  const t = G.t, w = Math.round(drand(64, 120)), gap = Math.random() < .18 ? drand(40, 80) : drand(4, 22);
-  const top = DASH_H - Math.round(drand(40, Math.min(130, 90 + t)));
-  const tall = !calm && Math.random() < Math.min(.45, .1 + t * .006);
-  const ch = tall ? Math.round(drand(Math.min(70, top - 110), Math.max(70, top - 95))) : Math.round(drand(12, 22));
-  const h = {x: G.nextX + gap, w, top, cx: Math.round(drand(14, w - 32)), cw: 18, ch, tall,
-    wants: !tall && Math.random() < (calm ? .5 : .32), done: false, col: G.K.walls[Math.floor(Math.random() * G.K.walls.length)],
-    win: Math.random()};
-  if (G.th === 'sleigh') dashDeco(h);
-  G.houses.push(h);
-  G.nextX = h.x + w;
+// the page's side of the simulation's events: colours, decoration, effects and sounds (never back into the sim)
+function dashOn(G, type, a, b, c){
+  const K = G.K;
+  if (type === 'house'){ a.col = K.walls[Math.floor(Math.random() * K.walls.length)]; a.win = Math.random(); if (G.th === 'sleigh') dashDeco(a); return; }
+  if (type === 'coin'){ dashGlint(G, a.x, a.y, 6); S.dashCoin();
+    if (G.coinsN % 10 === 0) dashCelebrate(G, G.coinsN + ' ' + K.coins.toUpperCase(), G.coinsN % 50 ? 'SWEET!' : 'WHAT A HAUL!', G.coinsN % 50 ? 1 : 2); }
+  else if (type === 'ammo'){ dashGlint(G, a.x, a.y, 10); S.dashAmmo(); G.fx.push({k: 'txt', x: a.x, y: a.y - 12, t: 0, s: '+2 ' + K.ammos, c: '#fff'}); }
+  else if (type === 'star'){ dashGlint(G, a.x, a.y, 10); S.heal(); G.fx.push({k: 'txt', x: a.x, y: a.y - 12, t: 0, s: 'SHIELD', c: '#9be7ff'}); }
+  else if (type === 'deliver'){
+    const h = a, pts = b, ct = c;
+    G.fx.push({k: 'txt', x: h.x + h.cx + 9, y: ct - 14, t: 0, s: '+' + pts + (G.combo > 1 ? '  ×' + G.combo : ''), c: K.glow});
+    for (let i = 0; i < 10; i++) G.fx.push({k: 'spark', x: h.x + h.cx + 9, y: ct, vx: drand(-60, 60), vy: drand(-140, -40), t: 0, c: i % 2 ? K.glow : '#fff'});
+    S.dashGood(G.combo);
+    dashGlint(G, h.x + h.cx + 9, ct, 12);
+    if (G.delivered % 5 === 0) dashCelebrate(G, G.delivered + ' ' + K.ammos.toUpperCase() + ' DELIVERED', K.cheer, 2);
+    else if (G.combo === 5 && !G.maxShown){ G.maxShown = true; dashCelebrate(G, 'COMBO ×5', 'MAX COMBO!', 2); }
+  }
+  else if (type === 'waste'){ if (c > 1) G.fx.push({k: 'txt', x: DASH_PX, y: G.y - 30, t: 0, s: 'combo lost', c: '#ff8a80'}); G.fx.push({k: 'poof', x: a, y: b, t: 0}); }
+  else if (type === 'empty'){ G.fx.push({k: 'txt', x: DASH_PX, y: G.y - 26, t: 0, s: 'empty!', c: '#ff8a80'}); S.dashEmpty(); }
+  else if (type === 'drop') S.dashDrop();
+  else if (type === 'shieldhit') S.dashCrash(false);
+  else if (type === 'close'){ G.fx.push({k: 'txt', x: a + 10, y: b - 12, t: 0, s: '+' + c + ' CLOSE!', c: '#ffd54f'}); dashGlint(G, a, G.y, 8); S.dashClose(); }
+}
+// today's board as targets to beat during the run (other players' best runs, lowest first)
+function dashTargets(){
+  const B = DASH.board, rows = B && B.today ? B.today.top : [];
+  return rows.map((r, i) => ({name: r.name, score: r.score, rank: i + 1, you: !!r.you})).filter(r => !r.you).sort((a, b) => a.score - b.score);
 }
 /* Christmas dressing for a house (sleigh skin only, all drawn in dashDraw): a light string along the roof with
    its own blink pattern, icicles, a garland, and every window gets a role — lit, dark, a candle, a little tree,
@@ -4769,113 +4955,49 @@ function dashPress(G, on){
   if (on){
     S.unlock();
     const starting = G.state !== 'run';          // the tap that starts a run doesn't drop anything
-    if (G.state === 'ready' || G.state === 'pause'){ if (G.state === 'ready') dashBegin(G); G.state = 'run'; dashOverlay(G); }
-    else if (G.state === 'over'){ if (Date.now() - G.overAt < 700) return; dashReset(G); dashBegin(G); G.state = 'run'; dashOverlay(G); }
-    G.hold = true; G.downAt = performance.now(); G.startPress = starting;
+    if (G.state === 'ready' || G.state === 'pause'){ G.state = 'run'; dashOverlay(G); }
+    else if (G.state === 'over'){ if (Date.now() - G.overAt < 700) return; dashAgain(G); }
+    G.want = true; G.downAt = performance.now(); G.startPress = starting;
   } else {
-    if (G.hold && !G.startPress && G.state === 'run' && performance.now() - G.downAt < 180) dashDrop(G);
-    G.hold = false; G.startPress = false;
+    if (G.want && !G.startPress && G.state === 'run' && performance.now() - G.downAt < 180) G.pendingDrop = true;
+    G.want = false; G.startPress = false;
   }
 }
-function dashBegin(G){
-  G.startAt = Date.now();
-  if (dashCanPost()) api('/dash/start', {method: 'POST', body: {dog: {name: G.dog.name, token: tokenOf(G.dog) || null}}})
-    .then(r => r.ok ? r.json() : null).then(j => { if (j && DASH.g === G && !G.posted) G.runId = j.id; }).catch(() => {});
+// a run id + seed from the server: fetched for the ready screen, and the next one while the result card shows
+function dashFetchRun(G, next){
+  if (!dashCanPost()) return;
+  api('/dash/start', {method: 'POST', body: {dog: {name: G.dog.name, token: tokenOf(G.dog) || null}}})
+    .then(r => r.ok ? r.json() : null).then(j => {
+      if (!j || DASH.g !== G || !(j.seed >= 0)) return;
+      if (next) G.next = {id: j.id, seed: j.seed};
+      else if (G.state === 'ready'){ dashReset(G, j.seed); G.runId = j.id; G.runSeed = j.seed; }
+    }).catch(() => {});
 }
-function dashDrop(G){
-  const now = performance.now();
-  if (now - G.lastDrop < 220) return;
-  if (G.ammo <= 0){ G.fx.push({k: 'txt', x: DASH_PX, y: G.y - 26, t: 0, s: 'empty!', c: '#ff8a80'}); S.dashEmpty(); return; }
-  G.lastDrop = now; G.ammo--;
-  G.gifts.push({x: DASH_PX + 4, y: G.y + 8, vy: Math.max(-40, G.vy * .3)});
-  S.dashDrop();
+function dashAgain(G){
+  const n = G.next; G.next = null;
+  dashReset(G, n ? n.seed : null);
+  if (n){ G.runId = n.id; G.runSeed = n.seed; }
+  G.state = 'run'; dashOverlay(G);
 }
-// points: distance / 10 + 25 × combo per delivery (combo up to 5) + 5 per pickup — the server caps 260 per second
+function dashDrop(G){ G.pendingDrop = true; }
+// one frame: the simulation runs in fixed ticks and records every input change at the tick it takes effect
 function dashStep(G, dt){
-  G.t += dt; G.ms += dt * 1000;
-  G.v = Math.min(420, 150 + 4.2 * G.t);
-  const dx = G.v * dt;
-  G.dist += dx;
-  G.vy += (G.hold ? -1050 : 820) * dt;
-  G.vy = Math.max(-300, Math.min(340, G.vy));
-  G.y += G.vy * dt;
-  if (G.y < 16){ G.y = 16; G.vy = Math.max(0, G.vy); }
-  if (G.blink > 0) G.blink -= dt;
-  for (const h of G.houses) h.x -= dx;
-  G.nextX -= dx;
-  while (G.nextX < DASH_W + 200) dashHouse(G, G.t < 3);
-  G.houses = G.houses.filter(h => h.x + h.w > -10);
-  // spawns
-  if ((G.nextCoin -= dt) <= 0){
-    G.nextCoin = drand(1.1, 1.9);
-    const n = 3 + Math.floor(Math.random() * 3), y0 = drand(36, 140), arc = Math.random() < .5;
-    for (let i = 0; i < n; i++) G.items.push({k: 'coin', x: DASH_W + 20 + i * 22, y: y0 - (arc ? Math.sin(i / (n - 1) * Math.PI) * 24 : 0)});
+  G.acc = Math.min(G.acc + dt, .25);
+  while (G.acc >= DASH_TICK && !G.over){
+    G.acc -= DASH_TICK;
+    const next = G.tick + 1;
+    if (G.want !== G.recHold){ G.inp.push(next, G.want ? 1 : 0); G.recHold = G.want; }
+    let drop = false;
+    if (G.pendingDrop){ G.pendingDrop = false; drop = true; G.inp.push(next, 2); }
+    dashSimStep(G, G.want, drop);
   }
-  if ((G.nextAmmo -= dt) <= 0){ G.nextAmmo = drand(3.5, 5); G.items.push({k: 'ammo', x: DASH_W + 20, y: drand(40, 135), p: Math.random() * 6}); }
-  if ((G.nextStar -= dt) <= 0){ G.nextStar = drand(20, 30); if (!G.shield) G.items.push({k: 'star', x: DASH_W + 20, y: drand(40, 120), p: 0}); }
-  if (G.t > 7 && (G.nextFoe -= dt) <= 0){
-    G.nextFoe = Math.max(1.3, drand(2.6, 4.6) - G.t * .03);
-    G.foes.push({x: DASH_W + 20, y0: drand(34, 150), y: 0, p: Math.random() * 6, v: drand(30, 70), r: Math.random() * 6});
-  }
-  for (const it of G.items){ it.x -= dx; if (it.p != null) it.p += dt * 4; }
-  for (const f of G.foes){ f.x -= dx + f.v * dt; f.p += dt * 5; f.r += dt * 2; f.y = f.y0 + Math.sin(f.p * .6) * 12; }
-  G.items = G.items.filter(it => it.x > -20 && !it.got);
-  G.foes = G.foes.filter(f => f.x > -30);
-  // the dog's box
-  const bx = DASH_PX - 18, by = G.y - 9, bw = 36, bh = 17;
-  const hit = (x, y, w, h) => bx < x + w && bx + bw > x && by < y + h && by + bh > y;
-  for (const it of G.items){
-    if (Math.abs(it.x - DASH_PX) < 20 && Math.abs(it.y - G.y) < 18){
-      it.got = true;
-      dashGlint(G, it.x, it.y, it.k === 'coin' ? 6 : 10);
-      if (it.k === 'coin'){ G.score += 5; G.coinsN++; S.dashCoin();
-        if (G.coinsN % 10 === 0) dashCelebrate(G, G.coinsN + ' ' + G.K.coins.toUpperCase(), G.coinsN % 50 ? 'SWEET!' : 'WHAT A HAUL!', G.coinsN % 50 ? 1 : 2); }
-      else if (it.k === 'ammo'){ G.ammo = Math.min(9, G.ammo + 2); G.score += 5; S.dashAmmo(); G.fx.push({k: 'txt', x: it.x, y: it.y - 12, t: 0, s: '+2 ' + G.K.ammos, c: '#fff'}); }
-      else { G.shield = true; S.heal(); G.fx.push({k: 'txt', x: it.x, y: it.y - 12, t: 0, s: 'SHIELD', c: '#9be7ff'}); }
-    }
-  }
-  let crash = G.y > DASH_H - 6;
-  for (const h of G.houses){
-    if (h.x > DASH_PX + 40 || h.x + h.w < DASH_PX - 40) continue;
-    if (hit(h.x, h.top, h.w, DASH_H - h.top) || hit(h.x + h.cx, h.top - h.ch, h.cw, h.ch)) crash = crash || h;
-  }
-  for (const f of G.foes) if (Math.abs(f.x - DASH_PX) < 20 && Math.abs(f.y - G.y) < 14) crash = crash || f;
-  // gifts fall straight down on screen (they keep the sleigh's speed) into the chimney passing below
-  for (const g of G.gifts){
-    const y0 = g.y;
-    g.vy += 900 * dt; g.y += g.vy * dt;
-    if (g.y > DASH_H + 10){ g.gone = true; continue; }
-    for (const h of G.houses){
-      if (g.x < h.x - 4 || g.x > h.x + h.w + 4) continue;
-      const ct = h.top - h.ch, inCh = g.x >= h.x + h.cx - 4 && g.x <= h.x + h.cx + h.cw + 4;
-      if (inCh && y0 <= ct && g.y >= ct){
-        g.gone = true;
-        if (h.wants && !h.done){
-          h.done = true; G.combo = Math.min(5, G.combo + 1); G.delivered++;
-          const pts = 25 * G.combo; G.score += pts;
-          G.fx.push({k: 'txt', x: h.x + h.cx + 9, y: ct - 14, t: 0, s: '+' + pts + (G.combo > 1 ? '  ×' + G.combo : ''), c: G.K.glow});
-          for (let i = 0; i < 10; i++) G.fx.push({k: 'spark', x: h.x + h.cx + 9, y: ct, vx: drand(-60, 60), vy: drand(-140, -40), t: 0, c: i % 2 ? G.K.glow : '#fff'});
-          S.dashGood(G.combo);
-          dashGlint(G, h.x + h.cx + 9, ct, 12);
-          if (G.delivered % 5 === 0) dashCelebrate(G, G.delivered + ' ' + G.K.ammos.toUpperCase() + ' DELIVERED', G.K.cheer, 2);
-          else if (G.combo === 5 && pts === 125 && !G.maxShown){ G.maxShown = true; dashCelebrate(G, 'COMBO ×5', 'MAX COMBO!', 2); }
-        } else { dashComboLost(G); G.fx.push({k: 'poof', x: g.x, y: ct, t: 0}); }
-        break;
-      }
-      if (!inCh && g.y >= h.top && y0 < h.top + 4){ g.gone = true; dashComboLost(G); G.fx.push({k: 'poof', x: g.x, y: h.top, t: 0}); break; }
-    }
-  }
-  G.gifts = G.gifts.filter(g => !g.gone);
-  if (crash){
-    const bounce = () => { if (crash === true){ G.y = DASH_H - 8; G.vy = -240; }
-      else if (crash.y0 != null) crash.x = -99;     // knocked away
-      else { G.vy = -260; G.y = Math.max(16, Math.min(G.y, crash.top - crash.ch - 22)); } };
-    if (G.blink > 0) bounce();
-    else if (G.shield){ G.shield = false; G.blink = 1.2; S.dashCrash(false); bounce(); }
-    else return dashOver(G);
-  }
-  G.score += Math.floor(G.dist / 10) - (G.distPts || 0); G.distPts = Math.floor(G.dist / 10);
+  G.ms = G.tick * DASH_TICK * 1000;
+  if (G.over) return dashOver(G);
   while (G.score >= dashScoreMs(G.msN)){ const v = dashScoreMs(G.msN++); dashCelebrate(G, v.toLocaleString() + ' POINTS', v >= 5000 ? 'LEGENDARY!' : v >= 2000 ? 'AMAZING!' : v >= 1000 ? 'GREAT!' : 'NICE!', v >= 1000 ? 2 : 1); }
+  while (G.targets.length && G.score > G.targets[0].score){   // overtaking someone on today's board
+    const t = G.targets.shift(); G.passedN++;
+    dashCelebrate(G, 'PASSED ' + t.name.toUpperCase().slice(0, 14), G.targets.length ? 'NOW #' + (t.rank) + ' TODAY' : '#1 TODAY!', G.targets.length ? 1 : 2);
+  }
   if (G.glow > 0){                                 // glitter trail behind the sleigh after a milestone
     G.glow -= dt;
     for (let i = 0; i < 2; i++) G.fx.push({k: 'glit', x: DASH_PX - 18 + drand(-6, 10), y: G.y + drand(-14, 10), vx: -G.v * .6 + drand(-20, 20), vy: drand(-20, 30), t: 0, life: drand(.4, .8), c: DASH_GLITTER[Math.floor(Math.random() * DASH_GLITTER.length)], p: Math.random() * 6, s: Math.random() < .25 ? 2 : 1});
@@ -4902,13 +5024,9 @@ function dashCelebrate(G, title, sub, lvl){
   G.glow = Math.max(G.glow, lvl > 1 ? 3 : 2); G.flash = lvl > 1 ? .5 : .3;
   S.dashJingle(lvl > 1);
 }
-function dashComboLost(G){
-  if (G.combo > 1) G.fx.push({k: 'txt', x: DASH_PX, y: G.y - 30, t: 0, s: 'combo lost', c: '#ff8a80'});
-  G.combo = 0;
-}
 function dashIdle(G, dt){
   G.t0 = (G.t0 || 0) + dt;
-  if (G.state === 'ready') G.y = 120 + Math.sin(G.t0 * 2.4) * 8;
+  if (G.state === 'ready') G.bob = Math.sin(G.t0 * 2.4) * 8;   // only drawn — the sim's y stays put
   dashFx(G, dt);
 }
 function dashFx(G, dt){
@@ -4935,7 +5053,7 @@ function dashOver(G){
   S.dashCrash(true);
   for (let i = 0; i < 18; i++) G.fx.push({k: 'spark', x: DASH_PX, y: G.y, vx: drand(-120, 120), vy: drand(-200, 0), t: 0, c: i % 3 ? '#ffb74d' : '#fff'});
   const sv = dashSave(), score = Math.floor(G.score);
-  const before = Math.max(sv.best, (DASH.board && DASH.board.mine && DASH.board.mine.best) || 0);
+  const before = Math.max(sv.best, (DASH.board && DASH.board.today && DASH.board.today.mine && DASH.board.today.mine.best) || 0);
   G.pb = score > before; sv.best = Math.max(sv.best, score); sv.runs++;
   // bond XP for an own dog, signed in only
   if (dashCanPost() && !G.dog.borrowed && OWNED && OWNED.some(f => f.id === G.dog.id)){
@@ -4944,9 +5062,14 @@ function dashOver(G){
   }
   SAVE.save();
   if (G.pb && score > 0) S.win();
+  if (!(G.runId && G.runSeed === G.seed)) G.runId = null;   // no server seed in time: a run for fun only
   dashOverlay(G);
-  if (G.runId) api('/dash/end', {method: 'POST', body: {id: G.runId, score, ms: Math.round(G.ms), gifts: G.delivered}})
-    .then(r => r.json()).then(j => { G.posted = j; DASH.board = null; dashLoad(); if (DASH.g === G) dashOverlay(G); }).catch(() => {});
+  if (G.runId){
+    const d = []; for (let i = 0, t = 0; i < G.inp.length; i += 2){ d.push(G.inp[i] - t, G.inp[i + 1]); t = G.inp[i]; }   // ticks as deltas
+    api('/dash/end', {method: 'POST', body: {id: G.runId, score, ticks: G.tick, w: DASH_W, inp: d}})
+      .then(r => r.json()).then(j => { G.posted = j; dashLoad(true); if (DASH.g === G) dashOverlay(G); }).catch(() => { G.posted = {error: 'offline'}; if (DASH.g === G) dashOverlay(G); });
+  }
+  dashFetchRun(G, true);
 }
 function dashOverlay(G){
   const ov = document.getElementById('dashOv'); if (!ov) return;
@@ -4960,18 +5083,18 @@ function dashOverlay(G){
     return;
   }
   const P = G.posted, sv = dashSave(), score = Math.floor(G.score), best = Math.max(sv.best, P && P.best || 0);
-  const post = !dashCanPost() ? '<p class="mini2">Sign in to put your runs on the weekly board.</p>'
-    : !G.runId ? '<p class="mini2">The board was not reachable — this run stays on this device.</p>'
-    : !P ? '<p class="mini2">Sending to the board…</p>'
-    : P.error ? '<p class="mini2">The board did not take this run.</p>'
-    : `<p class="mini2">${P.pb ? '🏅 New best this week! ' : ''}Weekly board: <b>#${P.rank}</b> of ${P.players} · best ${P.best.toLocaleString()}</p>`;
+  const post = !dashCanPost() ? '<p class="mini2">Sign in to put your runs on the daily ranking.</p>'
+    : !G.runId ? '<p class="mini2">The server was not reachable — this run counts for fun only.</p>'
+    : !P ? '<p class="mini2">The server checks your run…</p>'
+    : P.error ? `<p class="mini2">The server did not take this run${P.error === 'desync' ? ' (it played out differently there — a hiccup, not your fault)' : ''}.</p>`
+    : `<p class="mini2">${P.pb ? '🏅 New best today! ' : ''}Today: <b>#${P.rank}</b> of ${P.players} · your best ${P.best.toLocaleString()}${P.total != null ? ` · Advent total <b>${P.total.toLocaleString()}</b> (#${P.totalRank})` : ''}</p>`;
   ov.innerHTML = `<div class="dashcard"><div class="dashtitle sm">${G.pb ? '🏅 NEW BEST!' : 'CRASH!'}</div>
     <p class="big">${score.toLocaleString()}</p>
     <p>${G.delivered} ${K.ammos} delivered · ${G.coinsN} ${K.coins} · ${Math.round(G.ms / 1000)} s · best ${best.toLocaleString()}</p>
     ${G.xp ? `<p class="mini2">${esc(G.dog.name)} +${G.xp} bond XP${G.ups && G.ups.length ? ` · reached Bond ${G.ups[G.ups.length - 1]}!` : ''}</p>` : ''}
     ${post}
     <div class="dashrow"><button id="dashAgain" class="dashgo">↻ AGAIN</button><button id="dashBack" class="sm">Hangar</button></div></div>`;
-  document.getElementById('dashAgain').onclick = e => { e.stopPropagation(); if (Date.now() - G.overAt < 400) return; S.click(); dashPress(G, true); dashPress(G, false); G.hold = false; };
+  document.getElementById('dashAgain').onclick = e => { e.stopPropagation(); if (Date.now() - G.overAt < 400) return; S.click(); dashPress(G, true); dashPress(G, false); };
   document.getElementById('dashBack').onclick = e => { e.stopPropagation(); S.click(); dashQuit(); };
 }
 function dashStop(){
@@ -5141,7 +5264,7 @@ function dashDraw(G){
   // where a drop falls: straight down from the sleigh
   if (G.state === 'run' && G.ammo > 0){ c.fillStyle = 'rgba(255,255,255,.18)'; for (let yy = Math.round(G.y) + 16; yy < H; yy += 8) c.fillRect(DASH_PX + 3, yy, 2, 3); }
   // the pilot
-  if (G.state !== 'over' || Math.floor(T * 10) % 2) dashPilot(G, c, DASH_PX, Math.round(G.y), rocket, T);
+  if (G.state !== 'over' || Math.floor(T * 10) % 2) dashPilot(G, c, DASH_PX, Math.round(G.y + (G.state === 'ready' ? G.bob || 0 : 0)), rocket, T);
   // milestone shimmer + banner
   if (G.flash > 0){
     const sh = c.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, W * .7);
@@ -5166,10 +5289,13 @@ function dashDraw(G){
   }
   // HUD
   c.textAlign = 'left'; c.font = '10px "Press Start 2P", monospace';
-  c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(6, 6, 150, 34);
+  const tg = G.targets && G.targets[0];
+  c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(6, 6, 150, tg || G.passedN ? 46 : 34);
   c.fillStyle = G.glow > 0 && Math.floor(T * 8) % 2 ? '#ffd54f' : '#fff'; c.fillText(String(Math.floor(G.score)).padStart(6, '0'), 12, 21);
   c.font = '8px "Press Start 2P", monospace';
   c.fillStyle = G.combo > 1 ? K.glow : 'rgba(255,255,255,.55)'; c.fillText('COMBO ×' + Math.max(1, G.combo), 12, 34);
+  if (tg){ c.fillStyle = '#9be7ff'; c.fillText('#' + tg.rank + ' ▸ ' + tg.score.toLocaleString(), 12, 46); }
+  else if (G.passedN){ c.fillStyle = '#ffd54f'; c.fillText('#1 TODAY!', 12, 46); }
   c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(W - 128, 6, 122, 22);
   for (let i = 0; i < 9; i++){ c.globalAlpha = i < G.ammo ? 1 : .22; dashAmmoSprite(c, W - 120 + i * 13, 17, rocket, true); }
   c.globalAlpha = 1;

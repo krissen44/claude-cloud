@@ -56,3 +56,21 @@ export function loadEngine(htmlPath) {
     },
   };
 }
+
+/**
+ * Scrappy Dash on the server: the //@dash section of public/index.html (the run's simulation — fixed ticks, seeded
+ * dice) in a sandbox, so a run can be replayed from its seed and the player's inputs and its score checked.
+ */
+export function loadDash(htmlPath) {
+  const html = fs.readFileSync(htmlPath, "utf8");
+  const parts = [...html.matchAll(/\/\/@dash[^\n]*\n([\s\S]*?)\/\/@\/dash/g)].map(m => m[1]);
+  if (!parts.length) throw new Error(`dash section missing in ${htmlPath}`);
+  const api = vm.runInContext(parts.join("\n") + "\n({ dashReplay })", vm.createContext({}), { filename: "dash (public/index.html)" });
+  return {
+    /** → {score, ticks, over, delivered, coins, close} */
+    replay: (seed, W, PX, inp, maxTicks) => {
+      const r = api.dashReplay(seed, W, PX, inp, maxTicks);
+      return { score: r.score, ticks: r.ticks, over: r.over, delivered: r.delivered, coins: r.coins, close: r.close };
+    },
+  };
+}
