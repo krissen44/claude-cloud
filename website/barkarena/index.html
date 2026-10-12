@@ -288,7 +288,7 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
   <section id="dash">
     <p class="kicker">New mini game · free</p>
     <h2 id="dashH">🛷 Scrappy Sleigh Dash</h2>
-    <p class="lead" id="dashLead">Your Scrappy flies a sleigh over the snowy roofs. One button: <b>hold</b> to climb, let go to sink, a <b>quick tap</b> drops a gift. Hit the glowing chimneys for a combo up to ×5, dodge tall chimneys and crows — it gets faster every second. Runs last 30–90 seconds, no tickets, play as often as you like. The best run of the week counts.</p>
+    <p class="lead" id="dashLead">Your Scrappy flies a sleigh over the snowy roofs. One button: <b>hold</b> to climb, let go to sink, a <b>quick tap</b> drops a gift. Hit the glowing chimneys for a combo up to ×5, dodge tall chimneys and crows (snow owls hunt anyone hiding at the top) — it gets faster every second. Runs last 30–90 seconds, no tickets, play as often as you like. The best run of the week counts.</p>
     <p class="lead" id="dashAdv" hidden></p>
     <div class="card" id="dashPrizeCard" style="margin-top:16px" hidden>
       <div id="dashToday"></div>
@@ -558,7 +558,7 @@ function claimPrize(key, place, token){
     if (d.theme === "rocket"){
       document.getElementById("dashH").textContent = "🚀 Scrappy Rocket Dash";
       document.getElementById("dashToc").textContent = "🚀 Dash";
-      document.getElementById("dashLead").innerHTML = "Your Scrappy flies a rocket to the moon. One button: <b>hold</b> to climb, let go to sink, a <b>quick tap</b> drops a bone. Hit the glowing moon-base hatches for a combo up to ×5, grab bones and $SCRAP coins, dodge antenna towers and asteroids — it gets faster every second. Runs last 30–90 seconds, no tickets, play as often as you like. The best run of the week counts.";
+      document.getElementById("dashLead").innerHTML = "Your Scrappy flies a rocket to the moon. One button: <b>hold</b> to climb, let go to sink, a <b>quick tap</b> drops a bone. Hit the glowing moon-base hatches for a combo up to ×5, grab bones and $SCRAP coins, dodge antenna towers and asteroids (comets hunt anyone hiding at the top) — it gets faster every second. Runs last 30–90 seconds, no tickets, play as often as you like. The best run of the week counts.";
     }
     var list = function(rows, empty){ rows = (rows || []).slice(0, 5); return rows.length ? '<ol>' + rows.map(function(r, i){
       return '<li><span class="rk">' + (["🥇","🥈","🥉"][i] || (i + 1) + ".") + '</span><span>' + esc(r.name) + (r.team ? ' <small class="team">TEAM</small>' : '') + '</span><b>' + Number(r.score).toLocaleString() + '</b></li>'; }).join("") + '</ol>'

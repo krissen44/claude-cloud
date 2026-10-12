@@ -138,6 +138,18 @@ await p.click("#dashBack");
 ok(await p.evaluate(() => !DASH.g && tab === "dash") && await p.locator(".dashhero").count() === 1, "back to the hangar");
 await p.screenshot({path: S + "/shots/dash-hangar2.png", fullPage: true});
 ok(p.errs.length === 0, "no page errors " + p.errs.join(" | "));
+// hugging the top is no safe lane: snow owls sweep the sky, the run ends quickly — and the server agrees
+await p.click("#dashGo");
+await p.waitForFunction(() => DASH.g && DASH.g.runId && DASH.g.runSeed === DASH.g.seed, null, {timeout: 10000});
+await p.locator("#dashCv").dispatchEvent("pointerdown", {button: 0}); await p.locator("#dashCv").dispatchEvent("pointerup");
+await p.evaluate(() => { window.__bot = setInterval(() => { const G = DASH.g; if (G && G.state === "run") G.want = G.y > 18; }, 16); });
+await p.waitForFunction(() => DASH.g && DASH.g.foes.some(f => f.sky && f.x < DASH_W - 40), null, {timeout: 20000});
+await p.screenshot({path: S + "/shots/dash-skyhawk.png"});
+await p.waitForFunction(() => DASH.g && DASH.g.state === "over" && DASH.g.posted, null, {timeout: 40000});
+const camp = await p.evaluate(() => ({t: DASH.g.t, posted: DASH.g.posted}));
+await p.evaluate(() => clearInterval(window.__bot));
+ok(camp.t < 25 && camp.posted.ok, `camping at the top ends after ${camp.t.toFixed(1)} s, replayed by the server (${camp.posted.raw})`);
+await p.click("#dashBack");
 // phone width (340 field) + rocket skin: the replay matches there too
 const q = await page({width: 390, height: 844}, "/dash?dash=rocket", B);
 await q.screenshot({path: S + "/shots/dash-rocket-hangar.png", fullPage: true});

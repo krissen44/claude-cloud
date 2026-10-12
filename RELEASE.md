@@ -52,7 +52,12 @@ its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on Gi
   Scrappy (its NFT picture) flies a sleigh over snowy night roofs. **Hold** = climb, let go = sink, **quick tap** (< 0.18 s)
   = drop a gift. A gift that falls into a **glowing chimney** scores 25 × combo (combo up to ×5); a gift on a roof or a
   wrong chimney breaks the combo. Pick up gift boxes (+2 gifts, max 9), candy canes (+5) and a rare ❄ shield (one free
-  crash). Tall chimneys, roofs and (from 7 s) crows end the run. Speed 150 → 420 px/s (+4.2/s), so a run lasts about
+  crash). Tall chimneys, roofs and (from 7 s) crows end the run.
+  **No safe lane at the top (owner's playtest, 12 Oct):** flying along the upper edge farmed points almost risk-free
+  (a bot hugging the top survived 72 s / 2,242 pts vs 20 s / 508 for normal play). Now time spent above y 70 builds up
+  `hi`: more crows come in at the sleigh's own height, and **snow owls** (rocket: comets) sweep the top band fast, with a
+  blinking ❗ at the edge first and a one-time "SNOW OWL! — the sky isn't safe" note. Hugging the top now ends in
+  ~11 s (~190 pts); normal play is unchanged. Test `tools/test/dash-camp.mjs` + a camping run in `dash.mjs`. Speed 150 → 420 px/s (+4.2/s), so a run lasts about
   30–90 s. Score = distance/10 + deliveries + pickups. Keys: Space/↑ hold, ↓ drop, Esc quit. Phones get a taller field.
 - **Christmas look (owner: "more decoration, blinking lights, more life"):** every house gets its own dressing —
   light strings along the roof (chase / blink / twinkle, four colour sets), icicles, garlands, wreaths on the wall,

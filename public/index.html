@@ -4625,7 +4625,7 @@ function dashInit(s, seed, W, PX, ev){
   Object.assign(s, {seed: seed >>> 0, W, PX, rnd: dashRng(seed), ev: ev || null, tick: 0, t: 0, dist: 0, v: 150, y: 120, vy: 0,
     hold: false, ammo: 3, score: 0, combo: 0, delivered: 0, coinsN: 0, close: 0, shield: false, blink: 0,
     houses: [], gifts: [], items: [], foes: [], nextX: 0, distPts: 0, nextCoin: 1.2, nextAmmo: 3.5, nextFoe: 6, nextStar: 22,
-    lastDrop: -99, over: false});
+    lastDrop: -99, over: false, hi: 0, nextSky: 4});
   while (s.nextX < W + 200) dashHouseNew(s, true);
   return s;
 }
@@ -4661,6 +4661,9 @@ function dashSimStep(s, hold, drop){
   s.y += s.vy * dt;
   if (s.y < 16){ s.y = 16; s.vy = Math.max(0, s.vy); }
   if (s.blink > 0) s.blink -= dt;
+  // the sky is not a safe lane: time spent hugging the top (above y 70) builds up `hi`, and the more of it, the more
+  // foes come in at the sleigh's own height and the sooner "sky hawks" sweep the top band
+  s.hi = s.y < 70 ? Math.min(8, s.hi + dt) : Math.max(0, s.hi - dt * 1.5);
   for (const h of s.houses) h.x -= dx;
   s.nextX -= dx;
   while (s.nextX < W + 200) dashHouseNew(s, s.t < 3);
@@ -4673,8 +4676,15 @@ function dashSimStep(s, hold, drop){
   if ((s.nextAmmo -= dt) <= 0){ s.nextAmmo = dashR(s, 3.5, 5); s.items.push({k: 'ammo', x: W + 20, y: dashR(s, 40, 135), p: s.rnd() * 6}); }
   if ((s.nextStar -= dt) <= 0){ s.nextStar = dashR(s, 20, 30); if (!s.shield) s.items.push({k: 'star', x: W + 20, y: dashR(s, 40, 120), p: 0}); }
   if (s.t > 7 && (s.nextFoe -= dt) <= 0){
-    s.nextFoe = Math.max(1.3, dashR(s, 2.6, 4.6) - s.t * .03);
-    s.foes.push({x: W + 20, y0: dashR(s, 34, 150), y: 0, p: s.rnd() * 6, v: dashR(s, 30, 75), r: s.rnd() * 6, gap: 99, passed: false});
+    s.nextFoe = Math.max(1.3, dashR(s, 2.6, 4.6) - s.t * .03) / (1 + s.hi * .12);
+    const aim = s.rnd() < .25 + s.hi * .08, ay = Math.max(22, Math.min(150, s.y + dashR(s, -8, 8)));
+    s.foes.push({x: W + 20, y0: aim ? ay : dashR(s, 34, 150), y: 0, p: s.rnd() * 6, v: dashR(s, 30, 75), r: s.rnd() * 6, gap: 99, passed: false});
+  }
+  // sky hawk: a fast foe along the very top, only for a sleigh that has been up there for a while
+  if (s.t > 5 && s.hi > 1.5 && (s.nextSky -= dt) <= 0){
+    s.nextSky = Math.max(1.4, dashR(s, 3, 5) - s.hi * .3);
+    const f = {x: W + 140, y0: dashR(s, 22, 40), y: 0, p: s.rnd() * 6, v: dashR(s, 110, 150), r: s.rnd() * 6, gap: 99, passed: false, sky: true};
+    s.foes.push(f); ev('sky', f);
   }
   for (const it of s.items){ it.x -= dx; if (it.p != null) it.p += dt * 4; }
   for (const f of s.foes){ f.x -= dx + f.v * dt; f.p += dt * 5; f.r += dt * 2; f.y = f.y0 + dashTri(f.p * .5) * 12; }
@@ -4767,11 +4777,11 @@ const dashFinal = G => Math.floor(G.score * (100 + (G.bonus || 0)) / 100);
 const DASH = {board: null, loading: false, dog: lsGet('ba_dashdog'), g: null};
 const DASH_SKIN = {
   sleigh: {title: 'SLEIGH DASH', icon: '🛷', ammo: 'gift', ammos: 'gifts', coin: 'candy cane', coins: 'candy canes',
-    cheer: 'HO HO HO!', target: 'glowing chimneys', obst: 'tall chimneys', foe: 'crows', where: 'over the snowy roofs',
+    cheer: 'HO HO HO!', target: 'glowing chimneys', obst: 'tall chimneys', foe: 'crows', hawk: 'SNOW OWL', where: 'over the snowy roofs',
     sky: ['#0b1634', '#24386b'], far: '#1a2a52', near: '#22335f', walls: ['#b5523b', '#3f7f86', '#d9c9a3', '#7a5c9e', '#c27b3a'],
     roof: '#eef6ff', stack: '#8c3b2c', glow: '#ffd75a'},
   rocket: {title: 'ROCKET DASH', icon: '🚀', ammo: 'bone', ammos: 'bones', coin: '$SCRAP coin', coins: '$SCRAP coins',
-    cheer: 'TO THE MOON!', target: 'glowing hatches', obst: 'antenna towers', foe: 'asteroids', where: 'over the moon bases',
+    cheer: 'TO THE MOON!', target: 'glowing hatches', obst: 'antenna towers', foe: 'asteroids', hawk: 'COMET', where: 'over the moon bases',
     sky: ['#04050d', '#1c1440'], far: '#2a2550', near: '#3a3566', walls: ['#c9d1dc', '#9fb0c4', '#d8dee8', '#b6c2d3', '#aab6c8'],
     roof: '#7e8796', stack: '#6c7787', glow: '#5cff9a'}
 };
@@ -4840,7 +4850,7 @@ function dashView(){
       ${th === 'sleigh' ? '<i class="dashsnow" aria-hidden="true"></i><i class="dashmoon" aria-hidden="true"></i>' : ''}
       <div class="dashtitle">${K.icon} SCRAPPY<br>${K.title}</div>
       <p class="dashsub">Fly ${K.where}. <b>Hold</b> to climb · let go to sink · <b>quick tap</b> drops a ${K.ammo}.</p>
-      <p class="dashsub">Hit the ${K.target} for a combo (up to ×5), grab ${K.ammos} and ${K.coins}, dodge ${K.obst} and ${K.foe} — skim past them for a close-call bonus. It gets faster every second.</p>
+      <p class="dashsub">Hit the ${K.target} for a combo (up to ×5), grab ${K.ammos} and ${K.coins}, dodge ${K.obst} and ${K.foe} — skim past them for a close-call bonus. Hiding at the top? ${K.hawk[0] + K.hawk.slice(1).toLowerCase()}s hunt there. It gets faster every second.</p>
       <button id="dashGo" class="dashgo">▶ PLAY</button>
       <p class="dashsub" style="margin-top:10px">${tm && tm.best ? `Today: <b>${tm.best.toLocaleString()}</b> · #${tm.rank}` : `Best on this device: <b>${sv.best.toLocaleString()}</b>`}${om && om.total ? ` · Advent total <b>${om.total.toLocaleString()}</b> (#${om.rank})` : ''} · Free, no tickets — play as often as you like.</p>
     </div>
@@ -4916,7 +4926,7 @@ function dashSize(G){
   G.ctx.imageSmoothingEnabled = false;
 }
 function dashReset(G, seed){
-  Object.assign(G, {ms: 0, msN: 0, bq: [], banner: null, glow: 0, flash: 0, maxShown: false, fx: [], posted: null, xp: 0, ups: null,
+  Object.assign(G, {ms: 0, msN: 0, bq: [], banner: null, glow: 0, flash: 0, maxShown: false, skyShown: false, fx: [], posted: null, xp: 0, ups: null,
     acc: 0, want: false, pendingDrop: false, startPress: false, inp: [], recHold: false, runId: null, runSeed: null, passedN: 0, bonus: 0});
   dashInit(G, seed != null ? seed : (Math.random() * 4294967296) >>> 0, DASH_W, DASH_PX, (type, a, b, c) => dashOn(G, type, a, b, c));
   G.targets = dashTargets();
@@ -4942,6 +4952,7 @@ function dashOn(G, type, a, b, c){
   else if (type === 'empty'){ G.fx.push({k: 'txt', x: DASH_PX, y: G.y - 26, t: 0, s: 'empty!', c: '#ff8a80'}); S.dashEmpty(); }
   else if (type === 'drop') S.dashDrop();
   else if (type === 'shieldhit') S.dashCrash(false);
+  else if (type === 'sky'){ if (!G.skyShown){ G.skyShown = true; G.fx.push({k: 'txt', x: G.W - 120, y: 58, t: 0, s: K.hawk + '! — the sky isn\u2019t safe', c: '#ff8a80'}); } }
   else if (type === 'close'){ G.fx.push({k: 'txt', x: a + 10, y: b - 12, t: 0, s: '+' + c + ' CLOSE!', c: '#ffd54f'}); dashGlint(G, a, G.y, 8); S.dashClose(); }
 }
 // today's board as targets to beat during the run (other players' best runs, lowest first)
@@ -5303,6 +5314,23 @@ function dashDraw(G){
   // foes
   for (const f of G.foes){
     const x = Math.round(f.x), y = Math.round(f.y);
+    if (f.sky && x > G.W - 4){       // incoming along the top: a blinking warning at the edge first
+      if (Math.floor(T * 8) % 2){ c.fillStyle = '#ff5252'; c.fillRect(G.W - 12, y - 8, 4, 10); c.fillRect(G.W - 12, y + 5, 4, 4); }
+      continue;
+    }
+    if (f.sky){
+      c.globalAlpha = .35; c.fillStyle = rocket ? '#ffb74d' : '#e3f2fd';
+      for (let i = 1; i <= 3; i++) c.fillRect(x + 8 + i * 7, y - 2 + (i % 2), 6, 3);
+      c.globalAlpha = 1;
+      if (rocket){ c.fillStyle = '#ff7043'; c.beginPath(); c.arc(x, y, 8, 0, 7); c.fill(); c.fillStyle = '#ffe082'; c.fillRect(x - 3, y - 3, 5, 5); }
+      else {
+        const up = Math.floor(f.p * 3) % 2;
+        c.fillStyle = '#121620'; c.fillRect(x - 9, y - 5, 18, 11); c.fillRect(x - 4, y - (up ? 12 : -4), 10, 8);
+        c.fillStyle = '#f5f7fb'; c.fillRect(x - 8, y - 4, 16, 9); c.fillRect(x - 3, y - (up ? 11 : -5), 8, 6);
+        c.fillStyle = '#ffb300'; c.fillRect(x - 11, y - 1, 3, 2); c.fillStyle = '#121620'; c.fillRect(x - 6, y - 2, 2, 2);
+      }
+      continue;
+    }
     if (rocket){
       c.fillStyle = '#7a6a5a'; c.beginPath(); c.arc(x, y, 11, 0, 7); c.fill();
       c.fillStyle = '#5d4f42'; c.fillRect(x - 5 + Math.round(Math.cos(f.r) * 3), y - 4, 4, 4); c.fillRect(x + 2, y + 2 + Math.round(Math.sin(f.r) * 2), 3, 3);

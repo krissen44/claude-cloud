@@ -263,7 +263,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 - **Scrappy Dash (v33)**: tab `dash` (also path `/dash`), one-tap endless runner in a canvas (`DASH`, `dashView`, `dashPlay`,
   `dashStep`, `dashDraw`, `dashOver`; logical 480×300, 340×300 on phones). Hold = climb, tap < 180 ms = drop (`dashDrop`;
   the tap that starts a run never drops, `startPress`). Gifts keep the sleigh's speed (fall straight down on screen) into
-  glowing chimneys: 25 × combo (≤ 5); a wasted gift breaks the combo. Speed `150 + 4.2·t` (max 420). Free, no tickets;
+  glowing chimneys: 25 × combo (≤ 5); a wasted gift breaks the combo. Speed `150 + 4.2·t` (max 420). No safe lane at the top: `s.hi` (time above y 70) → more crows aimed at the sleigh's height + sky foes `f.sky` (snow owl / comet, `K.hawk`, ❗ warning at the edge) — balance check `node tools/test/dash-camp.mjs`. Free, no tickets;
   weekly board on the server; bond XP score/150 (≤ 15/run, ≤ 40/day, `SAVE.data.dash`, own dogs only). `menu()` returns
   early while a run is on screen (`DASH.g`). Skins `DASH_SKIN.sleigh|rocket`: rocket from `DASH_ROCKET_FROM` (27 Dec 2026,
   page + worker), env `DASH_THEME` overrides, `?dash=` previews. Sleigh dressing: `dashDeco` (per house: lights `DASH_BULBS`
