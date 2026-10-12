@@ -79,8 +79,10 @@ h1{font-family:'Press Start 2P',monospace;font-size:clamp(12px,3.2vw,18px);text-
 .fighter.taunt img{animation:tauntA .55s ease-in-out}
 @keyframes tauntA{0%,100%{transform:var(--flip,none) rotate(0)}25%{transform:var(--flip,none) rotate(-9deg)}60%{transform:var(--flip,none) rotate(9deg)}}
 .fighter.right.taunt img{--flip:scaleX(-1)}
-/* the white hit flash runs as its own short animation on the image (hitFlash in JS) — a filter switched on and off by
-   a class got stuck on iPhone Safari while the idle/guard animation ran, and the dog stayed white */
+/* the white hit flash is a separate white silhouette laid over the dog (hitFlash in JS: the sprite as mask) and removed
+   afterwards — any filter change on the sprite itself (class or Web Animation) could stick on iPhone Safari: white dog */
+.fighter .hitw{position:absolute;background:#fff;pointer-events:none;opacity:0;-webkit-mask-size:100% 100%;mask-size:100% 100%;
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;animation:none!important}
 .fighter.hurt{animation:knock .3s}
 @keyframes knock{0%,100%{transform:translateX(0)}30%{transform:translateX(-11px)}65%{transform:translateX(7px)}}
 .fighter.faint img{filter:grayscale(1) brightness(.72);transform:rotate(-14deg) translateY(12px);animation:none;transition:all .6s}
@@ -202,7 +204,7 @@ canvas.fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 @keyframes dodgeA{0%,100%{transform:var(--flip,none)}40%{transform:var(--flip,none) translateX(-30px) translateY(-14px) rotate(-10deg)}}
 .fighter.charge img{animation:chargeA .52s ease-in-out}
 .fighter.right.charge img{--flip:scaleX(-1)}
-@keyframes chargeA{0%,100%{transform:var(--flip,none)}50%{transform:var(--flip,none) scale(1.06) translateY(-4px);filter:drop-shadow(0 0 12px #c9a2ff) brightness(1.35)}}
+@keyframes chargeA{0%,100%{transform:var(--flip,none)}50%{transform:var(--flip,none) scale(1.06) translateY(-4px)}}
 .fighter.cheer .shd{animation:shdJump .6s ease-in-out infinite}
 @keyframes shdJump{0%,100%{transform:scaleX(1)}50%{transform:scaleX(.7);opacity:.5}}
 
@@ -259,8 +261,8 @@ canvas.fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .fighter .mring{position:absolute;left:50%;bottom:-10px;width:150px;height:32px;margin-left:-75px;border-radius:50%;pointer-events:none;
   border:3px solid rgba(185,139,255,.85);box-shadow:0 0 18px rgba(185,139,255,.85),inset 0 0 14px rgba(111,195,255,.6);animation:mpulse 1.6s ease-in-out infinite}
 @keyframes mpulse{0%,100%{transform:scale(1);opacity:.75}50%{transform:scale(1.14);opacity:1}}
-.fighter.aura-leg:not(.hurt):not(.faint) img{filter:drop-shadow(0 0 9px rgba(255,200,60,.95)) drop-shadow(0 6px 0 rgba(0,0,0,.14))}
-.fighter.aura-myth:not(.hurt):not(.faint) img{filter:drop-shadow(0 0 9px rgba(185,139,255,.95)) drop-shadow(0 6px 0 rgba(0,0,0,.14))}
+.fighter.aura-leg:not(.faint) img{filter:drop-shadow(0 0 9px rgba(255,200,60,.95)) drop-shadow(0 6px 0 rgba(0,0,0,.14))}
+.fighter.aura-myth:not(.faint) img{filter:drop-shadow(0 0 9px rgba(185,139,255,.95)) drop-shadow(0 6px 0 rgba(0,0,0,.14))}
 .fighter.faint .lrays,.fighter.faint .mring{display:none}
 .banner.leg{color:#ffd54a;font-size:clamp(14px,3.6vw,22px);text-shadow:0 0 14px #ff9d00,3px 3px 0 #7a4a00}
 .banner.myth{color:#ead8ff;font-size:clamp(14px,3.6vw,22px);text-shadow:0 0 14px #b98bff,3px 3px 0 #3b1d6e}
@@ -3491,17 +3493,20 @@ function anim(side, cls, ms){
   if (!el) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); setTimeout(()=>el.classList.remove(cls), ms);
   if (cls === 'hurt') hitFlash(el, ms);
 }
-// the white flash when a dog takes damage: a Web Animation of the image's filter that ends on its normal filter, then a
-// forced repaint — WebKit (iPhone Safari) otherwise kept the flashed (white) picture after the flash was gone
+// the white flash when a dog takes damage: a white copy of the sprite's shape (the image as mask) fades out over the dog
+// and is removed. The sprite's own filter is never touched — on iPhone Safari a changed filter could stay: white dog
 function hitFlash(el, ms){
-  const img = el && el.querySelector('img'); if (!img) return;
-  const base = getComputedStyle(img).filter || 'none', white = 'brightness(4) saturate(0) drop-shadow(0 0 6px #fff)';
-  const done = () => { img.style.filter = 'none'; void img.offsetWidth; requestAnimationFrame(() => { img.style.filter = ''; }); };
-  if (!img.animate){ img.style.filter = white; setTimeout(done, ms); return; }
-  try {
-    const a = img.animate([{filter: white}, {filter: white, offset: .6}, {filter: base === 'none' ? 'brightness(1) saturate(1)' : base}], {duration: ms, easing: 'linear'});
-    a.onfinish = a.oncancel = done;
-  } catch(e){ done(); }
+  const img = el && el.querySelector('img'), src = img && (img.currentSrc || img.src); if (!src) return;
+  el.querySelectorAll('.hitw').forEach(n => n.remove());
+  const w = document.createElement('i'), m = 'url("' + src.replace(/"/g, '%22') + '")';
+  w.className = 'hitw';
+  w.style.cssText = `left:${img.offsetLeft}px;top:${img.offsetTop}px;width:${img.offsetWidth}px;height:${img.offsetHeight}px;`
+    + (el.classList.contains('right') ? 'transform:scaleX(-1);' : '');
+  w.style.webkitMaskImage = m; w.style.maskImage = m;
+  el.appendChild(w);
+  const kill = () => w.remove();
+  setTimeout(kill, ms + 100);
+  if (w.animate) w.animate([{opacity: .95}, {opacity: .95, offset: .45}, {opacity: 0}], {duration: ms, easing: 'linear'});
 }
 function setBars(){
   const st = document.querySelector('.stage'); if (!st) return;

@@ -4,7 +4,17 @@ Changes collect here during the week and go live together when the new week star
 Last version confirmed live: **game v31.2** (uploaded by the owner on 8 Oct 2026; includes the v31.1 ticket hotfix and
 its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on GitHub Actions, daily 05:10 UTC.
 
-## Hotfix v32.3 (12 Oct, upload right away, replaces v32.2): the bond fix didn't reach #3615 live
+## Hotfix v32.4 (12 Oct, upload right away, replaces v32.3): dogs still turned white on iPhone
+- **Bug:** the owner reports the white dog after a hit is still there with v32.2/v32.3. Changing the sprite's own
+  `filter` — by class (v32.1) or as a Web Animation (v32.2) — could stay stuck in iPhone Safari.
+- **Fix:** the sprite's filter is never changed during a fight any more. The hit flash is a separate white silhouette
+  (`.hitw`, the sprite image as CSS mask) laid over the dog, faded out in 0.3 s and removed (`hitFlash`). Also: the
+  Legendary/Mythic aura no longer switches filter on hurt (`:not(.hurt)` removed), the charge pose no longer animates a filter.
+- `bark-arena-game-v32.4-komplett.zip` = hotfix branch commit c8963bf (v32.1 + bond fix + this, no Dash). Test
+  `tools/test/hitflash.mjs` (desktop + phone width: silhouette aligned, sprite filter untouched, removed after rapid hits).
+  Not testable on real WebKit here — the owner checks on an iPhone. Same change in the v33 package.
+
+## Hotfix v32.3 (12 Oct, uploaded or superseded by v32.4): the bond fix didn't reach #3615 live
 - **Bug:** after v32.2 the owner's #3615 still showed Bond 1 in the new wallet. On sign-in the game uploads the save
   (`cloudPull` → `/api/save` → `bondRecord`) *before* the kennel loads, so the new wallet's Bond-1 save was recorded first
   and the scan of old saves never ran for that dog.

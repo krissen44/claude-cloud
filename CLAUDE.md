@@ -184,7 +184,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
   `club` (`clubMode`) — built in `scenery()` (CSS-animated DOM: birds, tufts, pennants SVG, crowd, spotlights, neon).
   The fx canvas (`fxInit(canvas, theme)`, `loop`, `drawMark`) draws particles, `marks` (ring, star, streak, wave,
   bubble, flash) and an ambient layer per theme. `play()` maps engine events to effects (`chomp`, `fxBubble`, `fxWave`
-  + `sayBubble`, `anim(..,'dodge'|'charge')`, `stageMood` for dusk/frenzy, `koFx` + `confetti` at the end). Never put
+  + `sayBubble`, `anim(..,'dodge'|'charge')`, `stageMood` for dusk/frenzy, `koFx` + `confetti` at the end). Hit flash = `hitFlash`: white `.hitw` overlay masked with the sprite, removed after; **never change the sprite's own `filter` in a fight** (stuck white dogs on iPhone Safari, v32.2–v32.4). Never put
   visuals inside the `//@engine` sections. `RM` = prefers-reduced-motion → no ambient, no shake.
   v28: bites use `lungeTo` (WAAPI, real distance, holds at the rival) + `lungeBack` on impact/miss/round end; jaws =
   SVG `chomp()`, `biteMarks()`, `comic()`. Abilities: `abStyle(ab)` maps ability id/effect to a style; `abCast` (on the
