@@ -4,6 +4,11 @@ Changes collect here during the week and go live together when the new week star
 Last version confirmed live: **game v31.2** (uploaded by the owner on 8 Oct 2026; includes the v31.1 ticket hotfix and
 its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on GitHub Actions, daily 05:10 UTC.
 
+## Hotfix v32.2 (12 Oct, owner may upload right away): v32.1 + the bond fix only, **no Scrappy Dash**
+- `bark-arena-game-v32.2-bondfix-komplett.zip` = commit 546417b (v32.1) + the bond-travels-with-the-NFT fix below
+  (local branch `hotfix/bond-carry`, commit 6415890). Contains no Dash code. Tested: `bond-transfer.mjs`, `market.mjs`.
+  The v33 package for Monday contains the same fix, so uploading the hotfix first changes nothing there.
+
 ## Fix (owner, 12 Oct): the bond level travels with the NFT — in the same package for Monday 19 Oct
 - **Bug:** the owner sent a Pixel Scrappy to another wallet and it arrived at Bond 1. A dog's training (bond level, XP,
   record, bond paths) lived only in the save of the wallet that trained it.
