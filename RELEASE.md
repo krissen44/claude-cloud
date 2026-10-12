@@ -4,6 +4,29 @@ Changes collect here during the week and go live together when the new week star
 Last version confirmed live: **game v31.2** (uploaded by the owner on 8 Oct 2026; includes the v31.1 ticket hotfix and
 its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on GitHub Actions, daily 05:10 UTC.
 
+## v33 — Scrappy Dash mini game · for Monday 19 Oct (built 12 Oct, owner's idea "Scrappy Sleigh Dash")
+- **New tab "🛷 Dash"** (also straight at `game.scrappyxrp.fun/dash`): a one-tap endless runner. The player's own
+  Scrappy (its NFT picture) flies a sleigh over snowy night roofs. **Hold** = climb, let go = sink, **quick tap** (< 0.18 s)
+  = drop a gift. A gift that falls into a **glowing chimney** scores 25 × combo (combo up to ×5); a gift on a roof or a
+  wrong chimney breaks the combo. Pick up gift boxes (+2 gifts, max 9), candy canes (+5) and a rare ❄ shield (one free
+  crash). Tall chimneys, roofs and (from 7 s) crows end the run. Speed 150 → 420 px/s (+4.2/s), so a run lasts about
+  30–90 s. Score = distance/10 + deliveries + pickups. Keys: Space/↑ hold, ↓ drop, Esc quit. Phones get a taller field.
+- **Free, unlimited, no tickets.** Signed-in runs go to a **weekly Dash board** (best run of the week, resets Monday
+  00:00 UTC, last week's top 3 shown). Guests/demo can play for fun. The dog earns a little **bond XP** (score ÷ 150, max
+  15 per run, 40 per day; own dogs only, not borrowed/demo). No ladder XP, no influence on fights' fairness.
+- **Anti-cheat (light):** `/api/dash/start` hands out a run id; `/api/dash/end` refuses a run longer than the time since
+  its start, a score above 260 points per second of play (+500), someone else's run id or a reused one.
+- **After Christmas it becomes "🚀 Rocket Dash"** automatically (from **27 Dec 2026 00:00 UTC**): same mechanics, rocket to
+  the moon, bones into glowing moon-base hatches, $SCRAP coins (only a picture — nothing is paid out), antenna towers
+  and asteroids. Env **`DASH_THEME=sleigh|rocket`** on Hostinger overrides the date (e.g. rocket until December, sleigh
+  from 1 Dec). Preview either skin with `?dash=rocket` / `?dash=sleigh`.
+- **Website** `/barkarena/`: section "🛷 Scrappy Sleigh Dash" with this week's top 5 (`/api/public/dash`, switches its
+  text to Rocket Dash with the server) + "▶ Play the Dash" button, TOC link.
+- Test: `tools/test/dash.mjs` (API checks, hangar, a bot run with deliveries, game over + board post + bond XP, Again,
+  rocket skin on a phone viewport).
+- Upload: full project ZIP `bark-arena-game-v33-komplett.zip` (Node.js app, "Neue Dateien hochladen"),
+  `scrappyxrp-website-v33.zip` → `public_html/` (replaces `barkarena/index.html`).
+
 ## v32.1 hotfix — upload right away (only `public/index.html`), fixes a live link
 - **Discord "▶️ Watch the fight" link (`/clip?id=…`) showed both dogs but never started.** The /clip page was built for
   the Shorts recorder, which starts playback itself (`CLIP.go()`). Now a person who opens the link gets a big

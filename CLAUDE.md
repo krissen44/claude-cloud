@@ -14,7 +14,7 @@ ZIP with only changed files ("Nicht unterstütztes Framework oder ungültige Pro
 | `server.js`, `worker.js`, `public/index.html`, `package.json` | **Bark Arena**, the Pixel Scrappy NFT fighting game | Hostinger Node.js app → `https://game.scrappyxrp.fun` |
 | `website/` | Pieces of the **scrappyxrp.fun** site (static files) | Hostinger `public_html/` |
 
-Git branches used so far: `claude/dreamy-pasteur-du9fm3` (up to v29), `claude/upbeat-hypatia-cht3ou` (v30+) — repo `krissen44/claude-cloud`.
+Git branches used so far: `claude/dreamy-pasteur-du9fm3` (up to v29), `claude/upbeat-hypatia-cht3ou` (v30+), `claude/kind-fermi-88buj2` (v33 Dash) — repo `krissen44/claude-cloud`.
 
 **Release rule (owner's decision):** changes are **not uploaded one by one**. They collect during the week and go live
 together at the **week roll (Monday 00:00 UTC)**. Record every change in `RELEASE.md` (what, why, upload steps) and
@@ -64,7 +64,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 
 ### Environment variables (Hostinger)
 `ISSUER=rGAVUGyhdbxQs1G7nwCCFU4w8P4HfgFKD6`, `TAXON=369` (empty/`*` = any taxon), `XUMM_API_KEY`, `XUMM_API_SECRET`,
-`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK_FIGHTS` (#fights) / `_STATS` (#arena-stats) / `_CLUB` (#search-arena-fight), fallback `DISCORD_WEBHOOK`, `DISCORD_CLIPS` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
+`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK_FIGHTS` (#fights) / `_STATS` (#arena-stats) / `_CLUB` (#search-arena-fight), fallback `DISCORD_WEBHOOK`, `DISCORD_CLIPS` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `DASH_THEME` (v33, sleigh|rocket), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
 `META_HOSTS`, `ORIGIN`, `PORT`.
 
 ### API (`/api/...`)
@@ -104,6 +104,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/ach` (GET; POST `{ids}`), `/ref` (GET; POST `{name}`) | ✔ | Achievements (server-only: podium, recruiter, bossfall) / invites |
 | `/admin/fair[?week=]` | `?key=ADMIN_KEY` | Claimed vs verified week per player, flags |
 | `/admin/clips` (GET list), `/admin/clips/upload?name=` (PUT), `/admin/clips/file?name=[&download]`, `/admin/clips/posted` / `delete` (POST) | `?key=ADMIN_KEY` | Shorts clips — **handled in `server.js`** (Node only, files in `DATA_DIR/clips`, kept 30 days) |
+| `/dash/start` (POST `{dog}`), `/dash/end` (POST `{id, score, ms, gifts}`), `/dash/board` (optional auth), `/public/dash` (–) | ✔ | Scrappy Dash (v33): run id → clock + score check (≤ 260/s + 500) → weekly best in blob `dash:<week>`; board top 10 + `mine` + last week's top 3, `theme` |
 | `/admin/export[?download=1]`, `/admin/csv` | `?key=ADMIN_KEY` | Everything as JSON backup (summary, per-player rows, raw store + saves) / players as CSV. Dashboard page: **`/admin`** |
 
 ### Game rules (as implemented — keep the website guide in sync)
@@ -257,6 +258,13 @@ hand over one combined package for the week start; don't tell the owner to uploa
   `worker.scheduled` runs `tick` every 5 minutes from `server.js`. Fights: `discordHighlight` (from `replayKeep`: upset /
   arena final / Club, link `/clip?id=`, KV throttle 30 min + 8/day) and `discordClip` in `server.js` (clip of the day as
   a video attachment when the factory's `.json` lands, `DISCORD_CLIPS`/day, state `DATA_DIR/clips/.discord.json`).
+- **Scrappy Dash (v33)**: tab `dash` (also path `/dash`), one-tap endless runner in a canvas (`DASH`, `dashView`, `dashPlay`,
+  `dashStep`, `dashDraw`, `dashOver`; logical 480×300, 340×300 on phones). Hold = climb, tap < 180 ms = drop (`dashDrop`;
+  the tap that starts a run never drops, `startPress`). Gifts keep the sleigh's speed (fall straight down on screen) into
+  glowing chimneys: 25 × combo (≤ 5); a wasted gift breaks the combo. Speed `150 + 4.2·t` (max 420). Free, no tickets;
+  weekly board on the server; bond XP score/150 (≤ 15/run, ≤ 40/day, `SAVE.data.dash`, own dogs only). `menu()` returns
+  early while a run is on screen (`DASH.g`). Skins `DASH_SKIN.sleigh|rocket`: rocket from `DASH_ROCKET_FROM` (27 Dec 2026,
+  page + worker), env `DASH_THEME` overrides, `?dash=` previews. $SCRAP coins are only a picture. Website section `#dash`.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 
@@ -281,6 +289,8 @@ v32.1 (9 Oct) /clip watch link plays for people (play button), ladder TEAM/🏅 
 from the lending market (1 dog at a time) ·
 v31.3 (package for Mon 12 Oct) Joey Wallet first + "⭐ Recommended" in game/website, "BOND n" label on dog cards readable again
 (`.pick span` had overridden `.lvl`'s white text), link page `/links/`.
+
+v33 (package for Mon 19 Oct) Scrappy Sleigh/Rocket Dash mini game + weekly Dash board.
 
 ### Where things stand
 - **Live:** game **v32** (uploaded early by the owner on 9 Oct, incl. v31.3 + lending market + Discord channels); the stats

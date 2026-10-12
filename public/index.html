@@ -388,6 +388,31 @@ a.btn{font:inherit;font-size:11px;padding:9px 14px;border-radius:8px;border:2px 
 .wal button.on{border-color:var(--accent);color:var(--accent);font-weight:700}
 .wal button:disabled,.row button:disabled{opacity:.45;cursor:not-allowed}
 .h3{font-family:'Press Start 2P',monospace;font-size:9px;margin:0 0 9px;color:var(--ink2);letter-spacing:.5px}
+/* ---------- Scrappy Dash ---------- */
+.dashhero{text-align:center;color:#fff;border-color:#0e1726;padding:18px 14px;
+  background:linear-gradient(180deg,#0b1634,#2a3f78);position:relative;overflow:hidden}
+.dashhero.dash-rocket{background:radial-gradient(circle at calc(100% - 34px) 30px,#e9e4d0 0 18px,transparent 19px),linear-gradient(180deg,#04050d,#1c1440)}
+.dashhero.dash-sleigh{background:radial-gradient(circle at calc(100% - 34px) 30px,#fff6d8 0 14px,transparent 15px),linear-gradient(180deg,#0b1634,#2a3f78)}
+.dashtitle{font-family:'Press Start 2P',monospace;font-size:clamp(15px,4.6vw,24px);line-height:1.5;letter-spacing:1px;
+  text-shadow:3px 3px 0 #e53935,5px 5px 0 rgba(0,0,0,.4)}
+.dash-rocket .dashtitle{text-shadow:3px 3px 0 #7c4dff,5px 5px 0 rgba(0,0,0,.4)}
+.dashtitle.sm{font-size:clamp(11px,3.4vw,16px)}
+.dashsub{font-size:11px;line-height:1.7;color:#d6e2ff;margin:8px auto 0;max-width:520px}
+.dashsub b{color:#fff}
+button.dashgo{font-family:'Press Start 2P',monospace;font-size:13px;margin-top:14px;padding:13px 26px;border-radius:9px;cursor:pointer;
+  border:2px solid #0e1726;background:#ffd54f;color:#0e1726;box-shadow:0 4px 0 #0e1726}
+button.dashgo:active{transform:translateY(3px);box-shadow:0 1px 0 #0e1726}
+.dashplay{position:relative;border:2px solid #0e1726;border-radius:10px;overflow:hidden;box-shadow:0 3px 0 var(--shadow);background:#0b1634}
+.dashplay canvas{display:block;width:100%;aspect-ratio:var(--dash-ar,8/5);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:pointer}
+.dashov{position:absolute;inset:0;display:none;align-items:center;justify-content:center;pointer-events:none;padding:10px}
+.dashov.on{display:flex}
+.dashcard{background:rgba(8,12,28,.82);border:2px solid rgba(255,255,255,.25);border-radius:10px;padding:14px 16px;text-align:center;color:#fff;max-width:92%}
+.dashcard p{font-size:11px;line-height:1.6;margin:8px 0 0;color:#d6e2ff}
+.dashcard p.big{font-family:'Press Start 2P',monospace;font-size:clamp(14px,4.4vw,22px);color:#ffd54f;margin-top:10px}
+.dashcard .mini2{font-size:10px;color:#b9c6e6}
+.dashcard button{pointer-events:auto}
+.dashrow{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap}
+.dashrow button.sm{color:#fff;border-color:rgba(255,255,255,.4);margin-top:14px}
 .tabs button{font-size:10.5px;padding:9px 3px}
 .pkh{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px;margin-bottom:5px}
 .bdg{font-size:9px;border:1px solid var(--accent);color:var(--accent);border-radius:5px;padding:2px 5px;white-space:nowrap}
@@ -1386,6 +1411,13 @@ const S = (() => {
     charge(){ tone(200, 900, .3, 'sawtooth', .07); tone(400, 1800, .3, 'sine', .07, .02); },
     fanfare(leg){ (leg ? [523,659,784,1047,1319] : [440,554,659,880]).forEach((f,i)=>tone(f,f,.16,'square',.2,i*.09)); tone(leg?1568:1109, leg?1568:1109, .4, 'triangle', .18, leg ? .5 : .4); },
     win(){ [523,659,784,1047].forEach((f,i)=>tone(f,f,.2,'square',.24,i*.11)); },
+    // Scrappy Dash
+    dashDrop(){ tone(700, 260, .12, 'square', .1); },
+    dashGood(n){ const b = 523 * Math.pow(1.12, (n||1) - 1); [b, b*1.26, b*1.5].forEach((f,i)=>tone(f,f,.09,'square',.16,i*.05)); },
+    dashCoin(){ tone(1320, 1320, .05, 'square', .08); tone(1760, 1760, .07, 'square', .08, .045); },
+    dashAmmo(){ tone(440, 880, .12, 'triangle', .18); },
+    dashEmpty(){ tone(180, 140, .08, 'square', .1); },
+    dashCrash(big){ noise(big ? .5 : .2, 'lowpass', big ? 700 : 1400, big ? .45 : .25); if (big) tone(220, 50, .5, 'sawtooth', .18); },
     lose(){ [392,330,262].forEach((f,i)=>tone(f,f,.24,'triangle',.22,i*.14)); }
   };
 })();
@@ -2737,7 +2769,7 @@ async function oppTopUp(){
 }
 
 async function loadKennel(fresh){
-  WALLET.loading = true; WALLET.error = ''; WALLET.progress = 'Reading your wallet…'; tab = 'kennel'; menu();
+  WALLET.loading = true; WALLET.error = ''; WALLET.progress = 'Reading your wallet…'; if (tab !== 'dash') tab = 'kennel'; menu();
   try {
     const r = await api('/me/kennel' + (fresh ? '?fresh=1' : ''));
     if (r.status === 401){ walletSignOut(); WALLET.error = 'Your session ended — sign in again.'; menu(); return; }
@@ -3799,11 +3831,11 @@ function recSend(v){
   r.close = Math.abs(P.hp / P.maxHp - E.hp / E.maxHp) < .15;
   api('/replay', {method:'POST', body: r}).catch(() => {});
 }
-let tab = SC.linkId ? 'club' : 'kennel';   // a ?duel= invite link opens the Club
+let tab = SC.linkId ? 'club' : /^\/dash\/?$/.test(location.pathname) ? 'dash' : 'kennel';   // a ?duel= invite link opens the Club, /dash the Dash
 
 function nav(){
   return `<div class="card" style="padding:8px"><div class="tabs">
-    ${[['kennel','🏠 Kennel'],['arena','🏟️ Arena'],['club','🥊 Club'],['ladder','🏆 Ladder'],['packs','🐾 Packs']]
+    ${[['kennel','🏠 Kennel'],['arena','🏟️ Arena'],['dash', DASH_SKIN[dashTheme()].icon + ' Dash'],['club','🥊 Club'],['ladder','🏆 Ladder'],['packs','🐾 Packs']]
       .map(([k,t])=>`<button data-t="${k}" class="${tab===k?'on':''}">${t}</button>`).join('')}
   </div></div>`;
 }
@@ -4423,16 +4455,18 @@ function chatSync(show){
 setInterval(() => { if (CHAT.on && !document.hidden && (CHAT.open || Date.now() - (CHAT.last || 0) > 25000)){ CHAT.last = Date.now(); chatPoll(); } }, 4000);
 
 function menu(){
+  if (DASH.g) return;                              // a Dash run owns the screen until it is left
   SAVE.checkDay();
   chatSync(true);
   app.innerHTML = nav() +
-    (tab==='kennel' ? kennelView() : tab==='ladder' ? ladderView() : tab==='club' ? clubView()
+    (tab==='kennel' ? kennelView() : tab==='ladder' ? ladderView() : tab==='club' ? clubView() : tab==='dash' ? dashView()
       : needLogin() ? signInFirst() : tab==='arena' ? arenaView() : packsView()) +
     `<div class="card"><p class="mini" style="margin:0"><b>How it works.</b> Bite beats taunt, taunt beats guard, guard beats bite. Damage is rolled, so a Common can still drop a Legendary. Ability traits come from the NFT metadata and cost energy (◆). Ten rounds; healthiest at the bell wins. Opponents match your bond level — and they learn your style: the higher your bond, the sharper they read you.</p>
     <p class="mini" style="margin:9px 0 0"><button id="wipe" class="sm">Reset progress</button></p></div>`;
 
   app.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { S.unlock(); S.click(); tab = b.dataset.t; menu();
     if (tab === 'packs') loadPacks();
+    if (tab === 'dash') dashLoad();
     if (tab === 'arena'){ arenaRegister(); bossLoad(); ensureRivals().then(() => { if (tab === 'arena' && !arenaRun) menu(); }); } });
   const rc = document.getElementById('recapOpen'); if (rc) rc.onclick = () => { S.click(); showRecap(); };
   app.querySelectorAll('[data-weekrecap]').forEach(b => b.onclick = () => { S.click(); showWeekRecap(); });
@@ -4473,6 +4507,7 @@ function menu(){
   if (tab === 'club' && clubServer()){ scWire(); if (WALLET.token && !SC.me) scRefresh().then(() => { if (tab === 'club' && !clubMode) menu(); }); }
   if (tab === 'ladder' && LIVE()) fillLadder();
   walletWire(); lendWire();
+  if (tab === 'dash') dashWire();
   app.querySelectorAll('[data-sq]').forEach(b => b.onclick = () => { S.unlock(); S.click(); SAVE.toggleSquad(b.dataset.sq); menu(); });
   const sg = document.getElementById('sign');
   if (sg) sg.onclick = () => { S.unlock(); S.click(); SAVE.signUp(!SAVE.signedToday()); menu(); };
@@ -4498,6 +4533,482 @@ function menu(){
     if (confirm('Wipe all progress?')){ SAVE.reset(); menu(); }
   };
 }
+/* ============================ Scrappy Dash (tab "Dash") ============================
+   A one-tap endless runner: your Scrappy flies a sleigh over the roofs at night — hold to climb, let go to
+   sink, a quick tap drops a gift. Gifts that land in a glowing chimney score and build a combo (x5); a tall
+   chimney, a roof or a crow ends the run. The world speeds up the whole time, so a run lasts 30–90 seconds.
+   After Christmas (DASH_ROCKET_FROM, the server may override with DASH_THEME) the same game is "Rocket Dash":
+   a rocket to the moon, bones into the moon-base hatches, $SCRAP coins (only a picture — nothing is paid out).
+   Signed-in runs go to the weekly Dash board (/api/dash/*); the dog earns a little bond XP (DASH_XP_DAY). */
+const DASH_ROCKET_FROM = Date.parse('2026-12-27T00:00:00Z');
+let DASH_W = 480, DASH_PX = 110; const DASH_H = 300;      // logical canvas (narrower on phones), the dog's screen x
+const DASH_XP_DAY = 40, DASH_XP_RUN = 15;                // bond XP: per run (score / 150) and per day
+const DASH = {board: null, loading: false, dog: lsGet('ba_dashdog'), g: null};
+const DASH_SKIN = {
+  sleigh: {title: 'SLEIGH DASH', icon: '🛷', ammo: 'gift', ammos: 'gifts', coin: 'candy cane', coins: 'candy canes',
+    target: 'glowing chimneys', obst: 'tall chimneys', foe: 'crows', where: 'over the snowy roofs',
+    sky: ['#0b1634', '#24386b'], far: '#1a2a52', near: '#22335f', walls: ['#b5523b', '#3f7f86', '#d9c9a3', '#7a5c9e', '#c27b3a'],
+    roof: '#eef6ff', stack: '#8c3b2c', glow: '#ffd75a'},
+  rocket: {title: 'ROCKET DASH', icon: '🚀', ammo: 'bone', ammos: 'bones', coin: '$SCRAP coin', coins: '$SCRAP coins',
+    target: 'glowing hatches', obst: 'antenna towers', foe: 'asteroids', where: 'over the moon bases',
+    sky: ['#04050d', '#1c1440'], far: '#2a2550', near: '#3a3566', walls: ['#c9d1dc', '#9fb0c4', '#d8dee8', '#b6c2d3', '#aab6c8'],
+    roof: '#7e8796', stack: '#6c7787', glow: '#5cff9a'}
+};
+function dashTheme(){
+  try { const q = new URLSearchParams(location.search).get('dash'); if (DASH_SKIN[q]) return q; } catch(e){}
+  return (DASH.board && DASH_SKIN[DASH.board.theme] && DASH.board.theme) || (Date.now() < DASH_ROCKET_FROM ? 'sleigh' : 'rocket');
+}
+function dashSave(){
+  const d = SAVE.data;
+  if (!d.dash) d.dash = {best: 0, runs: 0, day: '', xp: 0};
+  if (d.dash.day !== SAVE.today()){ d.dash.day = SAVE.today(); d.dash.xp = 0; }
+  return d.dash;
+}
+const dashCanPost = () => LIVE() && !WALLET.demo && !!WALLET.token;
+async function dashLoad(){
+  if (!LIVE() || DASH.loading) return;
+  DASH.loading = true;
+  try { const r = await api('/dash/board'); if (r.ok) DASH.board = await r.json(); } catch(e){}
+  DASH.loading = false;
+  if (tab === 'dash' && !DASH.g) menu();
+}
+function dashPickDog(){
+  const R = ROSTER(), saved = R.find(f => f.id === DASH.dog);
+  return saved || bondOrder(R)[0] || R[0];
+}
+function dashBoardRows(rows){
+  if (!rows || !rows.length) return '<p class="mini" style="margin:0">No runs yet — the first one takes the top spot.</p>';
+  return rows.map((r, i) => `<div class="lb${r.you ? ' you' : ''}"><span>${i + 1}</span><span>${esc(r.name)}${r.team ? ' <span class="tag">TEAM</span>' : ''}${r.dog && r.dog.token ? ` <span style="opacity:.6">· #${r.dog.token}</span>` : r.dog && r.dog.name ? ` <span style="opacity:.6">· ${esc(r.dog.name)}</span>` : ''}</span><b>${r.score.toLocaleString()}</b></div>`).join('');
+}
+function dashView(){
+  const th = dashTheme(), K = DASH_SKIN[th], me = dashPickDog(), sv = dashSave(), B = DASH.board;
+  const mine = B && B.mine;
+  const pick = ROSTER().map(f => `<button data-dashdog="${esc(f.id)}" class="${me && me.id === f.id ? 'insq' : ''}"><img src="${f.img}" alt="">
+      <span><b>${esc(f.name)}</b><br><span class="lvl">BOND ${SAVE.dog(f.id).lvl}</span>${f.borrowed ? '<br>borrowed' : ''}</span></button>`).join('');
+  const post = dashCanPost();
+  return `<div class="card dashhero dash-${th}">
+      <div class="dashtitle">${K.icon} SCRAPPY<br>${K.title}</div>
+      <p class="dashsub">Fly ${K.where}. <b>Hold</b> to climb · let go to sink · <b>quick tap</b> drops a ${K.ammo}.</p>
+      <p class="dashsub">Hit the ${K.target} for a combo (up to ×5), grab ${K.ammos} and ${K.coins}, dodge ${K.obst} and ${K.foe}. It gets faster every second.</p>
+      <button id="dashGo" class="dashgo">▶ PLAY</button>
+      <p class="dashsub" style="margin-top:10px">Your best: <b>${Math.max(sv.best, mine ? mine.best : 0).toLocaleString()}</b>${mine && mine.rank ? ` · #${mine.rank} this week` : ''} · Free, no tickets — play as often as you like.</p>
+    </div>
+    <div class="card"><h3 class="h3">PILOT</h3>
+      <div class="pick">${pick}</div>
+      <p class="mini" style="margin:8px 0 0">${post ? `Each run gives your dog a little bond XP (score ÷ 150, up to ${DASH_XP_RUN} a run, ${DASH_XP_DAY} a day — ${Math.max(0, DASH_XP_DAY - sv.xp)} left today). Borrowed dogs fly for fun.` : 'Sign in with your wallet to enter the weekly Dash board and earn bond XP. The demo dogs fly for fun.'}</p></div>
+    <div class="card"><h3 class="h3">🏆 THIS WEEK'S DASH BOARD</h3>
+      ${LIVE() ? (B ? dashBoardRows(B.top) : '<p class="mini" style="margin:0">Loading…</p>') : '<p class="mini" style="margin:0">The board needs the game server.</p>'}
+      ${B && B.last && B.last.top.length ? `<p class="mini" style="margin:10px 0 4px"><b>Last week</b></p>${dashBoardRows(B.last.top)}` : ''}
+      <p class="mini" style="margin:8px 0 0">Best run of the week counts. The board resets Monday 00:00 UTC.</p></div>`;
+}
+function dashWire(){
+  app.querySelectorAll('[data-dashdog]').forEach(b => b.onclick = () => { S.click(); DASH.dog = b.dataset.dashdog; lsSet('ba_dashdog', DASH.dog); menu(); });
+  const go = document.getElementById('dashGo');
+  if (go) go.onclick = () => { S.unlock(); S.click(); dashPlay(dashPickDog()); };
+}
+
+/* ---- the run ---- */
+const drand = (a, b) => a + Math.random() * (b - a);
+function dashImg(src){ const i = new Image(); i.src = src; return i; }
+function dashPlay(dog){
+  if (!dog) return;
+  dashStop();
+  chatSync(false);
+  const th = dashTheme();
+  const narrow = (app.clientWidth || innerWidth) < 560;  // phones: a taller field, the dog further left
+  DASH_W = narrow ? 340 : 480; DASH_PX = narrow ? 84 : 110;
+  app.innerHTML = `<div class="dashplay dash-${th}" style="--dash-ar:${DASH_W}/${DASH_H}"><canvas id="dashCv" width="${DASH_W}" height="${DASH_H}"></canvas>
+    <div id="dashOv" class="dashov"></div></div>
+    <p class="mini" style="text-align:center;margin:8px 0 0">Hold = climb · quick tap = drop · keys: Space/↑ hold, ↓ drop, Esc quit</p>
+    <div style="text-align:center"><button id="dashQuit" class="sm">✕ Back to the hangar</button></div>`;
+  const cv = document.getElementById('dashCv');
+  const G = DASH.g = {th, K: DASH_SKIN[th], dog, img: dashImg(dog.img), cv, ctx: cv.getContext('2d'), state: 'ready', raf: 0,
+    stars: Array.from({length: 46}, () => ({x: Math.random() * DASH_W, y: Math.random() * DASH_H * .7, s: Math.random() < .2 ? 2 : 1, p: Math.random() * 6})),
+    flakes: Array.from({length: 40}, () => ({x: Math.random() * DASH_W, y: Math.random() * DASH_H, v: drand(18, 42), w: drand(0, 6)}))};
+  dashReset(G);
+  dashSize(G);
+  G.onResize = () => dashSize(G); addEventListener('resize', G.onResize);
+  const down = e => { if (e.button > 0) return; e.preventDefault(); dashPress(G, true); };
+  const up = e => { e.preventDefault(); dashPress(G, false); };
+  cv.addEventListener('pointerdown', down); cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up); cv.addEventListener('pointerleave', up);
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  G.onKey = e => {
+    if (e.repeat) { if ([' ', 'ArrowUp', 'w', 'W'].includes(e.key)) e.preventDefault(); return; }
+    const dn = e.type === 'keydown';
+    if ([' ', 'ArrowUp', 'w', 'W'].includes(e.key)) { e.preventDefault(); dashPress(G, dn); }
+    else if (dn && ['ArrowDown', 's', 'S', 'x', 'X', 'Enter'].includes(e.key)) { e.preventDefault(); if (G.state === 'run') dashDrop(G); else { dashPress(G, true); dashPress(G, false); } }
+    else if (dn && e.key === 'Escape') { dashQuit(); }
+  };
+  addEventListener('keydown', G.onKey); addEventListener('keyup', G.onKey);
+  G.onVis = () => { if (document.hidden && G.state === 'run') { G.state = 'pause'; G.hold = false; dashOverlay(G); } };
+  document.addEventListener('visibilitychange', G.onVis);
+  document.getElementById('dashQuit').onclick = () => { S.click(); dashQuit(); };
+  dashOverlay(G);
+  let last = performance.now();
+  const loop = now => {
+    if (DASH.g !== G) return;
+    const dt = Math.min(1 / 30, (now - last) / 1000); last = now;
+    if (G.state === 'run') dashStep(G, dt); else dashIdle(G, dt);
+    dashDraw(G);
+    G.raf = requestAnimationFrame(loop);
+  };
+  G.raf = requestAnimationFrame(loop);
+}
+function dashSize(G){
+  const r = Math.min(2, window.devicePixelRatio || 1), w = G.cv.clientWidth || DASH_W;
+  G.cv.width = Math.round(w * r); G.cv.height = Math.round(w * r * DASH_H / DASH_W);
+  G.ctx.setTransform(G.cv.width / DASH_W, 0, 0, G.cv.height / DASH_H, 0, 0);
+  G.ctx.imageSmoothingEnabled = false;
+}
+function dashReset(G){
+  Object.assign(G, {t: 0, ms: 0, dist: 0, v: 150, y: 120, vy: 0, hold: false, downAt: 0, ammo: 3, score: 0, combo: 0, best: 0,
+    delivered: 0, coinsN: 0, shield: false, blink: 0, houses: [], gifts: [], items: [], foes: [], fx: [], nextX: 0,
+    distPts: 0, startPress: false, nextCoin: 1.2, nextAmmo: 3.5, nextFoe: 7, nextStar: 22, runId: null, posted: null, xp: 0, lastDrop: 0});
+  G.nextX = 0;
+  while (G.nextX < DASH_W + 200) dashHouse(G, true);
+}
+function dashHouse(G, calm){
+  const t = G.t, w = Math.round(drand(64, 120)), gap = Math.random() < .18 ? drand(40, 80) : drand(4, 22);
+  const top = DASH_H - Math.round(drand(40, Math.min(130, 90 + t)));
+  const tall = !calm && Math.random() < Math.min(.45, .1 + t * .006);
+  const ch = tall ? Math.round(drand(Math.min(70, top - 110), Math.max(70, top - 95))) : Math.round(drand(12, 22));
+  const h = {x: G.nextX + gap, w, top, cx: Math.round(drand(14, w - 32)), cw: 18, ch, tall,
+    wants: !tall && Math.random() < (calm ? .5 : .32), done: false, col: G.K.walls[Math.floor(Math.random() * G.K.walls.length)],
+    win: Math.random()};
+  G.houses.push(h);
+  G.nextX = h.x + w;
+}
+function dashPress(G, on){
+  if (on){
+    S.unlock();
+    const starting = G.state !== 'run';          // the tap that starts a run doesn't drop anything
+    if (G.state === 'ready' || G.state === 'pause'){ if (G.state === 'ready') dashBegin(G); G.state = 'run'; dashOverlay(G); }
+    else if (G.state === 'over'){ if (Date.now() - G.overAt < 700) return; dashReset(G); dashBegin(G); G.state = 'run'; dashOverlay(G); }
+    G.hold = true; G.downAt = performance.now(); G.startPress = starting;
+  } else {
+    if (G.hold && !G.startPress && G.state === 'run' && performance.now() - G.downAt < 180) dashDrop(G);
+    G.hold = false; G.startPress = false;
+  }
+}
+function dashBegin(G){
+  G.startAt = Date.now();
+  if (dashCanPost()) api('/dash/start', {method: 'POST', body: {dog: {name: G.dog.name, token: tokenOf(G.dog) || null}}})
+    .then(r => r.ok ? r.json() : null).then(j => { if (j && DASH.g === G && !G.posted) G.runId = j.id; }).catch(() => {});
+}
+function dashDrop(G){
+  const now = performance.now();
+  if (now - G.lastDrop < 220) return;
+  if (G.ammo <= 0){ G.fx.push({k: 'txt', x: DASH_PX, y: G.y - 26, t: 0, s: 'empty!', c: '#ff8a80'}); S.dashEmpty(); return; }
+  G.lastDrop = now; G.ammo--;
+  G.gifts.push({x: DASH_PX + 4, y: G.y + 8, vy: Math.max(-40, G.vy * .3)});
+  S.dashDrop();
+}
+// points: distance / 10 + 25 × combo per delivery (combo up to 5) + 5 per pickup — the server caps 260 per second
+function dashStep(G, dt){
+  G.t += dt; G.ms += dt * 1000;
+  G.v = Math.min(420, 150 + 4.2 * G.t);
+  const dx = G.v * dt;
+  G.dist += dx;
+  G.vy += (G.hold ? -1050 : 820) * dt;
+  G.vy = Math.max(-300, Math.min(340, G.vy));
+  G.y += G.vy * dt;
+  if (G.y < 16){ G.y = 16; G.vy = Math.max(0, G.vy); }
+  if (G.blink > 0) G.blink -= dt;
+  for (const h of G.houses) h.x -= dx;
+  G.nextX -= dx;
+  while (G.nextX < DASH_W + 200) dashHouse(G, G.t < 3);
+  G.houses = G.houses.filter(h => h.x + h.w > -10);
+  // spawns
+  if ((G.nextCoin -= dt) <= 0){
+    G.nextCoin = drand(1.1, 1.9);
+    const n = 3 + Math.floor(Math.random() * 3), y0 = drand(36, 140), arc = Math.random() < .5;
+    for (let i = 0; i < n; i++) G.items.push({k: 'coin', x: DASH_W + 20 + i * 22, y: y0 - (arc ? Math.sin(i / (n - 1) * Math.PI) * 24 : 0)});
+  }
+  if ((G.nextAmmo -= dt) <= 0){ G.nextAmmo = drand(3.5, 5); G.items.push({k: 'ammo', x: DASH_W + 20, y: drand(40, 135), p: Math.random() * 6}); }
+  if ((G.nextStar -= dt) <= 0){ G.nextStar = drand(20, 30); if (!G.shield) G.items.push({k: 'star', x: DASH_W + 20, y: drand(40, 120), p: 0}); }
+  if (G.t > 7 && (G.nextFoe -= dt) <= 0){
+    G.nextFoe = Math.max(1.3, drand(2.6, 4.6) - G.t * .03);
+    G.foes.push({x: DASH_W + 20, y0: drand(34, 150), y: 0, p: Math.random() * 6, v: drand(30, 70), r: Math.random() * 6});
+  }
+  for (const it of G.items){ it.x -= dx; if (it.p != null) it.p += dt * 4; }
+  for (const f of G.foes){ f.x -= dx + f.v * dt; f.p += dt * 5; f.r += dt * 2; f.y = f.y0 + Math.sin(f.p * .6) * 12; }
+  G.items = G.items.filter(it => it.x > -20 && !it.got);
+  G.foes = G.foes.filter(f => f.x > -30);
+  // the dog's box
+  const bx = DASH_PX - 18, by = G.y - 9, bw = 36, bh = 17;
+  const hit = (x, y, w, h) => bx < x + w && bx + bw > x && by < y + h && by + bh > y;
+  for (const it of G.items){
+    if (Math.abs(it.x - DASH_PX) < 20 && Math.abs(it.y - G.y) < 18){
+      it.got = true;
+      if (it.k === 'coin'){ G.score += 5; G.coinsN++; S.dashCoin(); }
+      else if (it.k === 'ammo'){ G.ammo = Math.min(9, G.ammo + 2); G.score += 5; S.dashAmmo(); G.fx.push({k: 'txt', x: it.x, y: it.y - 12, t: 0, s: '+2 ' + G.K.ammos, c: '#fff'}); }
+      else { G.shield = true; S.heal(); G.fx.push({k: 'txt', x: it.x, y: it.y - 12, t: 0, s: 'SHIELD', c: '#9be7ff'}); }
+    }
+  }
+  let crash = G.y > DASH_H - 6;
+  for (const h of G.houses){
+    if (h.x > DASH_PX + 40 || h.x + h.w < DASH_PX - 40) continue;
+    if (hit(h.x, h.top, h.w, DASH_H - h.top) || hit(h.x + h.cx, h.top - h.ch, h.cw, h.ch)) crash = crash || h;
+  }
+  for (const f of G.foes) if (Math.abs(f.x - DASH_PX) < 20 && Math.abs(f.y - G.y) < 14) crash = crash || f;
+  // gifts fall straight down on screen (they keep the sleigh's speed) into the chimney passing below
+  for (const g of G.gifts){
+    const y0 = g.y;
+    g.vy += 900 * dt; g.y += g.vy * dt;
+    if (g.y > DASH_H + 10){ g.gone = true; continue; }
+    for (const h of G.houses){
+      if (g.x < h.x - 4 || g.x > h.x + h.w + 4) continue;
+      const ct = h.top - h.ch, inCh = g.x >= h.x + h.cx - 4 && g.x <= h.x + h.cx + h.cw + 4;
+      if (inCh && y0 <= ct && g.y >= ct){
+        g.gone = true;
+        if (h.wants && !h.done){
+          h.done = true; G.combo = Math.min(5, G.combo + 1); G.delivered++;
+          const pts = 25 * G.combo; G.score += pts;
+          G.fx.push({k: 'txt', x: h.x + h.cx + 9, y: ct - 14, t: 0, s: '+' + pts + (G.combo > 1 ? '  ×' + G.combo : ''), c: G.K.glow});
+          for (let i = 0; i < 10; i++) G.fx.push({k: 'spark', x: h.x + h.cx + 9, y: ct, vx: drand(-60, 60), vy: drand(-140, -40), t: 0, c: i % 2 ? G.K.glow : '#fff'});
+          S.dashGood(G.combo);
+        } else { dashComboLost(G); G.fx.push({k: 'poof', x: g.x, y: ct, t: 0}); }
+        break;
+      }
+      if (!inCh && g.y >= h.top && y0 < h.top + 4){ g.gone = true; dashComboLost(G); G.fx.push({k: 'poof', x: g.x, y: h.top, t: 0}); break; }
+    }
+  }
+  G.gifts = G.gifts.filter(g => !g.gone);
+  if (crash){
+    const bounce = () => { if (crash === true){ G.y = DASH_H - 8; G.vy = -240; }
+      else if (crash.y0 != null) crash.x = -99;     // knocked away
+      else { G.vy = -260; G.y = Math.max(16, Math.min(G.y, crash.top - crash.ch - 22)); } };
+    if (G.blink > 0) bounce();
+    else if (G.shield){ G.shield = false; G.blink = 1.2; S.dashCrash(false); bounce(); }
+    else return dashOver(G);
+  }
+  G.score += Math.floor(G.dist / 10) - (G.distPts || 0); G.distPts = Math.floor(G.dist / 10);
+  dashFx(G, dt);
+  if (G.hold && Math.random() < .6) G.fx.push({k: 'trail', x: DASH_PX - 24, y: G.y + 4 + drand(-3, 3), t: 0});
+}
+function dashComboLost(G){
+  if (G.combo > 1) G.fx.push({k: 'txt', x: DASH_PX, y: G.y - 30, t: 0, s: 'combo lost', c: '#ff8a80'});
+  G.combo = 0;
+}
+function dashIdle(G, dt){
+  G.t0 = (G.t0 || 0) + dt;
+  if (G.state === 'ready') G.y = 120 + Math.sin(G.t0 * 2.4) * 8;
+  dashFx(G, dt);
+}
+function dashFx(G, dt){
+  for (const f of G.fx){
+    f.t += dt;
+    if (f.k === 'spark'){ f.x += f.vx * dt; f.y += f.vy * dt; f.vy += 300 * dt; }
+    if (f.k === 'trail') f.x -= G.v * dt * .9;
+    if (f.k === 'txt') f.y -= 22 * dt;
+  }
+  G.fx = G.fx.filter(f => f.t < (f.k === 'txt' ? 1 : f.k === 'trail' ? .35 : .6));
+  for (const s of G.flakes){ s.y += s.v * dt; s.x -= (G.state === 'run' ? G.v * .15 : 8) * dt + Math.sin(s.y / 20 + s.w) * .2; if (s.y > DASH_H) s.y = -4; if (s.x < -4) s.x = DASH_W + 4; }
+}
+function dashOver(G){
+  G.state = 'over'; G.overAt = Date.now(); G.hold = false;
+  S.dashCrash(true);
+  for (let i = 0; i < 18; i++) G.fx.push({k: 'spark', x: DASH_PX, y: G.y, vx: drand(-120, 120), vy: drand(-200, 0), t: 0, c: i % 3 ? '#ffb74d' : '#fff'});
+  const sv = dashSave(), score = Math.floor(G.score);
+  const before = Math.max(sv.best, (DASH.board && DASH.board.mine && DASH.board.mine.best) || 0);
+  G.pb = score > before; sv.best = Math.max(sv.best, score); sv.runs++;
+  // bond XP for an own dog, signed in only
+  if (dashCanPost() && !G.dog.borrowed && OWNED && OWNED.some(f => f.id === G.dog.id)){
+    G.xp = Math.max(0, Math.min(DASH_XP_RUN, Math.floor(score / 150), DASH_XP_DAY - sv.xp));
+    if (G.xp){ sv.xp += G.xp; G.ups = SAVE.bondXp(G.dog.id, G.xp); }
+  }
+  SAVE.save();
+  if (G.pb && score > 0) S.win();
+  dashOverlay(G);
+  if (G.runId) api('/dash/end', {method: 'POST', body: {id: G.runId, score, ms: Math.round(G.ms), gifts: G.delivered}})
+    .then(r => r.json()).then(j => { G.posted = j; DASH.board = null; dashLoad(); if (DASH.g === G) dashOverlay(G); }).catch(() => {});
+}
+function dashOverlay(G){
+  const ov = document.getElementById('dashOv'); if (!ov) return;
+  const K = G.K;
+  if (G.state === 'run'){ ov.innerHTML = ''; ov.className = 'dashov'; return; }
+  ov.className = 'dashov on';
+  if (G.state === 'ready' || G.state === 'pause'){
+    ov.innerHTML = `<div class="dashcard"><div class="dashtitle sm">${K.icon} ${K.title}</div>
+      <p>${G.state === 'pause' ? 'Paused.' : `<b>Hold</b> to climb · <b>tap</b> to drop a ${K.ammo}.<br>Drop it a little early — it falls while you fly.`}</p>
+      <p class="big">TAP TO ${G.state === 'pause' ? 'GO ON' : 'START'}</p></div>`;
+    return;
+  }
+  const P = G.posted, sv = dashSave(), score = Math.floor(G.score), best = Math.max(sv.best, P && P.best || 0);
+  const post = !dashCanPost() ? '<p class="mini2">Sign in to put your runs on the weekly board.</p>'
+    : !G.runId ? '<p class="mini2">The board was not reachable — this run stays on this device.</p>'
+    : !P ? '<p class="mini2">Sending to the board…</p>'
+    : P.error ? '<p class="mini2">The board did not take this run.</p>'
+    : `<p class="mini2">${P.pb ? '🏅 New best this week! ' : ''}Weekly board: <b>#${P.rank}</b> of ${P.players} · best ${P.best.toLocaleString()}</p>`;
+  ov.innerHTML = `<div class="dashcard"><div class="dashtitle sm">${G.pb ? '🏅 NEW BEST!' : 'CRASH!'}</div>
+    <p class="big">${score.toLocaleString()}</p>
+    <p>${G.delivered} ${K.ammos} delivered · ${G.coinsN} ${K.coins} · ${Math.round(G.ms / 1000)} s · best ${best.toLocaleString()}</p>
+    ${G.xp ? `<p class="mini2">${esc(G.dog.name)} +${G.xp} bond XP${G.ups && G.ups.length ? ` · reached Bond ${G.ups[G.ups.length - 1]}!` : ''}</p>` : ''}
+    ${post}
+    <div class="dashrow"><button id="dashAgain" class="dashgo">↻ AGAIN</button><button id="dashBack" class="sm">Hangar</button></div></div>`;
+  document.getElementById('dashAgain').onclick = e => { e.stopPropagation(); if (Date.now() - G.overAt < 400) return; S.click(); dashPress(G, true); dashPress(G, false); G.hold = false; };
+  document.getElementById('dashBack').onclick = e => { e.stopPropagation(); S.click(); dashQuit(); };
+}
+function dashStop(){
+  const G = DASH.g; if (!G) return;
+  cancelAnimationFrame(G.raf);
+  removeEventListener('resize', G.onResize); removeEventListener('keydown', G.onKey); removeEventListener('keyup', G.onKey);
+  document.removeEventListener('visibilitychange', G.onVis);
+  DASH.g = null;
+}
+function dashQuit(){ dashStop(); tab = 'dash'; menu(); dashLoad(); }
+
+/* ---- drawing (all pixel rectangles; the dog is its NFT picture) ---- */
+function dashDraw(G){
+  const c = G.ctx, K = G.K, W = DASH_W, H = DASH_H, rocket = G.th === 'rocket', T = G.t + (G.t0 || 0);
+  const sky = c.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, K.sky[0]); sky.addColorStop(1, K.sky[1]);
+  c.fillStyle = sky; c.fillRect(0, 0, W, H);
+  for (const s of G.stars){ c.globalAlpha = .45 + .55 * Math.abs(Math.sin(T * 1.3 + s.p)); c.fillStyle = '#fff';
+    const x = ((s.x - G.dist * .03) % W + W) % W; c.fillRect(Math.round(x), Math.round(s.y), s.s, s.s); }
+  c.globalAlpha = 1;
+  if (rocket){
+    // the moon grows as you fly; earth sinks behind
+    const m = 46 + Math.min(70, G.dist / 600);
+    c.fillStyle = '#e9e4d0'; c.beginPath(); c.arc(W - 70, 70, m, 0, 7); c.fill();
+    c.fillStyle = '#cfc8ad'; [[-14, -10, 9], [12, 8, 7], [-4, 18, 5], [18, -16, 6]].forEach(([x, y, r]) => { c.beginPath(); c.arc(W - 70 + x * m / 46, 70 + y * m / 46, r * m / 46, 0, 7); c.fill(); });
+    c.fillStyle = '#2f7de1'; c.beginPath(); c.arc(60, 60 + Math.min(60, G.dist / 300), 16, 0, 7); c.fill();
+    c.fillStyle = '#5ac46a'; c.fillRect(52, 54 + Math.min(60, G.dist / 300), 8, 6); c.fillRect(62, 62 + Math.min(60, G.dist / 300), 6, 5);
+  } else {
+    c.fillStyle = '#fff6d8'; c.beginPath(); c.arc(W - 64, 52, 22, 0, 7); c.fill();
+    c.fillStyle = K.sky[0]; c.beginPath(); c.arc(W - 56, 46, 19, 0, 7); c.fill();
+  }
+  // far skyline, two layers
+  [[K.far, .15, 150, 37], [K.near, .35, 120, 53]].forEach(([col, k, base, seed]) => {
+    c.fillStyle = col;
+    const off = (G.dist * k) % 40;
+    for (let i = -1; i < W / 40 + 2; i++){
+      const n = Math.floor(G.dist * k / 40) + i, hh = 20 + ((n * seed) % 7) * 9;
+      const x = i * 40 - off;
+      if (rocket){ c.beginPath(); c.arc(x + 20, H - base + 50 + 20, 26 + ((n * 7) % 4) * 6, Math.PI, 0); c.fill(); }
+      else c.fillRect(Math.round(x), H - base + 60 - hh, 38, hh + base);
+    }
+  });
+  // houses / moon bases
+  for (const h of G.houses){
+    const x = Math.round(h.x), ct = h.top - h.ch;
+    c.fillStyle = h.col; c.fillRect(x, h.top, h.w, H - h.top);
+    c.fillStyle = 'rgba(0,0,0,.18)'; c.fillRect(x + h.w - 5, h.top, 5, H - h.top);
+    // windows
+    for (let wy = h.top + 12; wy < H - 14; wy += 20) for (let wx = x + 8; wx < x + h.w - 14; wx += 18){
+      const lit = ((wx - x) * 7 + wy * 3 + Math.floor(h.win * 9)) % 5 > 1;
+      c.fillStyle = lit ? (rocket ? '#7fe3ff' : '#ffd36b') : 'rgba(0,0,0,.28)'; c.fillRect(wx, wy, 8, 9);
+    }
+    // roof cap
+    c.fillStyle = K.roof; c.fillRect(x - 3, h.top - 4, h.w + 6, 6);
+    if (!rocket){ c.fillStyle = '#fff'; for (let i = 0; i < h.w; i += 9) c.fillRect(x + i, h.top + 2, 4, 3); }
+    // chimney / antenna stack
+    const cx = x + h.cx;
+    c.fillStyle = h.tall ? (rocket ? '#5b6474' : '#6e2e22') : K.stack; c.fillRect(cx, ct, h.cw, h.ch);
+    if (!rocket){ c.fillStyle = 'rgba(0,0,0,.2)'; for (let yy = ct + 4; yy < h.top; yy += 6) c.fillRect(cx + ((yy / 6) % 2 ? 2 : 9), yy, 6, 1); }
+    else { c.fillStyle = (Math.floor(T * 3) % 2) ? '#ff4d4d' : '#701c1c'; c.fillRect(cx + h.cw / 2 - 2, ct - 5, 4, 4); }
+    c.fillStyle = rocket ? '#9aa4b4' : '#fff'; c.fillRect(cx - 2, ct - 3, h.cw + 4, 4);
+    if (h.wants && !h.done){
+      const b = Math.sin(T * 6) * 3;
+      c.fillStyle = K.glow; c.globalAlpha = .35 + .25 * Math.sin(T * 8); c.fillRect(cx - 4, ct - 6, h.cw + 8, 5); c.globalAlpha = 1;
+      // a bouncing arrow over the chimney
+      c.fillStyle = K.glow; c.fillRect(cx + 7, ct - 26 + b, 4, 8); c.fillRect(cx + 4, ct - 18 + b, 10, 3); c.fillRect(cx + 6, ct - 15 + b, 6, 2); c.fillRect(cx + 8, ct - 13 + b, 2, 2);
+    }
+    if (h.done){ c.fillStyle = '#7dff8a'; c.fillRect(cx + 5, ct - 10, 3, 3); c.fillRect(cx + 8, ct - 8, 3, 3); c.fillRect(cx + 11, ct - 12, 3, 3); c.fillRect(cx + 14, ct - 16, 3, 3); }
+  }
+  // pickups
+  for (const it of G.items){
+    const x = Math.round(it.x), y = Math.round(it.y + (it.p != null ? Math.sin(it.p) * 3 : 0));
+    if (it.k === 'coin') dashCoinSprite(c, x, y, rocket, T);
+    else if (it.k === 'ammo') dashAmmoSprite(c, x, y, rocket);
+    else { c.fillStyle = '#9be7ff'; c.fillRect(x - 2, y - 8, 4, 16); c.fillRect(x - 8, y - 2, 16, 4); c.fillStyle = '#fff'; c.fillRect(x - 2, y - 2, 4, 4); }
+  }
+  // foes
+  for (const f of G.foes){
+    const x = Math.round(f.x), y = Math.round(f.y);
+    if (rocket){
+      c.fillStyle = '#7a6a5a'; c.beginPath(); c.arc(x, y, 11, 0, 7); c.fill();
+      c.fillStyle = '#5d4f42'; c.fillRect(x - 5 + Math.round(Math.cos(f.r) * 3), y - 4, 4, 4); c.fillRect(x + 2, y + 2 + Math.round(Math.sin(f.r) * 2), 3, 3);
+    } else {
+      const up = Math.floor(f.p * 2) % 2;
+      c.fillStyle = '#121620'; c.fillRect(x - 7, y - 3, 14, 7); c.fillRect(x - 10, y - 1, 4, 3);
+      c.fillRect(x - 3, y - (up ? 9 : -3), 6, 6);
+      c.fillStyle = '#ffb300'; c.fillRect(x - 12, y, 3, 2); c.fillStyle = '#fff'; c.fillRect(x - 7, y - 2, 2, 2);
+    }
+  }
+  // falling gifts
+  for (const g of G.gifts) dashAmmoSprite(c, Math.round(g.x), Math.round(g.y), rocket);
+  // fx
+  for (const f of G.fx){
+    const a = 1 - f.t / (f.k === 'txt' ? 1 : f.k === 'trail' ? .35 : .6);
+    c.globalAlpha = Math.max(0, a);
+    if (f.k === 'spark'){ c.fillStyle = f.c; c.fillRect(Math.round(f.x), Math.round(f.y), 3, 3); }
+    else if (f.k === 'trail'){ c.fillStyle = rocket ? (f.t < .12 ? '#fff3a0' : '#ff7a30') : '#fff7c2'; c.fillRect(Math.round(f.x), Math.round(f.y), 3, 3); }
+    else if (f.k === 'poof'){ c.fillStyle = '#ddd'; const r = 4 + f.t * 20; c.fillRect(f.x - r, f.y - 3, r * 2, 3); }
+    else if (f.k === 'txt'){ c.fillStyle = f.c; c.font = '8px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(f.s, f.x, f.y); }
+  }
+  c.globalAlpha = 1;
+  if (!rocket) for (const s of G.flakes){ c.fillStyle = 'rgba(255,255,255,.8)'; c.fillRect(Math.round(s.x), Math.round(s.y), 2, 2); }
+  // where a drop falls: straight down from the sleigh
+  if (G.state === 'run' && G.ammo > 0){ c.fillStyle = 'rgba(255,255,255,.18)'; for (let yy = Math.round(G.y) + 16; yy < H; yy += 8) c.fillRect(DASH_PX + 3, yy, 2, 3); }
+  // the pilot
+  if (G.state !== 'over' || Math.floor(T * 10) % 2) dashPilot(G, c, DASH_PX, Math.round(G.y), rocket, T);
+  // HUD
+  c.textAlign = 'left'; c.font = '10px "Press Start 2P", monospace';
+  c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(6, 6, 150, 34);
+  c.fillStyle = '#fff'; c.fillText(String(Math.floor(G.score)).padStart(6, '0'), 12, 21);
+  c.font = '8px "Press Start 2P", monospace';
+  c.fillStyle = G.combo > 1 ? K.glow : 'rgba(255,255,255,.55)'; c.fillText('COMBO ×' + Math.max(1, G.combo), 12, 34);
+  c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(W - 128, 6, 122, 22);
+  for (let i = 0; i < 9; i++){ c.globalAlpha = i < G.ammo ? 1 : .22; dashAmmoSprite(c, W - 120 + i * 13, 17, rocket, true); }
+  c.globalAlpha = 1;
+  if (G.shield){ c.fillStyle = '#9be7ff'; c.fillText('SHIELD', W - 120, 42); }
+}
+function dashCoinSprite(c, x, y, rocket, T){
+  if (rocket){
+    const w = Math.max(2, Math.round(6 * Math.abs(Math.cos(T * 3 + x / 40))));
+    c.fillStyle = '#ffcf33'; c.fillRect(x - w, y - 6, w * 2, 12); c.fillStyle = '#b8860b';
+    if (w > 3){ c.fillRect(x - 2, y - 4, 4, 2); c.fillRect(x - 2, y - 1, 4, 2); c.fillRect(x - 2, y + 2, 4, 2); c.fillRect(x - 2, y - 4, 2, 4); c.fillRect(x, y, 2, 4); }
+  } else {
+    c.fillStyle = '#fff'; c.fillRect(x - 1, y - 6, 3, 12); c.fillRect(x + 1, y - 8, 4, 3); c.fillRect(x + 4, y - 6, 2, 3);
+    c.fillStyle = '#e53935'; c.fillRect(x - 1, y - 3, 3, 2); c.fillRect(x - 1, y + 2, 3, 2); c.fillRect(x + 2, y - 8, 2, 3);
+  }
+}
+function dashAmmoSprite(c, x, y, rocket, small){
+  const s = small ? .8 : 1;
+  if (rocket){
+    c.fillStyle = '#f5f0e1';
+    c.fillRect(x - 6 * s, y - 1.5 * s, 12 * s, 3 * s);
+    c.fillRect(x - 8 * s, y - 4 * s, 4 * s, 4 * s); c.fillRect(x - 8 * s, y, 4 * s, 4 * s);
+    c.fillRect(x + 4 * s, y - 4 * s, 4 * s, 4 * s); c.fillRect(x + 4 * s, y, 4 * s, 4 * s);
+  } else {
+    c.fillStyle = '#e53935'; c.fillRect(x - 5 * s, y - 4 * s, 10 * s, 9 * s);
+    c.fillStyle = '#ffd54f'; c.fillRect(x - 1 * s, y - 4 * s, 2 * s, 9 * s); c.fillRect(x - 5 * s, y - 1 * s, 10 * s, 2 * s);
+    c.fillRect(x - 4 * s, y - 7 * s, 3 * s, 3 * s); c.fillRect(x + 1 * s, y - 7 * s, 3 * s, 3 * s);
+  }
+}
+function dashPilot(G, c, x, y, rocket, T){
+  if (G.shield){ c.strokeStyle = 'rgba(155,231,255,' + (.5 + .3 * Math.sin(T * 6)) + ')'; c.lineWidth = 2; c.beginPath(); c.arc(x, y - 6, 26, 0, 7); c.stroke(); }
+  const tilt = Math.max(-.25, Math.min(.25, G.vy / 1100));
+  c.save(); c.translate(x, y); c.rotate(tilt);
+  if (rocket){
+    if (G.hold && G.state === 'run'){ c.fillStyle = Math.floor(T * 20) % 2 ? '#ffb300' : '#ff5722'; c.fillRect(-34, 0, 10, 6); c.fillStyle = '#fff3a0'; c.fillRect(-28, 1, 5, 4); }
+    c.fillStyle = '#eceff4'; c.fillRect(-24, -4, 40, 14);
+    c.fillStyle = '#e53935'; c.fillRect(16, -2, 6, 10); c.fillRect(22, 0, 3, 6); c.fillRect(-24, -9, 8, 5); c.fillRect(-24, 10, 8, 5);
+    c.fillStyle = '#90caf9'; c.fillRect(2, -1, 6, 6);
+  } else {
+    c.fillStyle = '#c62828'; c.fillRect(-22, -2, 40, 10); c.fillRect(-22, -10, 8, 10); c.fillRect(14, -6, 6, 6);
+    c.fillStyle = '#ffd54f'; c.fillRect(-22, 10, 44, 2); c.fillRect(20, 6, 2, 4); c.fillRect(-20, 8, 2, 2); c.fillRect(10, 8, 2, 2);
+    c.fillStyle = '#8e1b1b'; c.fillRect(-14, 0, 26, 2);
+    if (G.ammo > 0){ c.fillStyle = '#43a047'; c.fillRect(-20, -6, 6, 5); c.fillStyle = '#ffd54f'; c.fillRect(-18, -6, 2, 5); }
+  }
+  // the dog rides on top — its own NFT picture
+  if (G.img.complete && G.img.naturalWidth){ c.drawImage(G.img, -14, -32, 30, 30); }
+  else { c.fillStyle = '#d7b98a'; c.fillRect(-10, -24, 18, 16); }
+  if (rocket){ c.strokeStyle = 'rgba(200,235,255,.7)'; c.lineWidth = 1.5; c.beginPath(); c.arc(1, -17, 17, 0, 7); c.stroke(); }
+  else { c.fillStyle = '#e53935'; c.fillRect(-12, -7, 22, 3); c.fillRect(-14, -7, 3, 8); }
+  c.restore();
+}
+
 /* ============================ Bark Arena TV (/tv) ============================
    A page for the 24/7 YouTube stream: plays real fights back to back — replays of ranked, arena and
    Fight Club fights from /api/public/replays, through the same engine, effects and sounds — with an
@@ -4761,6 +5272,7 @@ else {
   // ?demo=1 from the website ("Try the free demo"): straight into the demo dogs, unless already signed in
   try { if (new URLSearchParams(location.search).get('demo') === '1' && !WALLET.token) WALLET.demo = true; } catch(e){}
   menu();
+  if (tab === 'dash') dashLoad();
 }
 </script>
 </body>

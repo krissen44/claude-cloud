@@ -946,6 +946,65 @@ async function bossPublic(env, account) {
     down: b.down, killer: b.killer ? displayName(names, b.killer) : null, reward: BOSS_REWARD, ...(account ? {mine: b.by[account] || 0} : {})};
 }
 
+/* ------------------------------------------------------------------ Scrappy Dash (mini game) */
+/* A one-tap endless runner in the game page (tab "Dash"): the dog flies a sleigh over the roofs — after
+   Christmas a rocket to the moon, same mechanics. It runs in the page; the server hands out a run id
+   (/dash/start), checks the reported run against the clock (/dash/end: the run can't be longer than the time
+   since its start, the score can't beat the fastest possible run of that length) and keeps each player's best of
+   the week in blob `dash:<week>`. No ladder XP, no tickets; the page gives the dog a little bond XP (capped per day). */
+const DASH_ROCKET_FROM = Date.parse("2026-12-27T00:00:00Z");
+const DASH_RATE = 260, DASH_SLACK = 500;            // max points per second of play (see dashScore in the page) + slack
+const DASH_RUN_TTL = 20 * 60;                       // a run id is good for 20 minutes
+const DASH_RUNS = new Map();                        // run ids on Node (in memory); the Cloudflare path uses KV
+const dashKV = env => env.KV && !env.STORE ? env.KV : null;
+const dashTheme = env => ["sleigh", "rocket"].includes(env.DASH_THEME) ? env.DASH_THEME : (Date.now() < DASH_ROCKET_FROM ? "sleigh" : "rocket");
+async function dashRunPut(env, id, v) {
+  if (dashKV(env)) return env.KV.put("dashrun:" + id, JSON.stringify(v), {expirationTtl: DASH_RUN_TTL});
+  DASH_RUNS.set(id, v);
+  for (const [k, r] of DASH_RUNS) if (Date.now() - r.at > DASH_RUN_TTL * 1000) DASH_RUNS.delete(k);
+}
+async function dashRunTake(env, id) {
+  if (!/^[0-9a-f]{18}$/.test(id || "")) return null;
+  if (dashKV(env)) { const v = await env.KV.get("dashrun:" + id, "json"); if (v) await env.KV.put("dashrun:" + id, "0", {expirationTtl: 60}); return v || null; }
+  const v = DASH_RUNS.get(id); DASH_RUNS.delete(id); return v || null;
+}
+const dashDog = d => {
+  if (!d || typeof d !== "object") return null;
+  const name = String(d.name || "").replace(/[^\w #.'-]/g, "").slice(0, 24);
+  const token = Number.isInteger(d.token) && d.token > 0 && d.token <= 5000 ? d.token : null;
+  return name || token ? {name, token} : null;
+};
+async function dashStart(env, account, b) {
+  const id = rid();
+  await dashRunPut(env, id, {a: account, at: Date.now(), dog: dashDog(b.dog)});
+  return json({id, theme: dashTheme(env)});
+}
+async function dashEnd(env, account, b) {
+  const run = await dashRunTake(env, String(b.id || ""));
+  if (!run || run.a !== account) return json({error: "no_run"}, 400);
+  const elapsed = Date.now() - run.at, ms = Math.max(0, +b.ms || 0), score = Math.floor(+b.score || 0);
+  if (!(ms >= 1000) || ms > elapsed + 3000) return json({error: "bad_time"}, 400);
+  if (!(score >= 0) || score > DASH_RATE * ms / 1000 + DASH_SLACK) return json({error: "bad_score"}, 400);
+  const st = storeOf(env), wk = weekOf(), k = "dash:" + wk, m = (await st.blobGet(k)) || {};
+  const r = m[account] = m[account] || {best: 0, runs: 0, gifts: 0};
+  r.runs++; r.gifts += Math.max(0, Math.min(500, b.gifts | 0));
+  const pb = score > r.best;
+  if (pb) { r.best = score; r.dog = run.dog; r.at = Date.now(); }
+  await st.blobSet(k, m);
+  return json({ok: true, pb, best: r.best, rank: dashRank(m, account), players: Object.keys(m).length});
+}
+const dashRank = (m, a) => !m[a] ? null : 1 + Object.values(m).filter(r => r.best > m[a].best).length;
+async function dashBoard(env, account, week) {
+  const st = storeOf(env), names = await st.profiles(), wk = weekOf();
+  const prev = weekOf(new Date(Date.parse(wk + "T12:00:00Z") - 7 * 864e5));
+  const rows = (m, n) => Object.entries(m).filter(([, r]) => r.best > 0).sort((x, y) => y[1].best - x[1].best || x[1].at - y[1].at).slice(0, n)
+    .map(([a, r]) => ({name: displayName(names, a), score: r.best, dog: r.dog || null, ...(isTeam(env, a) ? {team: true} : {}), ...(a === account ? {you: true} : {})}));
+  const m = (await st.blobGet("dash:" + wk)) || {}, p = (await st.blobGet("dash:" + prev)) || {};
+  const out = {week: wk, theme: dashTheme(env), players: Object.keys(m).length, top: rows(m, 10), last: {week: prev, top: rows(p, 3)}};
+  if (account) out.mine = m[account] ? {best: m[account].best, runs: m[account].runs, rank: dashRank(m, account)} : {best: 0, runs: 0, rank: null};
+  return out;
+}
+
 /* ------------------------------------------------------------------ starter dogs */
 /* A player who signs in without a Pixel Scrappy gets a starter dog for STARTER_DAYS: one of the treasury's
    (the issuer wallet's) non-Legendary pieces, shared — every starter trainer keeps their own bond with it.
@@ -2061,6 +2120,11 @@ export default {
         r.headers.set("access-control-allow-origin", "*"); r.headers.set("cache-control", "public, max-age=30");
         return r;
       }
+      if (p === "/public/dash") {
+        const r = json(await dashBoard(env, null));
+        r.headers.set("access-control-allow-origin", "*"); r.headers.set("cache-control", "public, max-age=60");
+        return r;
+      }
       if (p === "/public/nft") return withCors(await nftLookup(env, url.searchParams.get("t")), cors);
       if (p === "/check") return withCors(await check(env, url.searchParams.get("account")), cors);
       if (p === "/auth/start" && req.method === "POST") return withCors(await authStart(env), cors);
@@ -2070,6 +2134,7 @@ export default {
 
       const account = await readSession(env, (req.headers.get("authorization") || "").replace(/^Bearer /, ""));
       if (p === "/ladder") return withCors(await ladder(env, account, url.searchParams.get("week")), cors);
+      if (p === "/dash/board") return withCors(json(await dashBoard(env, account)), cors);
       if (!account) return withCors(json({error:"unauthorized"}, 401), cors);
 
       if (p === "/me/kennel") return withCors(await kennel(env, account, url.searchParams.has("fresh")), cors);
@@ -2120,6 +2185,8 @@ export default {
       if (p === "/ach" && req.method === "POST") return withCors(await achPost(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/ref" && req.method === "GET") return withCors(await refInfo(env, account), cors);
       if (p === "/ref" && req.method === "POST") return withCors(await refSet(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/dash/start" && req.method === "POST") return withCors(await dashStart(env, account, await req.json().catch(() => ({}))), cors);
+      if (p === "/dash/end" && req.method === "POST") return withCors(await dashEnd(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/fight/start" && req.method === "POST") return withCors(await fightStart(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/fight/round" && req.method === "POST") return withCors(await fightRound(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/fight/abort" && req.method === "POST") return withCors(await fightAbort(env, account, await req.json().catch(() => ({}))), cors);

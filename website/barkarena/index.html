@@ -239,6 +239,7 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
   <nav class="toc" aria-label="On this page">
     <a href="#mint">🐾 Get a fighter</a>
     <a href="#boss">👹 Boss</a>
+    <a href="#dash" id="dashToc">🛷 Dash</a>
     <a href="#leaderboard">🏆 Leaderboard</a>
     <a href="#how">📖 How to play</a>
     <a href="#fight">🥊 Fighting</a>
@@ -259,6 +260,15 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
         <div id="bossTxt" class="meta" style="color:#ffd9e2"></div>
         <div class="tops" id="bossTop"></div></div>
     </div>
+  </section>
+
+  <!-- ===================================================== Scrappy Dash mini game -->
+  <section id="dash">
+    <p class="kicker">New mini game · free</p>
+    <h2 id="dashH">🛷 Scrappy Sleigh Dash</h2>
+    <p class="lead" id="dashLead">Your Scrappy flies a sleigh over the snowy roofs. One button: <b>hold</b> to climb, let go to sink, a <b>quick tap</b> drops a gift. Hit the glowing chimneys for a combo up to ×5, dodge tall chimneys and crows — it gets faster every second. Runs last 30–90 seconds, no tickets, play as often as you like. The best run of the week counts.</p>
+    <div class="boards" style="margin-top:16px"><div class="card board"><h3>This week's best runs</h3><div id="dashTop"><p class="empty">Loading…</p></div></div></div>
+    <div class="row" style="margin-top:14px"><a class="btn" href="https://game.scrappyxrp.fun/dash" data-ev="play">▶ Play the Dash</a></div>
   </section>
 
   <!-- ===================================================== leaderboard -->
@@ -458,6 +468,21 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
 </script>
 <script>
 /* Live leaderboard from the game server's public endpoint. */
+(function(){   // Scrappy Dash: sleigh until Christmas, then the rocket to the moon — the server says which
+  fetch("https://game.scrappyxrp.fun/api/public/dash", {cache: "no-store"}).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
+    if (!d) return;
+    var esc = function(t){ return String(t).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };
+    if (d.theme === "rocket"){
+      document.getElementById("dashH").textContent = "🚀 Scrappy Rocket Dash";
+      document.getElementById("dashToc").textContent = "🚀 Dash";
+      document.getElementById("dashLead").innerHTML = "Your Scrappy flies a rocket to the moon. One button: <b>hold</b> to climb, let go to sink, a <b>quick tap</b> drops a bone. Hit the glowing moon-base hatches for a combo up to ×5, grab bones and $SCRAP coins, dodge antenna towers and asteroids — it gets faster every second. Runs last 30–90 seconds, no tickets, play as often as you like. The best run of the week counts.";
+    }
+    var rows = (d.top || []).slice(0, 5);
+    document.getElementById("dashTop").innerHTML = rows.length ? '<ol>' + rows.map(function(r, i){
+      return '<li><span class="rk">' + (["🥇","🥈","🥉"][i] || (i + 1) + ".") + '</span><span>' + esc(r.name) + (r.team ? ' <small class="team">TEAM</small>' : '') + '</span><b>' + Number(r.score).toLocaleString() + '</b></li>'; }).join("") + '</ol>'
+      : '<p class="empty">No runs yet this week — the first one takes the top spot.</p>';
+  }).catch(function(){ document.getElementById("dashTop").innerHTML = '<p class="empty">The board is resting — try again later.</p>'; });
+})();
 (function(){   // the weekly boss
   fetch("https://game.scrappyxrp.fun/api/public/boss", {cache: "no-store"}).then(function(r){ return r.ok ? r.json() : null; }).then(function(b){
     if (!b || !b.max) return;
