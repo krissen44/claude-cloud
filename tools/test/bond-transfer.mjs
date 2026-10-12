@@ -9,10 +9,16 @@ fs.rmSync(D, {recursive: true, force: true}); fs.mkdirSync(D + "/saves", {recurs
 fs.writeFileSync(D + "/session.secret", "testsecret");
 const tok = a => { const b0 = Buffer.from(JSON.stringify({a, exp: 2e9})).toString("base64url"); return b0 + "." + createHmac("sha256", "testsecret").update(b0).digest("base64url"); };
 const A = "rBondSellerXXXXXXXXXXXXXXXXXXX", B = "rBondBuyerXXXXXXXXXXXXXXXXXXXX", OLD = "rBondOldOwnerXXXXXXXXXXXXXXXXX";
+const WC = "rBondEarlyBirdXXXXXXXXXXXXXXXX", WD = "rBondRepairXXXXXXXXXXXXXXXXXXX", OLD2 = "rBondOldTwoXXXXXXXXXXXXXXXXXXX", OLD3 = "rBondOldThreeXXXXXXXXXXXXXXXXX";
 const id = t => "000800" + String(t).padStart(6, "0");
 const hold = h => fs.writeFileSync(HF, JSON.stringify(h));
-hold({[A]: [3615, 3616], [B]: [3700], [OLD]: []});
+hold({[A]: [3615, 3616], [B]: [3700], [OLD]: [], [WC]: [3900], [WD]: [3950]});
 // a dog that changed hands before the registry existed: its old owner's save still has the training
+fs.writeFileSync(D + "/saves/" + OLD2 + ".json", JSON.stringify({data: {v: 1, dogs: {[id(3900)]: {lvl: 5, xp: 12, w: 9, l: 2}}}, updated: Date.now() - 864e5}));
+fs.writeFileSync(D + "/saves/" + OLD3 + ".json", JSON.stringify({data: {v: 1, dogs: {[id(3950)]: {lvl: 7, xp: 3, w: 20, l: 4}}}, updated: Date.now() - 864e5}));
+// a registry entry made by the first version of the fix: the buyer's Bond 1 (their save came before the kennel load)
+fs.writeFileSync(D + "/store.json", JSON.stringify({players: {}, weekly: {}, holdings: {[WD]: {tokens: [3950], dogs: [{t: 3950, id: id(3950), uri: "ipfs://bafyX/3950.json"}], updated: Date.now() - 6e4}},
+  blobs: {bonds: {[id(3950)]: {lvl: 1, xp: 0, w: 1, l: 0, by: WD, at: Date.now() - 3e4}}}}));
 fs.writeFileSync(D + "/saves/" + OLD + ".json", JSON.stringify({data: {v: 1, dogs: {[id(3800)]: {lvl: 4, xp: 30, w: 12, l: 5}}}, updated: Date.now() - 864e5}));
 const log = fs.openSync(S + "/bondserver.log", "w");
 const srv = spawn("node", [new URL("./tut-mock.mjs", import.meta.url).pathname], {env: {...process.env, PORT: String(PORT), DATA_DIR: D, ISSUER: "rI", TAXON: "369", HOLD_FILE: HF}, stdio: ["ignore", log, log]});
@@ -28,7 +34,7 @@ await call(A, "/me/kennel?fresh=1");
 await call(A, "/save", {data: {v: 1, dogs: {[id(3615)]: {lvl: 6, xp: 40, w: 30, l: 8, path: {4: "b", 8: "a"}}, [id(3616)]: {lvl: 2, xp: 5, w: 3, l: 1}}}});
 let k = await call(A, "/me/kennel?fresh=1");
 ok(!k.carry, "the trainer gets nothing carried (it's their own training)");
-hold({[A]: [3616], [B]: [3700, 3615, 3800], [OLD]: []});
+hold({[A]: [3616], [B]: [3700, 3615, 3800], [OLD]: [], [WC]: [3900], [WD]: [3950]});
 k = await call(B, "/me/kennel?fresh=1");
 ok(k.carry && k.carry[id(3615)] && k.carry[id(3615)].lvl === 6 && k.carry[id(3615)].xp === 40 && k.carry[id(3615)].path[4] === "b", "B's kennel carries #3615 at bond 6 (+XP, record, paths): " + JSON.stringify(k.carry && k.carry[id(3615)]));
 ok(k.carry && k.carry[id(3800)] && k.carry[id(3800)].lvl === 4, "a dog that changed hands before the update: found in the old owner's save (bond 4)");
@@ -41,6 +47,13 @@ ok(k.carry && k.carry[id(3615)] && k.carry[id(3615)].lvl === 6, "a fresh bond-1 
 await call(A, "/save", {data: {v: 1, dogs: {[id(3615)]: {lvl: 9, xp: 0, w: 0, l: 0}}}});
 k = await call(B, "/me/kennel?fresh=1");
 ok(k.carry[id(3615)].lvl === 6, "the old owner can't change a dog they no longer hold");
+// the owner's case: the new wallet already played with the dog, and on sign-in its save is uploaded BEFORE the kennel loads
+await call(WC, "/me/kennel?fresh=1");                                       // C has held #3900 for a while (before the fix)
+await call(WC, "/save", {data: {v: 1, dogs: {[id(3900)]: {lvl: 1, xp: 8, w: 1, l: 0}}}});   // sign-in: save first …
+k = await call(WC, "/me/kennel?fresh=1");                                   // … kennel second
+ok(k.carry && k.carry[id(3900)] && k.carry[id(3900)].lvl === 5, "save uploaded before the kennel load: the old training (bond 5) still comes along");
+k = await call(WD, "/me/kennel?fresh=1");
+ok(k.carry && k.carry[id(3950)] && k.carry[id(3950)].lvl === 7, "a wrong Bond-1 entry from the first fix version is repaired (bond 7 from the old save)");
 // in the browser: B signs in and sees bond 6 + a note
 const br = await chromium.launch({executablePath: process.env.CHROMIUM || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"});
 const p = await (await br.newContext({viewport: {width: 1000, height: 900}})).newPage();

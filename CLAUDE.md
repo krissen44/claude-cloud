@@ -286,8 +286,8 @@ hand over one combined package for the week start; don't tell the owner to uploa
   Website `dashPrizes` + `claimPrize` (modal, polls `/public/dash/claim?uuid=`). `treasuryFree` = issuer pieces no prize used yet.
 - **Bond travels with the NFT (fix 12 Oct)**: blob `bonds` {nftId: {lvl, xp, w, l, path, by, at}} — `bondRecord` from `savePut`
   (only dogs the saver holds and is the newest holder of, by holdings `updated`; a new holder's lower save doesn't overwrite
-  another trainer's higher entry), `bondCarry` in `kennel()` → `carry` for dogs trained by someone else (first time: scans
-  `saveAll()` for the most trained copy). Client `bondAdopt` (takes the higher bond, `WALLET.bondNote` card in the kennel).
+  another trainer's higher entry), `bondCarry` in `kennel()` → `carry` for dogs trained by someone else (`bondSeed`: before any write or read,
+  each dog is looked up once in `saveAll()` for the most trained copy, `scanned` flag — the save upload on sign-in runs before the kennel). Client `bondAdopt` (takes the higher bond, `WALLET.bondNote` card in the kennel).
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 

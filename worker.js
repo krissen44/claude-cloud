@@ -2043,6 +2043,23 @@ const bondKey = g => [g.lvl | 0, g.xp | 0];
 const bondMore = (a, b) => { const x = bondKey(a), y = bondKey(b); return x[0] !== y[0] ? x[0] > y[0] : x[1] > y[1]; };
 const bondClean = g => ({lvl: Math.max(1, Math.min(10, g.lvl | 0 || 1)), xp: Math.max(0, g.xp | 0), w: Math.max(0, g.w | 0), l: Math.max(0, g.l | 0),
   ...(g.path && typeof g.path === "object" ? {path: cleanPath(g.path)} : {})});
+// Once per dog, before anything is booked for it: the most trained copy in the other wallets' saves (training from before
+// the registry existed, or from a seller). Entries made before this check (no `scanned`) get it once too — they could
+// hold a buyer's Bond 1 written by the save upload that comes before the kennel load on sign-in.
+async function bondSeed(st, reg, id, account, cache) {
+  const e = reg[id];
+  if (e && e.scanned) return false;
+  cache.all = cache.all || await st.saveAll().catch(() => ({}));
+  let best = null;
+  for (const [a, r] of Object.entries(cache.all || {})) {
+    if (a === account) continue;
+    const g = ((((r && r.data) || r || {}).dogs) || {})[id];
+    if (g && (g.lvl > 1 || g.xp > 0) && (!best || bondMore(g, best.g))) best = {a, g};
+  }
+  reg[id] = best && (!e || bondMore(best.g, e)) ? {...bondClean(best.g), by: best.a, at: Date.now(), scanned: true}
+    : {...(e || {lvl: 1, xp: 0, w: 0, l: 0, by: null, at: Date.now()}), scanned: true};
+  return true;
+}
 async function bondRecord(env, account, dogs) {
   if (!dogs || typeof dogs !== "object") return;
   // only dogs this wallet holds — and it must be the newest record of that dog on the ledger: a seller whose kennel
@@ -2052,34 +2069,25 @@ async function bondRecord(env, account, dogs) {
   const held = new Set();
   for (const d of mine.dogs) if (!Object.entries(all).some(([a, h]) => a !== account && (h.updated || 0) > (mine.updated || 0) && (h.dogs || []).some(x => x.id === d.id))) held.add(d.id);
   if (!held.size) return;
-  const reg = (await st.blobGet("bonds")) || {};
+  const reg = (await st.blobGet("bonds")) || {}, cache = {};
   let dirty = false;
   for (const [id, g] of Object.entries(dogs)) {
     if (!held.has(id) || !g || typeof g !== "object") continue;      // only the wallet that holds the dog writes its training
+    if (await bondSeed(st, reg, id, account, cache)) dirty = true;
     const e = bondClean(g), old = reg[id];
     if (old && old.by === account && old.lvl === e.lvl && old.xp === e.xp && old.w === e.w && old.l === e.l && JSON.stringify(old.path || null) === JSON.stringify(e.path || null)) continue;
     if (old && old.by !== account && bondMore(old, e)) continue;   // a new holder's fresh save must not erase the carried bond before adopting it
-    reg[id] = {...e, by: account, at: Date.now()}; dirty = true;
+    reg[id] = {...e, by: account, at: Date.now(), scanned: true}; dirty = true;
   }
   if (dirty) await st.blobSet("bonds", reg);
 }
 async function bondCarry(env, account, ids) {
   if (!ids.length) return {};
-  const st = storeOf(env), reg = (await st.blobGet("bonds")) || {}, out = {};
-  let all = null, dirty = false;
+  const st = storeOf(env), reg = (await st.blobGet("bonds")) || {}, out = {}, cache = {};
+  let dirty = false;
   for (const id of ids) {
-    let e = reg[id];
-    if (!e) {                                    // never recorded: look in everybody else's saves once
-      all = all || await st.saveAll().catch(() => ({}));
-      let best = null;
-      for (const [a, r] of Object.entries(all || {})) {
-        if (a === account) continue;
-        const g = ((((r && r.data) || r || {}).dogs) || {})[id];
-        if (g && (g.lvl > 1 || g.xp > 0) && (!best || bondMore(g, best.g))) best = {a, g};
-      }
-      e = reg[id] = best ? {...bondClean(best.g), by: best.a, at: Date.now()} : {lvl: 1, xp: 0, w: 0, l: 0, by: null, at: Date.now()};
-      dirty = true;
-    }
+    if (await bondSeed(st, reg, id, account, cache)) dirty = true;   // once per dog: training in other wallets' saves
+    const e = reg[id];
     if (e.by && e.by !== account && (e.lvl > 1 || e.xp > 0)) out[id] = {lvl: e.lvl, xp: e.xp, w: e.w, l: e.l, ...(e.path ? {path: e.path} : {})};
   }
   if (dirty) await st.blobSet("bonds", reg);

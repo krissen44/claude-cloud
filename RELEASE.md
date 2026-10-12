@@ -4,7 +4,17 @@ Changes collect here during the week and go live together when the new week star
 Last version confirmed live: **game v31.2** (uploaded by the owner on 8 Oct 2026; includes the v31.1 ticket hotfix and
 its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on GitHub Actions, daily 05:10 UTC.
 
-## Hotfix v32.2 (12 Oct, owner may upload right away): v32.1 + the bond fix only, **no Scrappy Dash**
+## Hotfix v32.3 (12 Oct, upload right away, replaces v32.2): the bond fix didn't reach #3615 live
+- **Bug:** after v32.2 the owner's #3615 still showed Bond 1 in the new wallet. On sign-in the game uploads the save
+  (`cloudPull` → `/api/save` → `bondRecord`) *before* the kennel loads, so the new wallet's Bond-1 save was recorded first
+  and the scan of old saves never ran for that dog.
+- **Fix:** `bondSeed` — before the registry is written or read, each dog is looked up once in all saves (most trained
+  copy in another wallet wins, entry marked `scanned`). Entries v32.2 already wrote wrongly are repaired the same way.
+  #3615 gets its bond back on the next kennel load (↻ Refresh or sign in again) after the upload.
+- `bark-arena-game-v32.3-bondfix-komplett.zip` = hotfix branch commit 6dd30c7 (no Dash). Test `bond-transfer.mjs` got
+  both cases (save before kennel, wrong v32.2 entry). Same fix in the v33 package.
+
+## Hotfix v32.2 (12 Oct, uploaded by the owner): v32.1 + the bond fix only, **no Scrappy Dash**
 - **Also in v32.2: dogs stayed white on iPhones after a hit** (a player's screen recording, iPhone Safari): the hit flash
   was a CSS class with `filter: brightness(4)` toggled on the image while its idle/guard animation ran; WebKit kept the
   flashed picture after the class was removed. Now the flash is a short Web Animation of the filter (`hitFlash`) that
