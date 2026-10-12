@@ -5,6 +5,10 @@ Last version confirmed live: **game v31.2** (uploaded by the owner on 8 Oct 2026
 its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on GitHub Actions, daily 05:10 UTC.
 
 ## Hotfix v32.2 (12 Oct, owner may upload right away): v32.1 + the bond fix only, **no Scrappy Dash**
+- **Also in v32.2: dogs stayed white on iPhones after a hit** (a player's screen recording, iPhone Safari): the hit flash
+  was a CSS class with `filter: brightness(4)` toggled on the image while its idle/guard animation ran; WebKit kept the
+  flashed picture after the class was removed. Now the flash is a short Web Animation of the filter (`hitFlash`) that
+  ends on the dog's normal filter, followed by a forced repaint. Chrome/Android were never affected.
 - `bark-arena-game-v32.2-bondfix-komplett.zip` = commit 546417b (v32.1) + the bond-travels-with-the-NFT fix below
   (local branch `hotfix/bond-carry`, commit 6415890). Contains no Dash code. Tested: `bond-transfer.mjs`, `market.mjs`.
   The v33 package for Monday contains the same fix, so uploading the hotfix first changes nothing there.
