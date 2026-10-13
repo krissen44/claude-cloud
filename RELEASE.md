@@ -4,6 +4,35 @@ Changes collect here during the week and go live together when the new week star
 Last version confirmed live: **game v31.2** (uploaded by the owner on 8 Oct 2026; includes the v31.1 ticket hotfix and
 its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on GitHub Actions, daily 05:10 UTC.
 
+## Shorts rework (13 Oct, after the owner's YouTube review: reach fell from ~1,250 to 50–450 views per Short)
+Why: every Short was the same template ("Nobody bet on the …" 11×), 3–5 a day, 17–25 s with a long end card, links in
+descriptions (not clickable in Shorts), #Shorts in titles, game words outsiders don't know (Bond, Mythic, Epic).
+- **Clip page `/clip` (in the game, `public/index.html`)**: cold open — the decisive round plays first, zoomed on the
+  dogs and frozen; "⏪ HOW DID WE GET HERE?"; the three rounds before it; the same round again at the end, so the clip
+  runs into its own start (loops). **10–14 s** (was 17–25). One big line on top, max 5 plain words (`clipHooks`: "THIS
+  DOG HAS 1 HP", "COMMON vs LEGENDARY", "WAIT FOR THE LAST BITE", "12 DAMAGE. ONE BITE.", …) with ids so the factory can
+  avoid repeats (`&avoid=`). No end card for the recorder; "Who would you pick? 👇" at the end. Rarity shown in plain words
+  (Epic → super rare, Mythic → ultra rare), no Bond on screen. People opening a link still get ▶ and Watch again/Play.
+  New formats on the page: `&fmt=leg&leg=<n>` (Legendary spotlight, entrance shown), `&fmt=boss&boss=<n>` (small dog vs the
+  weekly boss), `&fmt=champ|hp1` (hooks for champion / closest win).
+- **Factory `public/kit/factory.mjs` + workflow**: **1 Short a day** (was 3). Format by weekday (UTC): Mon Weekly Champion
+  (last week's #1 in one of their fights), Wed Legendary Spotlight (#1…#20 in turn), Fri a small dog vs the weekly boss,
+  Sun 1 HP Club (closest real win of the week), other days the best real fight; falls back to the best fight.
+  `FORMAT=` forces one. Titles: one emotion per video from rotating templates (state `titles`, last 25 never repeat), no
+  #Shorts, no Bond/Mythic/Epic. Description: "A real fight from Bark Arena: a free pixel dog battle game where every fighter
+  is a real NFT. 🐾" + one line about this fight + a question, **no link**, 4–5 hashtags (`#pixelart #indiegame #dogs
+  #gaming #XRPL`; Legendary: `#pixelart #pixelartist #indiegame #legendary`). Pinned comment = the question only.
+  TikTok/IG texts: same title idea, no crypto words, ≤ 5 / 8 tags.
+- Tests: `tools/test/clipcold.mjs` (lengths, ≤ 5-word hooks, avoid list, spotlight/boss, viewer buttons),
+  `tools/test/shorts.mjs` (end to end), `tools/test/shorts-fmt.mjs` (formats, rotation, fallbacks).
+- **Going live:** the clip page is part of the game → hotfix **v32.5** (`bark-arena-game-v32.5-komplett.zip` = v32.4 + the
+  new `/clip`, no Dash) or the v33 package. The factory and workflow run from the repo's **default branch**
+  (`claude/upbeat-hypatia-cht3ou`) — they must be merged there. The new factory also works with the old clip page
+  (titles/texts/one a day right away; the 10–14 s cold open once the game is updated).
+- Owner's to-dos on YouTube (not code): links into the channel header (scrappyxrp.fun/links) and each Short's "Related
+  video" (the tutorial); reply to comments; channel description "Daily pixel dog fights & lofi"; spread the lofi Shorts
+  to one a day and upload a 30-minute "Rainy Night" (the factory doesn't make the lofi videos).
+
 ## Hotfix v32.4 (12 Oct, upload right away, replaces v32.3): dogs still turned white on iPhone
 - **Bug:** the owner reports the white dog after a hit is still there with v32.2/v32.3. Changing the sprite's own
   `filter` — by class (v32.1) or as a Web Animation (v32.2) — could stay stuck in iPhone Safari.

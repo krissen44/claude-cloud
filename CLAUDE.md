@@ -204,6 +204,13 @@ hand over one combined package for the week start; don't tell the owner to uploa
   returns early in tvMode): replays back to back with overlay, ladder card every 4 fights, exhibitions when empty.
   800×450 CSS px. `tools/stream/setup.sh` = optional 24/7 YouTube stream from a VPS (Xvfb + PulseAudio + ffmpeg RTMP);
   not in use — the owner chose Shorts.
+- **Shorts since 13 Oct (owner's YouTube review)**: `/clip` = cold open (decisive round first, zoom `.clipzoom` on the dogs
+  + freeze, "⏪ HOW DID WE GET HERE?" `.cliprw`, 3 rounds before it, the same round again → loops), 10–14 s, `WAIT_K` .85/.8,
+  big line ≤ 5 plain words from `clipHooks` (ids, `&avoid=`), `CLIP_TIER` (no Bond/Mythic/Epic on screen), question `.clipask`
+  at the end, no end card for the recorder; `&fmt=leg&leg=n` / `&fmt=boss&boss=n` / `fmt=champ|hp1`. Factory: 1 a day,
+  format by weekday (Mon champ, Wed leg, Fri boss, Sun hp1, else fight; `FORMAT=`), rotating title templates (`titles()`,
+  state `titles`/`hooks`/`leg`), description without links, 4–5 tags, no #Shorts. The text below describes the older
+  layout where it differs.
 - **Shorts clips `/clip`** (`clipBoot`, `clipDry`, `clipDrama`, `clipHook`, `CLIP`): one fight in portrait 450×800 CSS px
   (recorded at 720×1280, encoded 1080×1920), hook line on top (from the fight: upset, comeback, Legendary, Club, final,
   big hit, KO), end card "Mint your fighter · scrappyxrp.fun/barkarena · link in bio". Opened by a person (Discord highlight link) it shows a "▶ Watch the fight" button first and "Watch again" / "Play Bark Arena" on the end card; the recorder (`navigator.webdriver`) calls `CLIP.go()` and sees neither (v32.1). `?id=<replay>` or exhibitions

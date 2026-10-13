@@ -516,6 +516,14 @@ body.clip .fighter.left{left:2px}body.clip .fighter.right{right:2px}
 .cliphook b{font:900 29px/1.18 system-ui,'Noto Color Emoji',sans-serif;color:#fff;text-shadow:0 3px 0 #000,0 0 18px rgba(0,0,0,.6);animation:hookin .5s cubic-bezier(.2,1.5,.4,1) both}
 @keyframes hookin{from{transform:scale(.5);opacity:0}}
 .cliphook.long b{font-size:25px}.cliphook.xlong b{font-size:21px}
+/* cold-open clips: one big line (≤ 5 words), a zoom on the decisive round, a freeze, a quick rewind, the question at the end */
+.cliphook.big b{font-size:38px;line-height:1.08;letter-spacing:.5px;text-transform:uppercase}.cliphook.big.long b{font-size:33px}.cliphook.big.xlong b{font-size:28px}
+body.clip .fighter{transition:scale .55s cubic-bezier(.2,.8,.3,1)}body.clip .stage.clipzoom .fighter{scale:1.13}
+body.clip .stage.clipfreeze{filter:saturate(1.25) contrast(1.08)}
+.cliprw{position:fixed;left:0;right:0;top:44%;z-index:97;text-align:center;font:900 30px system-ui,sans-serif;color:#fff;
+  text-shadow:0 3px 0 #000,0 0 22px rgba(0,0,0,.7);animation:hookin .3s cubic-bezier(.2,1.5,.4,1) both;background:rgba(7,13,28,.45);padding:14px 0}
+.clipask{height:44px;display:flex;align-items:center;justify-content:center;font:900 24px system-ui,'Noto Color Emoji',sans-serif;color:#ffd54a;
+  text-shadow:0 2px 0 #000;opacity:0}.clipask.on{opacity:1;animation:hookin .4s cubic-bezier(.2,1.5,.4,1) both}
 .cliplow{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px;padding:10px 16px 0}
 .cliplow i{font:12px 'Press Start 2P',monospace;color:#ffd95e;font-style:normal}
 .clipwho b{display:block;font-size:17px;line-height:1.2}.clipwho span{font-size:12px;color:#bcd3ec}.clipwho.r{text-align:right}
@@ -5594,72 +5602,86 @@ function clipDry(rep){
 const clipDrama = s => (s.w ? 0 : -3) + (s.winLow < .25 ? 4 : s.winLow < .45 ? 2 : 0) + (s.ko ? 2 : 0) + (s.big >= 9 ? 2 : s.big >= 7 ? 1 : 0) + Math.min(2, s.abil) * .5 + (s.rounds >= 6 && s.rounds <= 10 ? 1 : 0);
 const RRANK = {Common: 0, Uncommon: 1, Rare: 2, Epic: 3, Legendary: 4, Mythic: 4};
 const clipUpset = (rep, s) => s.w && RRANK[(s.w === 'P' ? rep.P : rep.E).def.rarity] + 2 <= RRANK[(s.w === 'P' ? rep.E : rep.P).def.rarity];
-function clipHook(rep, s, tt){
-  const W = s.w === 'P' ? rep.P : rep.E, L = s.w === 'P' ? rep.E : rep.P, pick = a => a[Math.floor(Math.random() * a.length)];
-  const leg = x => x.def.legendary, myth = x => x.def.rarity === 'Mythic';
-  if (s.w && RRANK[W.def.rarity] + 2 <= RRANK[L.def.rarity]) return pick([`${W.def.rarity} vs ${leg(L) ? 'LEGENDARY' : L.def.rarity}… no way 🤯`, `Nobody bet on the ${W.def.rarity.toLowerCase()} 😳`]);
-  if (s.w && s.winLow < .25) return pick([`Down to ${Math.max(1, s.winLowHp)} HP… watch this 😤`, 'Almost KO… then THIS happened 😱', 'Never count this dog out 💀➡️👑']);
-  if (rep.kind === 'club') return pick(['Two real players. One ring. 🥊', 'Live duel: no bots, no mercy 🥊']);
-  if (rep.kind === 'arena' && rep.stage === 2) return pick(['Arena FINAL — winner takes the crown 👑', 'One fight from the trophy 🏆']);
-  if (leg(rep.P) || leg(rep.E)) return pick(['A 1-of-20 Legendary drops in 🌟', 'This Legendary was hand-drawn… and it bites ⚡', 'When the Legendary enters the ring 🌟']);
-  if (myth(rep.P) || myth(rep.E)) return pick(['Mythic aura activated ✨', 'Only 49 of these exist ✨']);
-  if (s.big >= 9) return pick([`CRUNCH!! ${s.big} damage in one bite 🦷`, `${s.big} damage. One bite. 💥`]);
-  if (s.ko) return pick(['No mercy. Full KO 💀', 'This ends in a knockout 💥']);
-  return pick(tt ? ['Pixel dogs. Real fights. 🐾', 'Which dog wins? 👀', 'Cutest fight you\'ll see today 🐾'] : ['Pixel dogs. Real fights. 🐾', 'Your NFT, but it fights 🐾', 'Which dog wins? 👀']);
+/* The big line on top: at most 5 words, plain words only (no Bond / Mythic / Epic — people outside the game don't know
+   them), with an id so the factory can keep the same line from coming back day after day (&avoid=id,id). */
+const CLIP_TIER = d => d.legendary ? 'LEGENDARY' : ({Common: 'COMMON', Uncommon: 'UNCOMMON', Rare: 'RARE', Epic: 'SUPER RARE', Mythic: 'ULTRA RARE'}[d.rarity] || 'COMMON');
+function clipHooks(rep, s, fmt){
+  const W = s.w === 'P' ? rep.P : rep.E, L = s.w === 'P' ? rep.E : rep.P, out = [], add = (id, text) => out.push({id, text});
+  const hp = Math.max(1, s.winLowHp | 0), leg = rep.P.def.legendary || rep.E.def.legendary;
+  if (fmt === 'champ') add('champ', 'THIS WEEK’S CHAMPION 👑');
+  if (fmt === 'boss') add('boss', s.w && !W.def.legendary ? 'IT BEAT THE BOSS?! 😳' : 'COMMON vs THE BOSS');
+  if (fmt === 'leg' && leg) { add('leg20', '1 OF ONLY 20 LEGENDARIES 🌟'); add('legin', 'THE LEGENDARY ENTERS 🌟'); }
+  if (s.w && clipUpset(rep, s)) { add('vs', `${CLIP_TIER(W.def)} vs ${CLIP_TIER(L.def)} 🤯`); add('nobody', 'NOBODY BET ON THIS DOG 😳'); add('worst', 'WEAKEST DOG WINS?!'); }
+  if (s.w && s.winLowHp <= 3) { add('hp', hp === 1 ? 'THIS DOG HAS 1 HP 😳' : `ONLY ${hp} HP LEFT 😳`); add('lastbite', 'WAIT FOR THE LAST BITE 💀'); }
+  else if (s.w && s.winLow < .3) { add('almost', 'ALMOST KNOCKED OUT… 😤'); add('lastbite', 'WAIT FOR THE LAST BITE 💀'); }
+  if (rep.kind === 'arena' && rep.stage === 2) add('final', 'ONE FIGHT FROM THE CROWN 👑');
+  if (rep.kind === 'club') add('club', 'TWO PLAYERS. ONE RING. 🥊');
+  if (s.big >= 9) add('big', `${s.big} DAMAGE. ONE BITE. 🦷`);
+  if (s.ko) add('ko', 'THIS ENDS IN A KO 💥');
+  if (leg) add('leg20', '1 OF ONLY 20 LEGENDARIES 🌟');
+  add('who', 'WHICH DOG WINS? 👀'); add('last', 'WATCH THE LAST ROUND 👀');
+  return out.filter((h, i) => out.findIndex(x => x.id === h.id) === i);
 }
 async function clipBoot(){
-  const q = new URLSearchParams(location.search), TT = q.get('v') === 'tt';
-  /* v=tt: the TikTok / Reels cut — shorter (the last rounds only), faster, no crypto words or wallet tags on screen,
-     an end card that asks for a follow. Default: the YouTube cut. */
-  tvMode = true; WAIT_K = TT ? .7 : .8; document.body.classList.add('tv', 'clip', TT ? 'clip-tt' : 'clip-yt');
+  const q = new URLSearchParams(location.search), TT = q.get('v') === 'tt', fmt = q.get('fmt') || '';
+  /* v=tt: the TikTok / Reels cut (no crypto words or wallet tags on screen). Both cuts are built the same way, aimed
+     at people scrolling past: the decisive moment first (cold open, frozen with a zoom), a quick rewind, the last
+     rounds that led to it, and the same moment again at the end — about 10–14 s, so the end runs into the start. */
+  tvMode = true; WAIT_K = TT ? .8 : .85; document.body.classList.add('tv', 'clip', TT ? 'clip-tt' : 'clip-yt');
   if (!S.on) S.toggle(); S.unlock();
   let rep = null, s = null;
   try {
     if (q.get('id')){ const r = await fetch('/api/public/replay?id=' + encodeURIComponent(q.get('id'))); if (r.ok) rep = (await r.json()).replay; }
   } catch(e){}
   if (rep) s = clipDry(rep);
-  else {                                           // an exhibition: the most spectacular dogs, drawn until it's a good fight
+  else {                                           // an exhibition, drawn until it's a good fight
+    const legs = DATA.fighters.filter(f => f.legendary), small = DATA.fighters.filter(f => !f.legendary && ['Common', 'Uncommon', 'Rare'].includes(f.rarity));
     const stars = DATA.fighters.filter(f => f.legendary || f.rarity === 'Mythic' || f.rarity === 'Epic');
+    const want = q.get('leg') || q.get('boss'), star = want ? legs.find(f => f.id === 'L' + want) : null;
     let best = null;
-    for (let i = 0; i < 40; i++){
-      // mostly a star against a small dog: the underdog stories are what people watch
-      const small = DATA.fighters.filter(f => !f.legendary && ['Common', 'Uncommon', 'Rare'].includes(f.rarity));
-      const a = stars[Math.floor(Math.random() * stars.length)], pool = (Math.random() < .75 && small.length ? small : DATA.fighters).filter(f => f !== a);
-      const b = pool[Math.floor(Math.random() * pool.length)], lvl = 3 + Math.floor(Math.random() * 7);
+    for (let i = 0; i < 80; i++){
+      let a, b, lvl = 3 + Math.floor(Math.random() * 7);
+      if (q.get('boss') && star){ a = small[Math.floor(Math.random() * small.length)]; b = star; }        // a small dog against the weekly boss
+      else if (star){ a = star; b = small[Math.floor(Math.random() * small.length)]; }                     // Legendary spotlight
+      else { a = stars[Math.floor(Math.random() * stars.length)];                                          // mostly a star against a small dog
+        const pool = (Math.random() < .75 && small.length ? small : DATA.fighters).filter(f => f !== a); b = pool[Math.floor(Math.random() * pool.length)]; }
       const c = {kind: 'ghost', P: {def: a, lvl}, E: {def: b, lvl: Math.max(1, Math.min(10, lvl + rint(-1, 1)))}, rounds: null};
-      const d = clipDry(c), sc = clipDrama(d) + (clipUpset(c, d) ? 4 : 0);      // underdog wins travel best
+      const d = clipDry(c);
+      let sc = clipDrama(d) + (clipUpset(c, d) ? 4 : 0);
+      if (q.get('boss')) sc += d.w === 'P' ? 6 : 0;                     // the small dog beating the boss is the story
+      else if (q.get('leg')) sc += (d.w === 'P' ? 3 : 0) + Math.min(2, d.abil) * 1.5;   // the Legendary shows its move
       if (!best || sc > best.sc) best = {c, d, sc};
-      if (sc >= 6) break;
+      if (sc >= (q.get('boss') || q.get('leg') ? 9 : 6)) break;
     }
     rep = Object.assign(best.c, {rounds: best.d.rec}); s = clipDry(rep);
   }
   CLIP.rep = rep; CLIP.stats = {v: s.v, w: s.w, ko: s.ko, winLow: s.winLow, winLowHp: s.winLowHp, big: s.big, rounds: s.rounds,
-    upset: !!clipUpset(rep, s), drama: clipDrama(s)};
-  CLIP.hook = q.get('hook') || clipHook(rep, s, TT);
-  CLIP.variant = TT ? 'tt' : 'yt';
+    upset: !!clipUpset(rep, s), drama: clipDrama(s), abil: s.abil};
+  const avoid = (q.get('avoid') || '').split(','), hooks = clipHooks(rep, s, fmt), fresh = hooks.filter(h => !avoid.includes(h.id));
+  const hk = q.get('hook') ? {id: 'custom', text: q.get('hook')} : (fresh[0] || hooks[0]);
+  CLIP.hook = hk.text; CLIP.hookId = hk.id; CLIP.hooks = hooks.map(h => h.id);
+  CLIP.variant = TT ? 'tt' : 'yt'; CLIP.fmt = fmt;
   TV.theme = rep.kind === 'club' ? 'club' : rep.kind === 'arena' ? 'arena' : ['meadow', 'arena', 'club'][Math.floor(Math.random() * 3)];
   const [ia, ib] = await Promise.all([tvImg(rep.P.def), tvImg(rep.E.def)]);
   const a = Object.assign({}, rep.P.def, {img: ia}), b = Object.assign({}, rep.E.def, {img: ib});
-  P = build(a, rep.P.lvl, rep.P.bonus ? {key: rep.P.bonus} : null, rep.P.path); E = build(b, rep.E.lvl, null, rep.E.path);
-  turn = 1; log = []; ev = []; over = false;
-  // TikTok cut: the first rounds happen off screen, the clip opens on the last few (the decisive part)
-  let skip = 0;
-  if (TT){
-    skip = Math.max(0, rep.rounds.length - 4);
-    simulating = true;
-    try { for (let i = 0; i < skip; i++){ const r = rep.rounds[i];
-      if ((rep.kind === 'club' || r.seed != null)) resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
-      else { const pa = moveOf(P, r.a), ea = moveOf(E, r.b); rollsReplay(r.r, () => resolve(pa, ea)); } } }
-    finally { simulating = false; }
+  const n = rep.rounds.length, last = n - 1, lead = Math.max(0, last - 3);       // the climax round + three before it
+  // puts both dogs at the start of round `upTo`, without showing anything
+  const ff = upTo => {
+    P = build(a, rep.P.lvl, rep.P.bonus ? {key: rep.P.bonus} : null, rep.P.path); E = build(b, rep.E.lvl, null, rep.E.path);
+    turn = 1; log = []; ev = []; over = false; simulating = true;
+    try { for (let i = 0; i < upTo; i++) clipRound(rep, rep.rounds[i]); } finally { simulating = false; }
     log = []; ev = [];
-  }
+  };
   const wallet = w => /…/.test(w || '') || /^r[1-9A-HJ-NP-Za-km-z]{4,}/.test(w || '');
   const who = (x, side) => `<div class="clipwho ${side}"><b>${x.who && !(TT && wallet(x.who)) ? esc(x.who) : side === 'r' && rep.kind !== 'ghost' && !x.who ? 'a wild Scrappy' : esc(x.def.name)}</b>
-    <span>${esc(x.def.rarity)}${x.def.legendary ? ' · 1 of 20' : ''} · Bond ${x.lvl}</span></div>`;
+    <span>${esc(x.def.legendary ? 'Legendary · 1 of 20' : CLIP_TIER(x.def).toLowerCase().replace(/^./, c => c.toUpperCase()))}</span></div>`;
+  const words = CLIP.hook.replace(/\s*\p{Extended_Pictographic}+/gu, '').length;
+  ff(last);
   app.innerHTML = `<div class="cliptop"><span>🐾 BARK ARENA</span></div>
-    <div class="cliphook${CLIP.hook.length > 22 ? ' long' : ''}${CLIP.hook.length > 32 ? ' xlong' : ''}"><b>${esc(CLIP.hook)}</b></div>${stage()}
+    <div class="cliphook big${words > 16 ? ' long' : ''}${words > 22 ? ' xlong' : ''}"><b>${esc(CLIP.hook)}</b></div>${stage()}
     <div class="cliplow">${who(rep.P, 'l')}<i>VS</i>${who(rep.E, 'r')}</div>
-    <div class="clipfoot">${TT ? 'Bark Arena · Pixel Scrappy' : 'Pixel Scrappy · XRP Ledger'}</div>`;
+    <div class="clipask" id="clipAsk"></div>
+    <div class="clipfoot">Bark Arena · free pixel dog fights</div>`;
   fxInit(document.querySelector('canvas.fx'), TV.theme); auraInit(); setBars();
   /* The Shorts recorder (a headless browser, navigator.webdriver) calls CLIP.go() itself. A person who opens
      the link (Discord highlights) gets a play button: it starts the fight and unlocks the sound. */
@@ -5676,33 +5698,42 @@ async function clipBoot(){
   });
   if (btn) btn.remove();
   CLIP.state = 'playing';
-  await wait(TT ? 120 : 300); if (!TT || !skip) await introFx(); await wait(TT ? 80 : 250);
+  const st = document.querySelector('.stage');
+  const climax = async () => { st.classList.add('clipzoom'); simulating = true; clipRound(rep, rep.rounds[last]); simulating = false; await play(); };
+  // 1) cold open: the decisive round, then a short freeze on the result
+  await climax();
+  st.classList.add('clipfreeze'); await wait(650);
+  // 2) rewind to the rounds that led there
+  const rw = document.createElement('div'); rw.className = 'cliprw'; rw.textContent = '⏪ HOW DID WE GET HERE?'; document.body.appendChild(rw);
+  await wait(500);
+  st.classList.remove('clipzoom', 'clipfreeze');
+  ff(lead); document.querySelectorAll('.fighter').forEach(f => f.classList.remove('faint', 'cheer')); setBars();
+  await wait(450); rw.remove();
+  if (fmt === 'leg' && (rep.P.def.legendary || rep.E.def.legendary)) await introFx();
   simulating = true;
   try {
-    for (const r of rep.rounds.slice(skip)){
-      if (over) break;
-      if ((rep.kind === 'club' || r.seed != null)) resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
-      else { const pa = moveOf(P, r.a), ea = moveOf(E, r.b); rollsReplay(r.r, () => resolve(pa, ea)); }
-      simulating = false; await play(); simulating = true;
-      await wait(150);
-    }
+    for (let i = lead; i < last; i++){ clipRound(rep, rep.rounds[i]); simulating = false; await play(); simulating = true; await wait(100); }
   } finally { simulating = false; }
-  await wait(900);
-  const end = document.createElement('div'); end.className = 'clipend';
-  end.innerHTML = TT
-    ? `<div class="ce1">Cute pixel dogs.<br>Real fights.</div>
-       <div class="ce2"><img src="${a.img}" alt=""><img src="${b.img}" alt=""></div>
-       <div class="ce3">Follow for daily fights 🐾</div><div class="ce5">Play free · link in bio</div>`
-    : `<div class="ce1">Every dog is an NFT<br>on the XRP Ledger</div>
-       <div class="ce2"><img src="${a.img}" alt=""><img src="${b.img}" alt=""></div>
-       <div class="ce3">Mint your fighter 🐾</div><div class="ce4">scrappyxrp.fun/barkarena</div><div class="ce5">Subscribe for daily fights · link in description</div>`;
-  if (viewer) end.insertAdjacentHTML('beforeend', `<div class="cebtn"><button type="button" id="clipAgain">↻ Watch again</button>
-    <a href="https://scrappyxrp.fun/barkarena/?src=clip">🐾 Play Bark Arena</a></div>`);
-  document.body.appendChild(end);
-  const again = document.getElementById('clipAgain');
-  if (again) again.onclick = () => location.reload(); S.fanfare(true);
-  await wait((TT ? 2400 : 3400) / WAIT_K);
+  // 3) the same moment again, so the end runs straight into the start
+  await climax();
+  const ask = document.getElementById('clipAsk');
+  ask.textContent = rep.kind === 'ghost' ? 'Who would you pick? 👇' : pickOne(['Who would you pick? 👇', 'Would you have bet on this? 👇', 'Rate this win 1–10 👇']);
+  ask.classList.add('on'); S.fanfare(true);
+  await wait(1100);
+  if (viewer){
+    const end = document.createElement('div'); end.className = 'clipend';
+    end.innerHTML = `<div class="ce3">Pixel dogs. Real fights. 🐾</div>
+      <div class="ce2"><img src="${a.img}" alt=""><img src="${b.img}" alt=""></div>
+      <div class="cebtn"><button type="button" id="clipAgain">↻ Watch again</button><a href="https://scrappyxrp.fun/barkarena/?src=clip">🐾 Play Bark Arena</a></div>`;
+    document.body.appendChild(end);
+    document.getElementById('clipAgain').onclick = () => location.reload();
+  }
   CLIP.state = 'done';
+}
+const pickOne = a => a[Math.floor(Math.random() * a.length)];
+function clipRound(rep, r){
+  if (rep.kind === 'club' || r.seed != null) resolveSeeded(moveOf(P, r.a), moveOf(E, r.b), r.seed);
+  else { const pa = moveOf(P, r.a), ea = moveOf(E, r.b); rollsReplay(r.r, () => resolve(pa, ea)); }
 }
 
 if (/^\/tv\/?$/.test(location.pathname)) tvBoot();

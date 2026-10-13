@@ -46,7 +46,11 @@ ok(/width=1080\|height=1920/.test(probe) && /codec_type=audio/.test(probe), "MP4
 for (const c of list){
   ok(!!c.tt && c.tt.seconds > 3, `${c.name}: TikTok cut ${c.tt && c.tt.seconds}s vs YouTube ${c.seconds}s ("${c.tt && c.tt.hook}")`);
   ok(!/xrp|nft|crypto|ledger|mint|web3/i.test(c.tiktok + c.instagram + c.commentTT), `${c.name}: TikTok/Instagram texts free of crypto words`);
-  ok(/xrp ledger/i.test(c.youtube.description), `${c.name}: YouTube text keeps the NFT/XRPL pitch`);
+  const tags = c.youtube.description.trim().split("\n").pop().split(/\s+/).filter(t => /^#[A-Za-z]/.test(t));
+  ok(/real NFT/.test(c.youtube.description) && !/https?:|\.fun/.test(c.youtube.description) && !/#shorts/i.test(c.youtube.title + c.youtube.description)
+    && tags.length >= 3 && tags.length <= 5 && !/bond|mythic|epic/i.test(c.youtube.title), `${c.name}: YouTube "${c.youtube.title}" — short pitch, no link, no #Shorts, ${tags.length} tags, no game jargon`);
+  ok(c.seconds >= 8 && c.seconds <= 16, `${c.name}: YouTube cut ${c.seconds}s (target 10–14)`);
+  ok(!/https?:|\.fun/.test(c.comment), `${c.name}: pinned comment is a question without a link: ${c.comment}`);
 }
 const tv = await fetch(U + `/api/admin/clips/file?key=adm&name=${list[0].name}-tt.mp4`);
 fs.writeFileSync(S + "/clip0-tt.mp4", Buffer.from(await tv.arrayBuffer()));
@@ -83,8 +87,8 @@ await br.close();
   const txt = await pt.locator("#app").innerText();
   ok(!/xrp|ledger|nft|r[1-9A-Za-z]{3,}…/i.test(txt), "TikTok cut on screen: no crypto words, no wallet tags (" + txt.replace(/\s+/g, " ").slice(0, 120) + ")");
   await pt.evaluate(() => CLIP.go()); await pt.waitForFunction(() => CLIP.state === "done", null, {timeout: 120000});
-  const end = await pt.locator(".clipend").innerText();
-  ok(/Follow for daily fights/.test(end) && !/NFT|XRP/.test(end), "TikTok end card asks for a follow");
+  const end = await pt.locator("#app").innerText();
+  ok(await pt.locator(".clipend").count() === 0 && /👇/.test(end) && !/NFT|XRP/.test(end), "TikTok cut ends on the fight with a question, no end card");
   await pt.screenshot({path: S + "/clip-tt-end.png"}); await br2.close(); }
 const kit = await fetch(U + "/kit/shorts.sh"); ok(kit.status === 200 && (await kit.text()).includes("barkarena-shorts"), "installer served at /kit/shorts.sh");
 bye(0);
