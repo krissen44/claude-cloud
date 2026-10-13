@@ -27,7 +27,7 @@ descriptions (not clickable in Shorts), #Shorts in titles, game words outsiders 
   `tools/test/shorts.mjs` (end to end), `tools/test/shorts-fmt.mjs` (formats, rotation, fallbacks).
 - **Going live:** the clip page is part of the game → hotfix **v32.5** (`bark-arena-game-v32.5-komplett.zip` = v32.4 + the
   new `/clip`, no Dash) or the v33 package. The factory and workflow run from the repo's **default branch**
-  (`claude/upbeat-hypatia-cht3ou`) — they must be merged there. The new factory also works with the old clip page
+  (`claude/upbeat-hypatia-cht3ou`) — pushed there on 13 Oct with the owner's OK (commit cbf323c), active from the next 05:10 UTC run. The new factory also works with the old clip page
   (titles/texts/one a day right away; the 10–14 s cold open once the game is updated).
 - Owner's to-dos on YouTube (not code): links into the channel header (scrappyxrp.fun/links) and each Short's "Related
   video" (the tutorial); reply to comments; channel description "Daily pixel dog fights & lofi"; spread the lofi Shorts
