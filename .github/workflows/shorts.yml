@@ -1,5 +1,5 @@
 # Bark Arena Shorts factory on GitHub's free runners (instead of a VPS).
-# Every morning it records the best fights of the last day from the live game as 9:16 clips with sound
+# Every morning it records one Short (format of the day: champion, Legendary, boss, 1 HP Club or the best fight) as a 9:16 clip with sound
 # and uploads them, with captions, to https://game.scrappyxrp.fun/admin → "📱 Clips".
 # Needs the repository secret ADMIN_KEY. Start by hand: Actions → "Shorts factory" → Run workflow.
 name: Shorts factory
@@ -11,7 +11,7 @@ on:
     inputs:
       clips:
         description: "How many clips"
-        default: "3"
+        default: "1"
 
 concurrency: shorts-factory
 
@@ -40,7 +40,7 @@ jobs:
         env:
           ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
           GAME_URL: https://game.scrappyxrp.fun
-          CLIPS: ${{ github.event.inputs.clips || '3' }}
+          CLIPS: ${{ github.event.inputs.clips || '1' }}
           WORK_DIR: ${{ runner.temp }}/shorts-work
           STATE_FILE: .shorts-state/state.json
         run: |
