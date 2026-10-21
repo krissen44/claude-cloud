@@ -141,7 +141,7 @@ ok(chOf(/wants a fight/) === "club", "open challenges → #search-arena-fight");
 // ---------------------------------------------------------------- browser
 const br = await chromium.launch({executablePath: process.env.CHROMIUM || undefined});
 const ctx = await br.newContext({viewport: {width: 1100, height: 900}});
-const p = await ctx.newPage(); const errs = []; p.on("pageerror", e => errs.push(e.message));
+const p = await ctx.newPage(); await p.addInitScript(() => localStorage.setItem("ba_fold", JSON.stringify({lend: true, ref: true, ach: true, kinfo: true}))); const errs = []; p.on("pageerror", e => errs.push(e.message));
 await p.route(u => !u.href.startsWith("http://127.0.0.1"), r => r.abort());
 // the admin page's script compiles and shows the fair-play card
 await p.goto(U + "/admin?key=adm"); await p.waitForTimeout(2500);

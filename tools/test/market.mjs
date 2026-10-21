@@ -36,7 +36,7 @@ r = await call(OWNER2, "/lend/take", {id: mid});
 ok(r.error === "need_name", "borrowing needs a name");
 // the browser: a new player without a dog borrows from the market
 const br = await chromium.launch({executablePath: process.env.CHROMIUM || undefined});
-const p = await (await br.newContext({viewport: {width: 1100, height: 900}})).newPage();
+const p = await (await br.newContext({viewport: {width: 1100, height: 900}})).newPage(); await p.addInitScript(() => localStorage.setItem("ba_fold", JSON.stringify({lend: true, ref: true, ach: true, kinfo: true})));
 const errs = []; p.on("pageerror", e => errs.push(e.message));
 await p.route(u => !u.href.startsWith("http://127.0.0.1"), r => r.abort());
 await call(NEW, "/profile", {name: "Rookie"});
@@ -47,7 +47,7 @@ ok(await p.locator("h3", {hasText: "LENDING MARKET"}).count() === 1, "non-holder
 ok(await p.locator("[data-take]").count() === 1, "one dog on offer");
 await p.screenshot({path: S + "/shots/market.png", fullPage: true});
 // a holder doesn't get the borrow card, but sees what's on offer in the lend card
-const h = await (await br.newContext({viewport: {width: 1100, height: 900}})).newPage();
+const h = await (await br.newContext({viewport: {width: 1100, height: 900}})).newPage(); await h.addInitScript(() => localStorage.setItem("ba_fold", JSON.stringify({lend: true, ref: true, ach: true, kinfo: true})));
 await h.route(u => !u.href.startsWith("http://127.0.0.1"), r => r.abort());
 await h.goto(U + "/"); await h.evaluate(([t, a]) => localStorage.setItem("ba_session", JSON.stringify({token: t, account: a})), [tok(OWNER2), OWNER2]);
 await h.goto(U + "/"); await h.waitForFunction(() => typeof LEND !== "undefined" && LEND.market && LEND.market.length && !WALLET.loading, null, {timeout: 30000});
@@ -60,7 +60,7 @@ await call(OWNER2, "/profile", {name: "Holdy"});
 r = await call(OWNER2, "/lend/take", {id: mid});
 ok(r.ok && r.in.some(l => !l.starter && l.dog.id === k[0].nft_id), "a holder borrows a dog from the market");
 ok((await call(OWNER2, "/fight/start", {kind: "ranked", dog: k[0].nft_id, opp: {token: 1234}, lvl: 1, oppLvl: 1})).fid, "the holder fights with the borrowed dog");
-{ const h2 = await (await br.newContext({viewport: {width: 1100, height: 900}})).newPage();
+{ const h2 = await (await br.newContext({viewport: {width: 1100, height: 900}})).newPage(); await h2.addInitScript(() => localStorage.setItem("ba_fold", JSON.stringify({lend: true, ref: true, ach: true, kinfo: true})));
   await h2.route(u => !u.href.startsWith("http://127.0.0.1"), r => r.abort());
   await h2.goto(U + "/"); await h2.evaluate(([t, a]) => localStorage.setItem("ba_session", JSON.stringify({token: t, account: a})), [tok(OWNER2), OWNER2]);
   await h2.goto(U + "/"); await h2.waitForFunction(() => (OWNED || []).some(f => f.borrowed && !f.borrowed.starter), null, {timeout: 30000});

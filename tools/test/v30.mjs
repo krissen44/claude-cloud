@@ -85,10 +85,10 @@ async function player(acct, w = 420){
 const pa = await player(A, 900);
 await pa.evaluate(() => { const ids = OWNED.map(f => f.id); const set = (i, l, w, ls) => Object.assign(SAVE.dog(ids[i]), {lvl:l, xp:20, w, l:ls});
   set(0, 3, 5, 4); set(1, 8, 30, 6); set(2, 6, 12, 7); menu(); });
-const names = await pa.locator(".pick button b").allInnerTexts();
+const names = await pa.locator(".ktab").evaluateAll(b => b.map(x => (x.querySelector(".km") || {}).textContent || "") .map(String));
 console.log("kennel order:", JSON.stringify(names.slice(0, 3)));
-ok(/^🥇/.test(names[0]) && /^🥈/.test(names[1]), "kennel ranked by bond with medals");
-await pa.locator(".pick").first().scrollIntoViewIfNeeded();
+ok(/^🥇/.test(names[0]) && /^🥈/.test(names[1]) && await pa.locator(".kdog .kdname").innerText().then(t => /🥇/.test(t)), "kennel ranked by bond with medals, the top dog open");
+await pa.locator(".ktabs").first().scrollIntoViewIfNeeded();
 await pa.screenshot({path: S + "/v30-kennel.png", fullPage: true});
 await pa.click("#chatFab"); await pa.waitForSelector("#chatBox");
 await pa.fill("#chatBox input", "Anyone up for the Club? 🥊"); await pa.click("#chatBox form button");

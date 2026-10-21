@@ -1,8 +1,29 @@
 # Next release — upload at the week roll (Monday 00:00 UTC)
 
 Changes collect here during the week and go live together when the new week starts.
-Last version confirmed live: **game v31.2** (uploaded by the owner on 8 Oct 2026; includes the v31.1 ticket hotfix and
-its automatic day-one bonus). Website: v31 package (5 Oct). Shorts factory on GitHub Actions, daily 05:10 UTC.
+Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit flash, new /clip) — no Dash yet (no
+`dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
+
+## v34 — the owner's new look + a compact kennel (21 Oct) · package `bark-arena-game-v34-komplett.zip`
+- **Owner's UI/animation work (21 Oct, made on v32.5, merged onto v33):** pixel-art fight backdrops (`public/art/*.png`,
+  12 scenes; ranked/casual fights rotate through 10 — meadow, rain, snow, autumn, beach, desert, night, blossom, swamp,
+  canyon — arena and club keep their own), weather/ambient particles per scene, a dark "home" look for the menu screens
+  (`body.home`), snappier fights (shorter waits, `pose()` key-frame motions per move, new lunge/landing with a floating
+  shadow, small cross hit marker instead of the jaws, short comic text), Legendary/Mythic glow (`.lglo/.mglo`) and a
+  quick drop-in entrance, tab labels without emoji. Kept as made; Dash got a "Dash" tab in the same style.
+- **Server:** `server.js` now serves `/art/*.png` (read once, cached a day) — without it the backdrops would load the game
+  page instead of the picture.
+- **Kennel, compact (owner: "dogs like tabs instead of one under the other"):** the dogs are a row of picture tabs (bond
+  number on each, 🥇🥈🥉 for the top 3, scrolls sideways on phones); tapping one opens that dog below — big picture,
+  rarity, bond + XP bar, record and win %, kit, **its bond paths** (the separate "Bond paths" list is gone) and one
+  **⚔️ Fight** button (ranked with tickets left, else casual). The open dog is remembered (`ba_ksel`), until one is picked
+  it's the top dog. Trainer + Today are one strip (level, ranked fights, streak; quests fold away). Kit rule / bond
+  unlocks / TV opt-out, achievements, invites and lending fold away (`fold()`, open state kept while the page
+  re-renders; lending opens by itself while a loan is running). Dog pickers in Arena, Club and Dash use small tiles.
+  Page height with 12 dogs: desktop 2,621 → 1,400 px, phone 4,880 → 1,652 px.
+- Clip speed retuned for the faster fights (`WAIT_K` 1.05 / 1) so Shorts stay 10–14 s.
+- Tests: everything re-run (see the commit); `tools/test/ui-shots.mjs` = screenshots of all menu tabs (desktop + phone).
+- **Upload:** the whole ZIP via "Neue Dateien hochladen" (it contains `public/art/`). Includes Dash (v33).
 
 ## Shorts rework (13 Oct, after the owner's YouTube review: reach fell from ~1,250 to 50–450 views per Short)
 Why: every Short was the same template ("Nobody bet on the …" 11×), 3–5 a day, 17–25 s with a long end card, links in

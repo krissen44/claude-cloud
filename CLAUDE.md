@@ -195,6 +195,13 @@ hand over one combined package for the week start; don't tell the owner to uploa
   v29 sounds (all WebAudio synth in `S`): `chomp`, `leap`, `land`, `crowd` (arena/club only), `ko`, and one per
   signature move (`thunder`, `choir`, `stampede`, `rocket`, `dip`, `crash`, `splash`, `prism`, `twin`, `munch`, `matrix`,
   `runes`, `voidHum`, `alchemy`, `ward`, `crystal`, `charge`).
+- **Look since v34 (owner's own work, 21 Oct)**: fight backdrops are pixel-art plates `public/art/<scene>.png` (served by
+  `server.js` `ART`), `SCENE_ART`, `FIGHT_SCENES` rotate per ranked/casual fight (`nextFightScene`), arena/club fixed; `scenery()`
+  = plate + a few live bits + vignette; `ambNew` particles per scene; fighters sit in `.ring3d > .fighter > .rig > img`
+  (bob on `.rig`); moves use `pose(side, KEYS, ms)` (CROUCH, TAUNTP, WINDUP, RECOIL, LIFT, DODGEP, HURT, THROW, SLAM);
+  `.lglo/.mglo` auras; menu screens get `body.home` (dark). **Kennel** = dog tabs `ktab` + one open dog `kdetail`
+  (`kSel`/`ba_ksel`, bond paths + ⚔️ fight button `.kfight[data-f]`), `kennelList`, trainer strip `.kstat`, fold-outs
+  `fold(key, title, body, open)` (`FOLD` keeps open state); pickers elsewhere `.pick.tiny`. Screenshots: `tools/test/ui-shots.mjs`.
 - **Replays (v31)**: every finished non-demo fight is recorded unless the player opted out (`SAVE.data.tvOff`, kennel
   button, server blob `tvoff`): `REC.cur` in `startFight`, `recRolls` wraps `resolve` in `go()` and keeps the engine's
   `Math.random` draws (rounded to 1e-6 and *used* rounded, so `rollsReplay` reproduces the fight exactly), `recSend` in

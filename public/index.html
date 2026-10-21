@@ -4,6 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Bark Arena — Pixel Scrappy</title>
+<link rel="preload" as="image" href="art/meadow.png" fetchpriority="high">
+<link rel="preload" as="image" href="art/rain.png" fetchpriority="high">
+<link rel="preload" as="image" href="art/snow.png" fetchpriority="high">
+<link rel="preload" as="image" href="art/autumn.png" fetchpriority="high">
+<link rel="preload" as="image" href="art/beach.png" fetchpriority="high">
+<link rel="preload" as="image" href="art/desert.png" fetchpriority="high">
+<link rel="preload" as="image" href="art/night.png" fetchpriority="high">
+<link rel="preload" as="image" href="art/blossom.png" fetchpriority="high">
+<link rel="preload" as="image" href="art/swamp.png" fetchpriority="high">
+<link rel="preload" as="image" href="art/canyon.png" fetchpriority="high">
+<link rel="preload" as="image" href="art/arena.png" fetchpriority="high">
+<link rel="preload" as="image" href="art/club.png" fetchpriority="high">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -197,8 +209,8 @@ canvas.fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .fighter.lunge.right img{animation:lungeR .46s cubic-bezier(.3,.7,.3,1)}
 @keyframes lungeR{0%{transform:scaleX(-1)}18%{transform:scaleX(-1) translateX(-12px) scale(.93,1.07)}42%{transform:scaleX(-1) translateX(72px) translateY(-12px) rotate(-8deg) scale(1.08,.94)}100%{transform:scaleX(-1)}}
 .fighter.left.hurt{animation:knockL .32s}.fighter.right.hurt{animation:knockR .32s}
-@keyframes knockL{0%,100%{transform:translateX(0)}30%{transform:translateX(-15px)}65%{transform:translateX(6px)}}
-@keyframes knockR{0%,100%{transform:translateX(0)}30%{transform:translateX(15px)}65%{transform:translateX(-6px)}}
+@keyframes knockL{0%{transform:translateX(0)}22%{transform:translateX(-28px) rotate(-6deg)}58%{transform:translateX(8px)}100%{transform:translateX(0)}}
+@keyframes knockR{0%{transform:translateX(0)}22%{transform:translateX(28px) rotate(6deg)}58%{transform:translateX(-8px)}100%{transform:translateX(0)}}
 .fighter.dodge img{animation:dodgeA .42s ease-out}
 .fighter.right.dodge img{--flip:scaleX(-1)}
 @keyframes dodgeA{0%,100%{transform:var(--flip,none)}40%{transform:var(--flip,none) translateX(-30px) translateY(-14px) rotate(-10deg)}}
@@ -226,7 +238,8 @@ canvas.fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 @keyframes orbit{from{transform:rotate(0) translateX(34px) rotate(0)}to{transform:rotate(360deg) translateX(34px) rotate(-360deg)}}
 
 @media(max-width:560px){.pennants{top:84px;height:24px}.flood{top:6px;width:24px}.fighter .shd{width:84px;margin-left:-42px;height:11px}.neon{font-size:9px;top:66px}
-  .spot{width:110px}.th-club .mat{width:110px;margin-left:-55px}}
+  .spot{width:110px}.th-club .mat{width:110px;margin-left:-55px}
+  .fighter .mring{width:112px;margin-left:-56px}}
 @media(prefers-reduced-motion:reduce){
   .stage .rays,.stage .cloud,.stage .bird,.stage .bird::before,.stage .bird::after,.stage .tuft,.stage .flower,.stage .bfly,
   .stage .pen,.stage .crowd,.stage .flood,.stage .spot,.stage .neon,.fighter img,.fighter .shd,.stage.frenzy::after,.dizzy b{animation:none!important}
@@ -234,40 +247,34 @@ canvas.fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 }
 
 /* ---------- bite, signature moves, Mythic/Legendary auras ---------- */
-.chomp{position:absolute;width:96px;height:76px;margin:-38px 0 0 -48px;pointer-events:none;overflow:visible;
-  filter:drop-shadow(0 3px 0 rgba(0,0,0,.3));animation:chompOut .66s ease-out forwards}
-.chomp.big{transform:scale(1.15)}
-.chomp .up{animation:jawUp .26s cubic-bezier(.6,0,.9,.4) forwards}
-.chomp .lo{animation:jawLo .26s cubic-bezier(.6,0,.9,.4) forwards}
-@keyframes jawUp{0%{transform:translateY(-24px) rotate(-5deg)}80%{transform:translateY(3px)}100%{transform:translateY(0)}}
-@keyframes jawLo{0%{transform:translateY(24px) rotate(5deg)}80%{transform:translateY(-3px)}100%{transform:translateY(0)}}
-@keyframes chompOut{0%{opacity:0}8%{opacity:1}40%{transform:scale(1)}48%{transform:translate(2px,-1px) scale(1.04)}56%{transform:translate(-2px,1px)}70%{opacity:1}100%{opacity:0;transform:scale(1.1)}}
-.chomp.big{animation-name:chompOutBig}
-@keyframes chompOutBig{0%{opacity:0;transform:scale(1.15)}8%{opacity:1}48%{transform:translate(3px,-2px) scale(1.2)}56%{transform:translate(-3px,2px) scale(1.15)}70%{opacity:1}100%{opacity:0;transform:scale(1.28)}}
-.bitemark{position:absolute;width:60px;height:40px;margin:-20px 0 0 -30px;pointer-events:none;animation:bmFade 1s ease-out forwards}
-.bitemark.big{transform:scale(1.3)}
-@keyframes bmFade{0%,30%{opacity:0}45%{opacity:.85}75%{opacity:.6}100%{opacity:0}}
-.comic{position:absolute;font:13px 'Press Start 2P',monospace;color:#fff;white-space:nowrap;pointer-events:none;
-  text-shadow:2px 2px 0 #0e1726,-2px 2px 0 #0e1726,2px -2px 0 #0e1726,-2px -2px 0 #0e1726,4px 4px 0 rgba(0,0,0,.3);
-  animation:comicPop .76s ease-out forwards}
-.comic.red{color:#ff5a4d}.comic.gold{color:#ffd54a}.comic.blue{color:#8fd0fb}.comic.big{font-size:17px}
-@keyframes comicPop{0%{opacity:0;transform:scale(.3) rotate(-14deg)}22%{opacity:1;transform:scale(1.25) rotate(-6deg)}38%{transform:scale(1) rotate(-6deg)}80%{opacity:1}100%{opacity:0;transform:translateY(-14px) rotate(-6deg)}}
+.chomp{position:absolute;width:26px;height:26px;margin:-16px 0 0 -13px;pointer-events:none;
+  background:#ff3a3a;box-shadow:0 0 0 3px #2a0608,0 0 12px #ff3a3a;
+  clip-path:polygon(42% 0,58% 0,58% 42%,100% 42%,100% 58%,58% 58%,58% 100%,42% 100%,42% 58%,0 58%,0 42%,42% 42%);
+  animation:chompOut .28s ease-out forwards}
+.chomp.big{width:34px;height:34px;margin:-22px 0 0 -17px}
+@keyframes chompOut{0%{opacity:0;transform:scale(.35) rotate(0deg)}18%{opacity:1;transform:scale(1.2) rotate(12deg)}100%{opacity:0;transform:scale(1.55) rotate(20deg)}}
+.comic{position:absolute;font:11px 'Press Start 2P',monospace;color:#fff;white-space:nowrap;pointer-events:none;
+  text-shadow:2px 2px 0 #0e1726,-1px 1px 0 #0e1726;animation:comicPop .48s ease-out forwards}
+.comic.red{color:#ff5a4d}.comic.gold{color:#ffd54a}.comic.blue{color:#8fd0fb}.comic.big{font-size:13px}
+@keyframes comicPop{0%{opacity:0;transform:translateY(6px)}20%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-16px)}}
+.fighter .lglo,.fighter .mglo{position:absolute;left:50%;top:42%;width:200px;height:170px;margin:-96px 0 0 -100px;border-radius:50%;
+  pointer-events:none;z-index:0;animation:gpulse 1.7s ease-in-out infinite}
+.fighter .lglo{background:radial-gradient(circle,rgba(255,226,140,.82) 0%,rgba(255,168,40,.32) 36%,transparent 68%)}
+.fighter .mglo{background:radial-gradient(circle,rgba(214,176,255,.8) 0%,rgba(130,80,255,.3) 38%,transparent 68%)}
+@keyframes gpulse{0%,100%{opacity:.62;transform:scale(.92)}50%{opacity:1;transform:scale(1.06)}}
+.fighter.aura-leg:not(.faint) img{filter:drop-shadow(0 0 6px #ffe28a) drop-shadow(0 0 16px rgba(255,170,40,.95))}
+.fighter.aura-myth:not(.faint) img{filter:drop-shadow(0 0 6px #e4d0ff) drop-shadow(0 0 16px rgba(150,90,255,.95))}
+.fighter.faint .lglo,.fighter.faint .mglo{display:none}
 .itempop{position:absolute;font-size:36px;line-height:1;pointer-events:none;filter:drop-shadow(0 3px 0 rgba(0,0,0,.3));animation:itemPop 1.05s ease-out forwards}
 @keyframes itemPop{0%{opacity:0;transform:scale(.3) translateY(14px)}25%{opacity:1;transform:scale(1.3)}40%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:translateY(-36px)}}
 .fighter .twin{position:absolute;left:0;bottom:0;opacity:0;filter:drop-shadow(0 0 8px #ffd54a) brightness(1.4);animation:none!important}
-.fighter .lrays{position:absolute;left:50%;top:46%;width:280px;height:280px;margin:-140px 0 0 -140px;border-radius:50%;pointer-events:none;
-  background:repeating-conic-gradient(rgba(255,214,90,.36) 0 7deg,rgba(255,214,90,0) 7deg 22deg);
-  -webkit-mask:radial-gradient(circle,#000 16%,transparent 66%);mask:radial-gradient(circle,#000 16%,transparent 66%);animation:spin 16s linear infinite}
-.fighter .mring{position:absolute;left:50%;bottom:-10px;width:150px;height:32px;margin-left:-75px;border-radius:50%;pointer-events:none;
-  border:3px solid rgba(185,139,255,.85);box-shadow:0 0 18px rgba(185,139,255,.85),inset 0 0 14px rgba(111,195,255,.6);animation:mpulse 1.6s ease-in-out infinite}
-@keyframes mpulse{0%,100%{transform:scale(1);opacity:.75}50%{transform:scale(1.14);opacity:1}}
-.fighter.aura-leg:not(.faint) img{filter:drop-shadow(0 0 9px rgba(255,200,60,.95)) drop-shadow(0 6px 0 rgba(0,0,0,.14))}
-.fighter.aura-myth:not(.faint) img{filter:drop-shadow(0 0 9px rgba(185,139,255,.95)) drop-shadow(0 6px 0 rgba(0,0,0,.14))}
-.fighter.faint .lrays,.fighter.faint .mring{display:none}
+.spawnflash{position:absolute;left:0;right:0;bottom:0;height:42%;pointer-events:none;animation:spawnFlash .5s ease-out forwards}
+.spawnflash.leg{background:linear-gradient(transparent,rgba(255,213,74,.72))}
+.spawnflash.myth{background:linear-gradient(transparent,rgba(185,139,255,.72))}
+@keyframes spawnFlash{0%{opacity:0}18%{opacity:1}100%{opacity:0}}
 .banner.leg{color:#ffd54a;font-size:clamp(14px,3.6vw,22px);text-shadow:0 0 14px #ff9d00,3px 3px 0 #7a4a00}
 .banner.myth{color:#ead8ff;font-size:clamp(14px,3.6vw,22px);text-shadow:0 0 14px #b98bff,3px 3px 0 #3b1d6e}
-@media(max-width:560px){.fighter .lrays{width:210px;height:210px;margin:-105px 0 0 -105px}.fighter .mring{width:112px;margin-left:-56px}}
-@media(prefers-reduced-motion:reduce){.fighter .lrays,.fighter .mring{animation:none!important}}
+@media(prefers-reduced-motion:reduce){.fighter .lglo,.fighter .mglo{animation:none!important}}
 
 /* ---------- hud ---------- */
 .hud{position:absolute;top:8px;width:42%;padding:0 8px}
@@ -563,6 +570,140 @@ body.clip .hud{width:44%}
 #chatBox form button{padding:8px 12px}
 #chatErr{font-size:11px;color:var(--hpLow);padding:0 12px 6px}
 @media(max-width:560px){#chatFab{right:12px;bottom:12px}#chatBox{right:8px;bottom:72px;width:calc(100vw - 16px)}}
+
+/* ---------- pixel stages ---------- */
+body:not(.tv) .stage{height:500px;border:0;border-radius:18px;
+  box-shadow:0 16px 40px rgba(10,16,28,.28);background:#102033}
+.ring3d{position:absolute;inset:0;z-index:3;pointer-events:none}
+.scene{position:absolute;inset:0;overflow:hidden;z-index:0;pointer-events:none}
+.plate{position:absolute;inset:0;background-size:cover;background-position:center bottom;background-repeat:no-repeat;
+  image-rendering:pixelated;image-rendering:crisp-edges}
+.stage.bgwait .ring3d,.stage.bgwait .hud,.stage.bgwait .banner,.stage.bgwait .snd{opacity:0}
+.stage .tint{display:none}
+.vignette{position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:linear-gradient(180deg,rgba(6,10,18,.28) 0%,transparent 22%,transparent 78%,rgba(6,10,18,.22) 100%)}
+.th-club .vignette{background:linear-gradient(180deg,rgba(4,2,10,.4) 0%,transparent 30%,transparent 72%,rgba(0,0,0,.28) 100%)}
+.th-arena .vignette{background:linear-gradient(180deg,rgba(20,8,30,.28) 0%,transparent 24%,transparent 74%,rgba(40,18,8,.18) 100%)}
+.th-night .vignette,.th-rain .vignette{background:linear-gradient(180deg,rgba(6,10,18,.4) 0%,transparent 26%,transparent 72%,rgba(0,0,0,.28) 100%)}
+.th-meadow{--ground:11%}.th-rain{--ground:8%}.th-snow{--ground:9%}.th-autumn{--ground:7%}
+.th-beach{--ground:12%}.th-desert{--ground:9%}.th-night{--ground:10%}.th-blossom{--ground:10%}
+.th-swamp{--ground:6%}.th-canyon{--ground:10%}.th-arena{--ground:13%}.th-club{--ground:14%}
+.fighter{z-index:3;bottom:var(--ground,8%)}
+.rig{display:inline-block;transform-origin:50% 100%;animation:bobpix 2.4s ease-in-out infinite}
+.fighter.right .rig{animation-name:bobpix}
+@keyframes bobpix{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.fighter.midair .rig,.fighter.faint .rig,.fighter.hurt .rig,.fighter.guard .rig,
+.fighter.taunt .rig,.fighter.dodge .rig,.fighter.charge .rig,.fighter.cheer .rig,
+.fighter.lunge .rig,.fighter.acting .rig{animation-play-state:paused}
+.fighter.inbound > .rig,.fighter.inbound > .shd,.fighter.inbound > .lglo,.fighter.inbound > .mglo{visibility:hidden}
+.stage .fighter:not(.lunge):not(.guard):not(.taunt):not(.dodge):not(.charge):not(.cheer):not(.faint) img{animation:none!important}
+.stage .fighter.right:not(.lunge):not(.guard):not(.taunt):not(.dodge):not(.charge):not(.cheer):not(.faint) img{transform:scaleX(-1)}
+.fighter img{image-rendering:pixelated}
+.fighter .shd{bottom:2px;height:12px;background:rgba(0,0,0,.42);filter:none;border-radius:50%;animation:shdFloat 2.4s ease-in-out infinite}
+@keyframes shdFloat{0%,100%{transform:scaleX(1);opacity:.82}50%{transform:scaleX(.58);opacity:.32}}
+.fighter.midair .shd,.fighter.lunge .shd,.fighter.faint .shd{animation-play-state:paused}
+
+.looks{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:6;display:flex;gap:4px}
+.looks button{font:600 10px ui-monospace,monospace;padding:6px 9px;border-radius:999px;cursor:pointer;
+  border:1px solid rgba(255,255,255,.5);background:rgba(8,12,20,.5);color:#fff}
+.looks button.on{background:#fff;color:#102033}
+body.tv .looks{display:none}
+canvas.fx{z-index:4}.hud,.banner,.snd,.float,.sayb,.comic,.chomp{z-index:5}
+.bird,.bfly,.flood,.spot{z-index:2}
+@media(max-width:560px){
+  body:not(.tv) .stage{height:340px}
+  .plate{background-position:center bottom}
+}
+body.home{background:#0c1210;color:#f4f7f2;
+  --ink:#f4f7f2;--ink2:#8fa196;--panel:transparent;--panelB:transparent;--accent:#f0c14a;--shadow:transparent;
+  font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
+body.home .wrap{max-width:880px;padding-top:18px}
+body.home h1{color:#fff;background:url('art/meadow.png') center 42%/cover;margin:0 0 18px;padding:34px 16px 30px;
+  border:0;border-radius:18px;box-shadow:none;text-shadow:0 2px 18px rgba(0,0,0,.55);overflow:hidden}
+body.home .card{background:transparent;border:0;border-radius:0;box-shadow:none;padding:0 0 18px;margin:0;color:#f4f7f2}
+body.home .tabs{gap:22px;justify-content:center;border:0}
+body.home .tabs button{flex:none;background:none;border:0;border-bottom:2px solid transparent;border-radius:0;
+  color:#8fa196;font-family:inherit;font-size:13px;font-weight:650;letter-spacing:.02em;padding:4px 0 8px}
+body.home .tabs button.on{background:none;color:#fff;border-bottom-color:#f0c14a}
+body.home .pnl{gap:12px}
+body.home .pnl>div,body.home .pnl3>div{background:rgba(255,255,255,.04);border:0;border-radius:16px;padding:16px}
+body.home h3,body.home .h3{font-family:inherit;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8fa196}
+body.home .pick{grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:14px}
+body.home .pick button{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);border-radius:18px;
+  box-shadow:none;padding:18px 12px 14px}
+body.home .pick button:hover{border-color:rgba(240,193,74,.5);background:rgba(255,255,255,.06);
+  transform:translateY(-4px);box-shadow:0 16px 32px rgba(0,0,0,.35)}
+body.home .pick img{width:132px;height:132px;image-rendering:pixelated}
+body.home .pick b{font-family:inherit;font-size:13px;font-weight:700;color:#fff;letter-spacing:0;line-height:1.35}
+body.home .pick span{color:#8fa196;font-size:11px}
+body.home .tag{border:0;border-radius:999px;background:rgba(255,255,255,.06);color:#d5e0d6;padding:2px 7px}
+body.home .lvl{background:none;color:#f0c14a;border-radius:0;padding:0;font-family:inherit;font-size:10px;font-weight:700;letter-spacing:.08em}
+body.home .xp{height:3px;border:0;border-radius:99px;background:rgba(255,255,255,.1)}
+body.home .row button,body.home .wal button,body.home button.sm,body.home a.btn{
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:999px;color:#f4f7f2}
+body.home .ksort button.on,body.home button.sm.on{background:#f0c14a;color:#1a1408;border-color:transparent}
+@media(prefers-reduced-motion:reduce){
+  .plate,.rig{animation:none!important}
+}
+
+/* ---------- kennel: dogs as tabs, one open dog ---------- */
+.ktabs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.ktab{position:relative;width:68px;height:68px;padding:0;border-radius:14px;cursor:pointer;flex:none;
+  background:var(--ktab,rgba(127,127,127,.12));border:2px solid transparent;transition:transform .15s,border-color .15s,background .15s}
+.ktab img{width:60px;height:60px;image-rendering:pixelated;display:block;margin:2px auto 0}
+.ktab:hover{transform:translateY(-2px)}
+.ktab.on{border-color:var(--accent,#f0c14a);background:var(--ktabOn,rgba(240,193,74,.16))}
+.ktab.leg{box-shadow:inset 0 0 0 1px rgba(255,213,74,.55)}.ktab.myth{box-shadow:inset 0 0 0 1px rgba(185,139,255,.6)}
+.ktab .kb{position:absolute;right:3px;bottom:3px;min-width:18px;height:16px;padding:0 4px;border-radius:8px;background:#0e1726;color:#ffd54a;
+  font:700 10px/16px system-ui,sans-serif;text-align:center}
+.ktab .km{position:absolute;left:2px;top:0;font-size:13px}.ktab .kl{position:absolute;right:2px;top:0;font-size:12px}
+.kdog{display:grid;grid-template-columns:180px 1fr;gap:18px;align-items:start;padding:14px;border-radius:16px;
+  background:var(--kdog,rgba(127,127,127,.08));animation:kdin .25s ease-out}
+@keyframes kdin{from{opacity:0;transform:translateY(6px)}}
+.kdimg{border-radius:14px;background:radial-gradient(circle at 50% 60%,rgba(255,255,255,.1),transparent 70%);display:flex;justify-content:center}
+.kdimg img{width:176px;height:176px;image-rendering:pixelated}
+.kdinfo{display:flex;flex-direction:column;gap:7px;min-width:0}
+.kdname{font-size:17px;line-height:1.25}.kdname b{font-weight:800}.kdr{margin-right:6px}
+.kdtags .tag,.kdkit .tag{margin:0 4px 4px 0;display:inline-block}
+.kdbond{display:flex;gap:10px;align-items:baseline}.kdbond .lvl{font-size:12px}
+.kdpaths{margin-top:2px}.kpath{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}.kpath button{margin:0}
+.kfight{align-self:flex-start;margin-top:4px;padding:11px 20px;border-radius:999px;border:0;cursor:pointer;
+  background:var(--accent,#f0c14a);color:#1a1408;font:800 14px system-ui,sans-serif}
+.kfight small{font-weight:600;opacity:.75;margin-left:4px}
+.kfight:hover{filter:brightness(1.08)}
+.fold details>summary{cursor:pointer;list-style:none;display:flex;gap:8px;align-items:center;margin:0}
+.fold details>summary::-webkit-details-marker{display:none}
+.fold details>summary::after{content:'▾';margin-left:auto;opacity:.6;transition:transform .2s}
+.fold details[open]>summary::after{transform:rotate(180deg)}
+.fold summary small{font-size:10px;letter-spacing:.04em;opacity:.75;text-transform:none;font-weight:600}
+.foldb{margin-top:10px}.foldb>.card{margin:0;padding:0;border:0;box-shadow:none;background:none}
+body.home .fold{background:rgba(255,255,255,.04);border-radius:16px;padding:14px 16px;margin:0 0 10px}
+@media(max-width:560px){
+  .ktabs{flex-wrap:nowrap;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:4px;margin:0 -4px 12px;padding-left:4px;scrollbar-width:none}
+  .ktabs::-webkit-scrollbar{display:none}.ktab{scroll-snap-align:start;width:62px;height:62px}.ktab img{width:54px;height:54px}
+  .kdog{grid-template-columns:1fr;gap:6px;padding:12px}.kdimg img{width:150px;height:150px}
+  .kfight{align-self:stretch;text-align:center}
+}
+
+.kstat .kchips{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:10px}
+.kchips>div{padding:10px 12px;border-radius:12px;background:var(--kdog,rgba(127,127,127,.08));display:flex;flex-direction:column;gap:3px;min-width:0}
+.kchips small{font-size:10px;letter-spacing:.06em;opacity:.7}.kchips b{font-size:17px}.kchips .xp{margin:2px 0}
+.kstat .bon{margin-top:10px}
+.ktoday{margin-top:12px}.ktoday>summary{cursor:pointer;list-style:none;display:flex;gap:8px;align-items:center}
+.ktoday>summary::-webkit-details-marker{display:none}.ktoday>summary::after{content:'▾';margin-left:auto;opacity:.6}
+.ktoday[open]>summary::after{transform:rotate(180deg)}.ktoday summary small{font-size:10px;opacity:.75;text-transform:none;letter-spacing:.04em}
+.ktoday .q{margin:6px 0}
+body.home .kstat{background:rgba(255,255,255,.04);border-radius:16px;padding:14px 16px}
+@media(max-width:560px){.kstat .kchips{gap:6px}.kchips>div{padding:8px 9px}.kchips b{font-size:15px}.kchips small{font-size:9px}}
+
+/* the dog pickers in arena, club and Dash: small tiles instead of big cards */
+.pick.tiny{grid-template-columns:repeat(auto-fill,minmax(104px,1fr))!important;gap:8px!important}
+.pick.tiny button{padding:8px 4px 9px!important;border-radius:14px!important}
+.pick.tiny img{width:76px!important;height:76px!important}
+.pick.tiny b{font-size:11px!important;line-height:1.25!important}.pick.tiny span{font-size:10px!important}
+.pick.tiny .tag{font-size:9px;padding:1px 5px}
+@media(max-width:560px){.pick.tiny{grid-template-columns:repeat(3,1fr)!important}.pick.tiny img{width:64px!important;height:64px!important}}
+
 </style>
 </head>
 <body>
@@ -1736,7 +1877,8 @@ function lendCard(){
         `<button class="ghost sm" data-seekto="${esc(x.name)}" ${canLend ? '' : 'disabled'}>${esc(x.name)}</button>`).join('')}</div>
       <p class="mini" style="margin:6px 0 0">${canLend ? 'Tap a name to fill it in below.' : 'You have no free Scrappy to lend right now.'}</p></div>` : '';
   const busy = !!inn;                                  // holders may borrow one dog too (v32.1)
-  return note + `<div class="card"><h3 class="h3">🤝 LEND &amp; BORROW</h3>
+  const act = LEND.out.length + LEND.in.filter(l => !l.starter).length + (LEND.listings || []).length;
+  return note + fold('lend', `🤝 LEND &amp; BORROW${act ? ` <small>${act} active</small>` : ''}${(LEND.market || []).length ? ` <small>${LEND.market.length} on the market</small>` : ''}`, `
     <p class="mini" style="margin:0 0 8px">Let another player fight with one of yours. The NFT never leaves your wallet. Its bond XP stays with the dog, and you get <b>25 %</b> of the trainer XP they earn with it — plus a share if they win a weekly prize with it.</p>
     ${out}${seek}
     ${canLend ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -1765,7 +1907,7 @@ function lendCard(){
           ${busy ? '' : `<button class="sm" data-take="${esc(x.id)}" ${WALLET.name ? '' : 'disabled'}>🤝 Borrow</button>`}</div>`).join('')}</div>
         ${!busy && !WALLET.name ? `<p class="mini" style="margin:6px 0 0"><b>Set a player name first</b> (✏️ above) to borrow.</p>` : ''}`
         : `<div class="mini" style="margin-top:12px"><i>No other dogs on the market right now.</i></div>`}
-    </div></div>`;
+    </div>`, !!(LEND.err || LEND.out.length || inn));
 }
 function lendWire(){
   const q = id => document.getElementById(id);
@@ -2272,7 +2414,7 @@ function scClubView(){
       <div><b style="font-size:12px">🥊 Fight Club · Beta</b>
         <div class="mini">Live duels against real players. Club record: <b>${rec.w|0}W ${rec.l|0}L ${rec.d|0}D</b></div></div></div></div>
     <div id="scList">${scListHtml()}</div>
-    <div class="card"><p class="mini" style="margin:0 0 11px"><b>Your fighter.</b> Bond levels and set bonuses count. Pack bonuses don't — this is dog against dog.</p><div class="pick">${pick}</div></div>
+    <div class="card"><p class="mini" style="margin:0 0 11px"><b>Your fighter.</b> Bond levels and set bonuses count. Pack bonuses don't — this is dog against dog.</p><div class="pick tiny">${pick}</div></div>
     <div class="card"><h3 class="h3">CHALLENGE SOMEONE</h3>
       <div class="row" style="gap:8px;flex-wrap:wrap">
         <input id="scName" type="text" maxlength="16" placeholder="Player name" style="flex:1;min-width:140px;padding:9px 14px">
@@ -3013,17 +3155,26 @@ function fxInit(c, theme){
   cancelAnimationFrame(raf); loop();
 }
 function ambNew(anywhere){
-  const w = cv.clientWidth || 400, h = cv.clientHeight || 300, R = Math.random;
-  if (fxTheme === 'meadow') return {x: anywhere ? R()*w : -8, y: R()*h*.62, vx: .25+R()*.35, vy: .08+R()*.12,
+  const w = cv.clientWidth || 400, h = cv.clientHeight || 300, R = Math.random, t = fxTheme;
+  if (t === 'rain') return {x: R()*w, y: anywhere ? R()*h : -8, vx: 1.6, vy: 5+R()*2.2, ph: R(), s: 2, c: '#d5e4f5'};
+  if (t === 'snow') return {x: R()*w, y: anywhere ? R()*h : -8, vx: (R()-.5)*.35, vy: .35+R()*.45, ph: R()*6, s: 2+(R()*2|0), c: '#ffffff'};
+  if (t === 'night') return {x: R()*w, y: R()*h*.5, vx: 0, vy: 0, ph: R()*6, s: R()<.25 ? 2 : 1, c: '#fff6c2'};
+  if (t === 'autumn') return {x: anywhere ? R()*w : -8, y: R()*h*.55, vx: .35+R()*.3, vy: .35+R()*.45, ph: R()*6, s: 3, c: ['#e07a3d','#e2b13c','#8d3d2e'][rint(0,2)]};
+  if (t === 'blossom') return {x: anywhere ? R()*w : -8, y: R()*h*.6, vx: .25+R()*.25, vy: .2+R()*.3, ph: R()*6, s: 3, c: ['#ffb7d5','#fff4f8','#ff8fb8'][rint(0,2)]};
+  if (t === 'desert') return {x: anywhere ? R()*w : -8, y: h*.5+R()*h*.35, vx: .7+R()*.4, vy: (R()-.5)*.15, ph: R()*6, s: 2, c: '#efd39a'};
+  if (t === 'beach') return {x: anywhere ? R()*w : -8, y: R()*h*.45, vx: .3+R()*.2, vy: .08+R()*.1, ph: R()*6, s: 2, c: '#ffffff'};
+  if (t === 'swamp') return {x: R()*w, y: h*.42+R()*h*.25, vx: (R()-.5)*.12, vy: -.12-R()*.1, ph: R()*6, s: 2, c: '#dff6b4'};
+  if (t === 'canyon') return {x: anywhere ? R()*w : -8, y: R()*h*.4, vx: .15+R()*.15, vy: .04, ph: R()*6, s: 2, c: '#ffd0b0'};
+  if (t === 'meadow') return {x: anywhere ? R()*w : -8, y: R()*h*.62, vx: .25+R()*.35, vy: .08+R()*.12,
     ph: R()*6, s: 2+R()*2, c: ['#ffffff','#ffd1e8','#fff3b0'][rint(0,2)]};
-  if (fxTheme === 'arena') return {x: R()*w, y: anywhere ? R()*h*.8 : h*.78, vx: (R()-.5)*.15, vy: -.1-R()*.18,
+  if (t === 'arena') return {x: R()*w, y: anywhere ? R()*h*.8 : h*.78, vx: (R()-.5)*.15, vy: -.1-R()*.18,
     ph: R()*6, s: 1.5+R()*1.5, c: '#ffe7a8'};
   return {x: R()*w, y: anywhere ? R()*h*.85 : h*.85, vx: (R()-.5)*.2, vy: -.07-R()*.14,
     ph: R()*6, s: 1.5+R()*2, c: ['#ff8ad1','#c9a2ff','#ffffff'][rint(0,2)]};
 }
 function ambSeed(){
   amb = []; if (RM) return;
-  const n = fxTheme === 'meadow' ? 9 : fxTheme === 'arena' ? 14 : 12;
+  const n = fxTheme === 'rain' ? 46 : fxTheme === 'snow' ? 30 : fxTheme === 'night' ? 24 : fxTheme === 'meadow' ? 9 : fxTheme === 'arena' ? 14 : fxTheme === 'club' ? 12 : 16;
   for (let i=0;i<n;i++) amb.push(ambNew(true));
 }
 function loop(){
@@ -3039,7 +3190,7 @@ function loop(){
   }
   ctx.globalAlpha = 1;
   // camera flashes in the crowd
-  if (!RM && fxTheme !== 'meadow' && Math.random() < (fxTheme === 'club' ? .02 : .008))
+  if (!RM && (fxTheme === 'arena' || fxTheme === 'club') && Math.random() < (fxTheme === 'club' ? .02 : .008))
     marks.push({k:'flash', x: Math.random()*w, y: h - 100 - Math.random()*44, life: 7, max: 7});
   for (const b of beams){
     b.life--;
@@ -3230,7 +3381,7 @@ function fxStar(side, big, counter){
     fill: counter ? '#eaffb0' : '#fff6c2', edge: counter ? '#7fbf2e' : (big ? '#ff5a4d' : '#ffb02e')});
 }
 function fxRing(side, c, r1){ const p = anchor(side); marks.push({k:'ring', x:p.x, y:p.y, r0:12, r1: r1 || 60, c, life:16, max:16}); }
-function fxBubble(side){ marks = marks.filter(m => !(m.k === 'bubble' && m.side === side)); marks.push({k:'bubble', side, life:34, max:34}); }
+function fxBubble(side, life){ marks = marks.filter(m => !(m.k === 'bubble' && m.side === side)); const n = life || 34; marks.push({k:'bubble', side, life:n, max:n}); }
 function fxWave(side){ const p = anchor(side); marks.push({k:'wave', x: p.x + (side==='l' ? 40 : -40), y: p.y - 18, dir: side==='l' ? 1 : -1, c:'rgba(255,255,255,.95)', life:20, max:20}); }
 function fxRise(side, cols, n, dia){
   const f = feet(side), el = fighterEl(side), w = el ? el.getBoundingClientRect().width * .6 : 100;
@@ -3252,10 +3403,8 @@ const JAW = (() => {
          `<path d="${t}" fill="#ffffff" stroke="#0e1726" stroke-width="2" stroke-linejoin="round"/>`;
 })();
 function chomp(side, big){
-  const p = hitPoint(side), flip = side === 'l' ? ' transform="translate(96 0) scale(-1 1)"' : '';
-  domFx(`<svg class="chomp${big ? ' big' : ''}" viewBox="0 0 96 76" aria-hidden="true"><g${flip}>` +
-    `<g class="up"><g transform="translate(0 -2)">${JAW}</g></g>` +
-    `<g class="lo"><g transform="translate(0 78) scale(1 -1)">${JAW}</g></g></g></svg>`, p.x, p.y, 700);
+  const p = hitPoint(side);
+  domFx(`<div class="chomp${big ? ' big' : ''}" aria-hidden="true"></div>`, p.x, p.y - 6, 300);
 }
 function whiteFlash(){ if (!RM) domFx('<div class="wflash"></div>', null, null, 260); }
 const TAUNTS = ['WOOF!', 'GRRR!', 'ARF!', 'YAP!', 'BORK!'];
@@ -3345,23 +3494,39 @@ function lungeDist(side, both){
 function lungeTo(side, reach, ms, both){
   const el = fighterEl(side), img = el && el.querySelector('img');
   if (!img || RM || !img.animate) return anim(side, 'lunge', 460);
+  if (POSE[side]) { try { POSE[side].cancel(); } catch(e){} delete POSE[side]; }
   const d = reach ? lungeDist(side) * reach : lungeDist(side, both), f = side === 'r' ? 'scaleX(-1) ' : '';
   lungeBack(side, true);
+  el.classList.add('midair');
+  const sh = el.querySelector('.shd');
+  if (sh && sh.animate) sh.animate(
+    [{transform:'scaleX(1)',opacity:.85},{transform:'scaleX(.42)',opacity:.32,offset:.52},{transform:'scaleX(.7)',opacity:.6}],
+    {duration: ms || 440, easing:'ease-out', fill:'forwards'});
   LUNGE[side] = {d, a: img.animate([
-    {transform: f + 'translate(0,0)'},
-    {transform: f + 'translate(-16px,4px) scale(.9,1.1)', offset: .25},
-    {transform: f + `translate(${d*.55}px,-34px) rotate(-8deg) scale(1.04,.96)`, offset: .6},
-    {transform: f + `translate(${d}px,0) rotate(3deg) scale(1.08,.92)`, offset: .85},
-    {transform: f + `translate(${d}px,0) rotate(0deg)`}
-  ], {duration: ms || 380, easing: 'ease-out', fill: 'forwards'})};
+    {transform: f + 'translate(0,0) scale(1,1)'},
+    {transform: f + 'translate(-12px,6px) scale(.9,1.12)', offset:.16},
+    {transform: f + `translate(${Math.round(d*.4)}px,-58px) scale(1.06,.9)`, offset:.48},
+    {transform: f + `translate(${Math.round(d)}px,8px) scale(1.16,.8)`, offset:.74},
+    {transform: f + `translate(${Math.round(d)}px,0) scale(1,1)`}
+  ], {duration: ms || 480, easing: 'cubic-bezier(.2,.75,.2,1)', fill: 'forwards'})};
 }
 function lungeBack(side, now){
   const L = LUNGE[side]; if (!L) return; delete LUNGE[side];
-  const img = fighterEl(side)?.querySelector('img'), f = side === 'r' ? 'scaleX(-1) ' : '';
-  if (now || !img){ L.a.cancel(); return; }
-  const back = img.animate([{transform: f + `translate(${L.d}px,0)`}, {transform: f + `translate(${L.d*.5}px,-16px) rotate(4deg)`, offset: .45},
-    {transform: f + 'translate(0,0)'}], {duration: 300, easing: 'ease-in-out'});
-  L.a.cancel();
+  const el = fighterEl(side), img = el && el.querySelector('img'), f = side === 'r' ? 'scaleX(-1) ' : '';
+  const clear = () => { if (el) el.classList.remove('midair'); };
+  if (now || !img){ try { L.a.cancel(); } catch(e){} clear(); return; }
+  const back = img.animate([
+    {transform: f + `translate(${Math.round(L.d)}px,0) scale(1,1)`},
+    {transform: f + `translate(${Math.round(L.d*.45)}px,-36px) scale(1.04,.94)`, offset:.4},
+    {transform: f + 'translate(0,6px) scale(1.12,.86)', offset:.78},
+    {transform: f + 'translate(0,0) scale(1,1)'}
+  ], {duration: 400, easing: 'cubic-bezier(.25,.7,.3,1)'});
+  try { L.a.cancel(); } catch(e){}
+  back.onfinish = () => { clear(); try { fxDust(side, 10); } catch(e){} };
+  const sh = el.querySelector('.shd');
+  if (sh && sh.animate) sh.animate(
+    [{transform:'scaleX(.65)',opacity:.5},{transform:'scaleX(1.2)',opacity:.95,offset:.78},{transform:'scaleX(1)',opacity:.85}],
+    {duration:360, easing:'ease-in-out', fill:'forwards'});
   return back;
 }
 /* Double Team: a see-through twin jumps a beat later */
@@ -3378,7 +3543,7 @@ function ghostTwin(side){
 }
 function itemPop(side, icon){ const p = anchor(side), el = fighterEl(side), w = el ? el.getBoundingClientRect().width : 190;
   domFx(`<div class="itempop">${icon}</div>`, p.x - 18, p.y - w*.55, 1050); }
-function comic(side, txt, cls){ const p = hitPoint(side); domFx(`<div class="comic ${cls || ''}">${esc(txt)}</div>`, p.x + (side === 'l' ? -40 : -20), p.y - 64, 760); }
+function comic(side, txt, cls){ const p = hitPoint(side); domFx(`<div class="comic ${cls || ''}">${esc(txt)}</div>`, p.x - 28, p.y - 78, 500); }
 function biteMarks(side, big){
   const p = hitPoint(side); let d = '';
   for (let i = 0; i < 5; i++){ const a = Math.PI*(.15 + i*.175), x = 30 - Math.cos(a)*24;
@@ -3386,30 +3551,62 @@ function biteMarks(side, big){
   domFx(`<svg class="bitemark${big ? ' big' : ''}" viewBox="0 0 60 40" aria-hidden="true"><g fill="#8a0f22" stroke="#ffffff" stroke-width="1">${d}</g></svg>`, p.x, p.y + 4, 1000);
 }
 
+/* one clear motion per action. The right-hand dog stays mirrored. */
+const POSE = {};
+const CROUCH = [['translate(0,0) scale(1,1)',0],['translate(-10px,16px) scale(1.16,.74)',.3],['translate(-6px,12px) scale(1.1,.82)',.68],['translate(0,0) scale(1,1)',1]];
+const TAUNTP = [['translate(0,0) rotate(0deg) scale(1,1)',0],['translate(-6px,-26px) rotate(-12deg) scale(1.04,.92)',.2],['translate(10px,4px) rotate(10deg) scale(1.1,.88)',.46],['translate(-4px,-18px) rotate(-8deg)',.72],['translate(0,0) rotate(0deg) scale(1,1)',1]];
+const WINDUP = [['translate(0,0) scale(1,1)',0],['translate(-18px,4px) scale(.92,1.1)',.5],['translate(-14px,2px) scale(.94,1.06)',1]];
+const RECOIL = [['translate(-14px,2px) scale(.94,1.08)',0],['translate(24px,-8px) scale(1.1,.88)',.3],['translate(-6px,2px) scale(.98,1.04)',.58],['translate(0,0) scale(1,1)',1]];
+const LIFT = [['translate(0,0) scale(1,1)',0],['translate(0,-22px) scale(1.06,1.12)',.4],['translate(0,-6px) scale(1.02,1.04)',.72],['translate(0,0) scale(1,1)',1]];
+const DODGEP = [['translate(0,0) scale(1,1)',0],['translate(-40px,-22px) rotate(-10deg) scale(.96,1.08)',.38],['translate(-6px,6px) scale(1.08,.9)',.74],['translate(0,0) scale(1,1)',1]];
+const HURT = [['translate(0,0) scale(1,1)',0],['translate(-24px,4px) rotate(-8deg) scale(1.1,.84)',.28],['translate(8px,0) rotate(3deg)',.62],['translate(0,0) scale(1,1)',1]];
+const THROW = [['translate(-14px,10px) scale(.92,1.1)',0],['translate(18px,-30px) scale(1.04,.92)',.42],['translate(0,0) scale(1,1)',1]];
+const SLAM = [['translate(0,-20px) scale(.94,1.12)',0],['translate(0,14px) scale(1.18,.74)',.42],['translate(0,0) scale(1,1)',1]];
+function pose(side, keys, ms){
+  const el = fighterEl(side), img = el && el.querySelector('img');
+  if (!el || !img || RM || !img.animate) return null;
+  if (POSE[side]) { try { POSE[side].cancel(); } catch(e){} }
+  const f = side === 'r' ? 'scaleX(-1) ' : '';
+  el.classList.add('acting');
+  const a = img.animate(keys.map(([t, o]) => ({transform: f + t, offset: o})), {duration: ms || 480, easing: 'cubic-bezier(.2,.75,.25,1)'});
+  const done = () => { if (POSE[side] === a) delete POSE[side]; el.classList.remove('acting'); };
+  a.onfinish = done; a.oncancel = done;
+  POSE[side] = a;
+  return a;
+}
 /* cast: the part that plays on the caster as the round's moves are shown */
 function abCast(side, st){
-  const p = anchor(side), f = feet(side), o = side === 'l' ? 'r' : 'l';
-  anim(side, 'charge', 560);
+  const p = anchor(side), f = feet(side), o = side === 'l' ? 'r' : 'l', k = st.k;
+  if (k === 'ward' || k === 'diamond') pose(side, CROUCH, 560);
+  else if (k === 'heal' || k === 'alchemy' || k === 'energy') pose(side, LIFT, 640);
+  else if (k === 'laser' || k === 'zap' || k === 'prism') pose(side, WINDUP, 140);
+  else if (k === 'moon' || k === 'dip' || k === 'splash') pose(side, THROW, 500);
+  else if (k === 'crash' || k === 'pillar') pose(side, SLAM, 460);
+  else if (k === 'matrix' || k === 'runes' || k === 'void') pose(side, TAUNTP, 640);
+  else if (k !== 'charge' && k !== 'double') pose(side, LIFT, 480);
   fxRise(side, [st.c, '#ffffff'], 12);
   ({heal: () => S.munch(), alchemy: () => S.alchemy(), matrix: () => S.matrix(), runes: () => S.runes(), void: () => S.voidHum(),
-    double: () => S.twin(), energy: () => S.energy()}[st.k] || (() => S.charge()))();
-  if (st.k === 'heal'){ itemPop(side, st.icon); marks.push({k:'ring', x:p.x, y:p.y, r0:20, r1:90, c:'rgba(123,224,138,.9)', life:20, max:20}); }
-  else if (st.k === 'ward' || st.k === 'diamond'){ /* drawn on the shield event */ }
-  else if (st.k === 'alchemy') marks.push({k:'circle', x:f.x, y:f.y, c:st.c, life:46, max:46});
-  else if (st.k === 'energy'){ for (let i=0;i<3;i++) setTimeout(() => marks.push({k:'zap', x:p.x + (Math.random()-.5)*80, y0:p.y-70, y:p.y+30, c:st.c, life:6, max:6}), i*90); }
-  else if (st.k === 'matrix') marks.push({k:'matrix', side:o, c:st.c, life:44, max:44, cols: Array.from({length:9}, () => Math.random()*40)});
-  else if (st.k === 'runes'){ marks.push({k:'runes', side:o, c:st.c, life:44, max:44}); }
-  else if (st.k === 'void'){ marks.push({k:'void', side:o, c:st.c, life:52, max:52}); }
-  else if (st.k === 'charge'){ fxDust(side, 18); }
-  else if (st.k === 'double') ghostTwin(side);
-  else if (st.k === 'laser'){ const e = eyes(side); marks.push({k:'ring', x:e.x, y:e.y, r0:2, r1:22, c:st.c, life:12, max:12}); }
+    double: () => S.twin(), energy: () => S.energy()}[k] || (() => S.charge()))();
+  if (k === 'heal'){ itemPop(side, st.icon); marks.push({k:'ring', x:p.x, y:p.y, r0:20, r1:90, c:'rgba(123,224,138,.9)', life:20, max:20}); }
+  else if (k === 'ward' || k === 'diamond'){ fxBubble(side, 48); }
+  else if (k === 'alchemy') marks.push({k:'circle', x:f.x, y:f.y, c:st.c, life:46, max:46});
+  else if (k === 'energy'){ for (let i=0;i<3;i++) setTimeout(() => marks.push({k:'zap', x:p.x + (Math.random()-.5)*80, y0:p.y-70, y:p.y+30, c:st.c, life:6, max:6}), i*90); }
+  else if (k === 'matrix') marks.push({k:'matrix', side:o, c:st.c, life:44, max:44, cols: Array.from({length:9}, () => Math.random()*40)});
+  else if (k === 'runes'){ marks.push({k:'runes', side:o, c:st.c, life:44, max:44}); }
+  else if (k === 'void'){ marks.push({k:'void', side:o, c:st.c, life:52, max:52}); }
+  else if (k === 'charge'){ fxDust(side, 18); }
+  else if (k === 'double') ghostTwin(side);
+  else if (k === 'laser'){ const e = eyes(side); marks.push({k:'ring', x:e.x, y:e.y, r0:2, r1:22, c:st.c, life:12, max:12}); }
 }
 /* shot: replaces the plain beam/bolt event for an ability */
 function abShot(from, to, st){
   const a = eyes(from), b = hitPoint(to), tp = anchor(to);
+  if (st.k === 'laser' || st.k === 'prism' || st.k === 'zap') pose(from, RECOIL, 380);
+  else if (st.k === 'moon' || st.k === 'dip' || st.k === 'splash') pose(from, THROW, 420);
+  else if (st.k === 'crash' || st.k === 'pillar') pose(from, SLAM, 400);
   if (st.k === 'laser'){
-    beams.push({x1:a.x, y1:a.y, x2:b.x, y2:b.y, life:20, max:20, glow:st.glow, core:'#ffffff', w:16});
-    beams.push({x1:a.x, y1:a.y+4, x2:b.x, y2:b.y+4, life:20, max:20, glow:'rgba(0,0,0,0)', core:st.c, w:7});
+    beams.push({x1:a.x, y1:a.y, x2:b.x, y2:b.y, life:9, max:9, glow:st.glow, core:'#ffffff', w:14});
+    beams.push({x1:a.x, y1:a.y+3, x2:b.x, y2:b.y+3, life:9, max:9, glow:'rgba(0,0,0,0)', core:st.c, w:5});
     burst(b.x, b.y, 18, [st.c, '#ffffff'], 7); S.laser(); return;
   }
   if (st.k === 'zap'){ for (let i=0;i<3;i++) setTimeout(() => marks.push({k:'zap', x:tp.x + (Math.random()-.5)*30, y0:0, y:tp.y, c:st.c, life:7, max:7}), i*70);
@@ -3459,29 +3656,44 @@ function auraInit(){
   for (const s of ['l', 'r']){
     const el = fighterEl(s); if (!el || !AURA[s]) continue;
     el.classList.add(AURA[s] === 'leg' ? 'aura-leg' : 'aura-myth');
-    el.insertAdjacentHTML('afterbegin', AURA[s] === 'leg' ? '<i class="lrays"></i>' : '<i class="mring"></i>');
+    el.classList.add('inbound');
+    el.insertAdjacentHTML('afterbegin', AURA[s] === 'leg'
+      ? '<i class="lglo"></i>'
+      : '<i class="mglo"></i>');
   }
 }
 async function introFx(){
-  const who = ['l', 'r'].filter(s => AURA[s]); if (!who.length) return;
+  const who = ['l', 'r'].filter(s => AURA[s]);
+  if (!who.length) return;
+  if (RM){ who.forEach(s => fighterEl(s)?.classList.remove('inbound')); return; }
   busy = true; document.getElementById('ctrl')?.classList.add('busy');
   try {
-    for (const s of who){
-      const el = fighterEl(s), img = el && el.querySelector('img'), leg = AURA[s] === 'leg', f = s === 'r' ? 'scaleX(-1) ' : '';
-      const p = anchor(s);
-      if (!RM && img && img.animate) img.animate([{transform: f + 'translateY(-280px)', opacity: 0}, {transform: f + 'translateY(-280px)', opacity: 1, offset: .05},
-        {transform: f + 'translateY(0) scale(1.08,.9)', offset: .6}, {transform: f + 'translateY(-14px)', offset: .78}, {transform: f + 'translateY(0)'}], {duration: 760, easing: 'ease-in'});
-      marks.push({k:'pillar', x:p.x, y:p.y, c: leg ? '#ffe9a0' : '#d9c2ff', life:34, max:34});
-      const b = document.querySelector('.banner');
-      if (b){ b.textContent = leg ? '★ LEGENDARY ★' : '✦ MYTHIC ✦'; b.className = 'banner ' + (leg ? 'leg' : 'myth'); void b.offsetWidth; b.classList.add('on'); }
-      S.fanfare(leg);
-      await wait(460);
-      fxDust(s, 20); stageFx('shake2', 430); crowdCheer(); S.land(); if (stageTheme() !== 'meadow') S.crowd(true);
-      marks.push({k:'ring', x:p.x, y:feet(s).y - 10, r0:20, r1:160, c: leg ? 'rgba(255,214,90,.95)' : 'rgba(185,139,255,.95)', life:22, max:22});
-      fxRise(s, leg ? ['#ffd54a','#fff6c2','#ffffff'] : ['#b98bff','#6fc3ff','#ffffff'], 30, true);
-      await wait(820);
-      if (b) b.className = 'banner';
+    const b = document.querySelector('.banner');
+    const leg = who.some(s => AURA[s] === 'leg');
+    if (b){
+      b.textContent = leg ? '★ LEGENDARY ★' : '✦ MYTHIC ✦';
+      b.className = 'banner ' + (leg ? 'leg' : 'myth');
+      void b.offsetWidth; b.classList.add('on');
     }
+    S.fanfare(leg);
+    for (const s of who){
+      const el = fighterEl(s), img = el && el.querySelector('img'), f = s === 'r' ? 'scaleX(-1) ' : '';
+      if (img && img.animate) img.animate([
+        {transform: f + 'translateY(-240px) scale(1,1.06)', opacity: 1},
+        {transform: f + 'translateY(10px) scale(1.14,.8)', offset: .78},
+        {transform: f + 'translateY(0) scale(1,1)'}
+      ], {duration: 260, easing: 'cubic-bezier(.15,.85,.25,1)', fill: 'backwards'});
+      if (el) el.classList.remove('inbound');
+    }
+    await wait(200);
+    for (const s of who){
+      const isLeg = AURA[s] === 'leg', p = anchor(s), foot = feet(s);
+      const cols = isLeg ? ['#ffd54a','#fff6c2','#ffffff'] : ['#b98bff','#6fc3ff','#ffffff'];
+      fxDust(s, 14); burst(p.x, foot.y - 8, 12, cols, 5);
+    }
+    stageFx('shake', 200); S.land();
+    await wait(220);
+    if (b) b.className = 'banner';
   } finally { busy = false; document.getElementById('ctrl')?.classList.remove('busy'); }
 }
 /* the aura keeps glittering while it fights */
@@ -3529,6 +3741,7 @@ function setBars(){
   });
 }
 
+function rushShot(st){ return !!(st && (st.k === 'laser' || st.k === 'zap' || st.k === 'prism')); }
 async function play(){
   busy = true; document.getElementById('ctrl')?.classList.add('busy');
   // what each side did this round, and which signature move it used
@@ -3543,22 +3756,23 @@ async function play(){
       MV.l = e.l; MV.r = e.r;
       for (const [s, m] of sides) AB[s] = m === 'ability' ? abStyle(abOf(s)) : null;
       // a signature move is charged up first, in its own colours
+      const rush = ['laser','zap','prism'].includes(AB.l && AB.l.k) || ['laser','zap','prism'].includes(AB.r && AB.r.k);
       if (AB.l || AB.r){
         for (const s of ['l', 'r']) if (AB[s]) abCast(s, AB[s]);
-        await wait(340);
+        await wait(rush ? 60 : 160);
       }
       for (const [s, m] of sides){
         if (m === 'bite' || (AB[s] && AB[s].k === 'double')){
           const both = [e.l, e.r].filter(x => x === 'bite').length === 2;
-          lungeTo(s, 0, 380, both); fxDust(s); setTimeout(() => fxStreak(s), 110);
+          lungeTo(s, 0, 280, both); fxDust(s); setTimeout(() => fxStreak(s), 70);
         }
-        else if (m === 'ability'){ if (!['heal','ward','diamond','alchemy','energy','charge'].includes(AB[s].k)) anim(s, 'lunge', 460); }
-        else if (m === 'guard') anim(s, 'guard', 560);
-        else { anim(s, 'taunt', 560); fxWave(s); sayBubble(s, TAUNTS[rint(0, TAUNTS.length-1)]); }
+        else if (m === 'guard'){ pose(s, CROUCH, 420); fxBubble(s, 40); }
+        else if (m === 'taunt'){ pose(s, TAUNTP, 480); fxWave(s); sayBubble(s, TAUNTS[rint(0, TAUNTS.length-1)]); }
+        else if (m === 'ability' && AB[s] && AB[s].k === 'charge') pose(s, CROUCH, 180);
       }
       if (sides.some(([s, m]) => m === 'bite' || (AB[s] && AB[s].k === 'double'))){ S.leap(); S.whoosh(); }
       if (sides.some(([, m]) => m === 'taunt')) S.bark();
-      await wait(300);
+      await wait(rush ? 30 : 160);
     }
     else if (e.t==='shield'){
       const st = AB[e.who];
@@ -3570,45 +3784,51 @@ async function play(){
       const st = AB[e.from];
       if (st && st.k !== 'double') abShot(e.from, e.to, st);
       else {
+        pose(e.from, RECOIL, 360);
         const a=anchor(e.from), b=anchor(e.to), laser = e.t==='laser';
-        beams.push({x1:a.x,y1:a.y,x2:b.x,y2:b.y,life:16,max:16,
-          glow: laser?'rgba(255,60,60,.55)':'rgba(255,225,120,.55)', core: laser?'#fff0f0':'#fffbe6'});
+        beams.push({x1:a.x,y1:a.y,x2:b.x,y2:b.y,life:9,max:9,
+          glow: laser?'rgba(255,60,60,.55)':'rgba(255,225,120,.55)', core: laser?'#fff0f0':'#fffbe6', w: laser?12:8});
         burst(b.x,b.y,16, laser?['#ff4d4d','#ffb3b3','#fff']:['#ffe066','#fff6c2','#fff'], 7);
         if (!laser) whiteFlash();
         laser ? S.laser() : S.bolt();
       }
-      await wait(st && (st.k === 'moon' || st.k === 'charge' || st.k === 'dip') ? 300 : 260);
+      await wait(rushShot(st) ? 80 : 160);
     }
     else if (e.t==='burn'){
       fxRise(e.who, ['#ff8a3d','#ffc14d','#ff5a2b','#fff1a8'], 16); fxRing(e.who, 'rgba(255,138,61,.9)', 54);
       S.burn(); await wait(160);
     }
     else if (e.t==='hit'){
-      anim(e.who,'hurt',320);
+      anim(e.who,'hurt',340);
+      pose(e.who, HURT, 320);
       const p = anchor(e.who), from = e.who === 'l' ? 'r' : 'l';
       const big = e.kind==='big'||e.n>=7, counter = e.kind==='counter';
       const st = !counter && AB[from];
       const bitten = !counter && e.kind !== 'burn' && (MV[from] === 'bite' || (st && st.k === 'double'));
       counter ? S.counter() : (bitten ? S.chomp(big) : S.hit(big));
       if (bitten){
-        setTimeout(() => lungeBack(from), 260);
-        chomp(e.who, big); biteMarks(e.who, big);
-        comic(e.who, big ? (e.n >= 9 ? 'CRUNCH!!' : 'CRUNCH!') : ['CHOMP!','NOM!','SNAP!'][rint(0,2)], big ? 'big red' : '');
-        fxStar(e.who, big, false);
-      } else if (st && e.kind === 'big'){ abImpact(e.who, st, e.n >= 7); setTimeout(() => lungeBack(from), 260); }
-      else fxStar(e.who, big, counter);
-      fxRing(e.who, counter ? 'rgba(191,232,106,.95)' : 'rgba(255,255,255,.95)', big ? 92 : 62);
-      burst(p.x,p.y,big?24:12, counter?['#bfe86a','#eaffb0','#fff']:['#ffd9d9','#ff6b6b','#fff'], big?9:5.5);
+        setTimeout(() => lungeBack(from), 120);
+        chomp(e.who, big);
+        if (big) comic(e.who, e.n >= 9 ? 'CRUNCH!' : 'CHOMP!', 'big red');
+        burst(p.x, p.y, big ? 10 : 6, ['#fff','#ffd0d0','#ff5a4d'], 4);
+      } else if (st && e.kind === 'big'){ abImpact(e.who, st, e.n >= 7); setTimeout(() => lungeBack(from), 120);
+        fxRing(e.who, st.c || 'rgba(255,255,255,.95)', big ? 80 : 56);
+        burst(p.x,p.y,big?16:8, [st.c || '#fff','#ffffff'], big?7:4);
+      } else {
+        fxStar(e.who, big, counter);
+        fxRing(e.who, counter ? 'rgba(191,232,106,.95)' : 'rgba(255,255,255,.95)', big ? 80 : 52);
+        burst(p.x,p.y,big?16:8, counter?['#bfe86a','#eaffb0','#fff']:['#ffd9d9','#ff6b6b','#fff'], big?7:4);
+      }
       floatTxt(e.who,'dmgN','-'+e.n);
       if (big){ stageFx('shake2', 430); whiteFlash(); crowdCheer(); if (stageTheme() !== 'meadow') S.crowd(false); }
       else stageFx('shake', 290);
       setBars();
-      await wait(big ? 540 : 440);
+      await wait(big ? 280 : 200);
     }
     else if (e.t==='float'){
       const t = String(e.txt);
       if (['MISS','DODGE','BLOCK','PARRIED','HELD','REFRACT'].includes(t)) setTimeout(() => lungeBack(e.who === 'l' ? 'r' : 'l'), 200);
-      if (t === 'MISS' || t === 'DODGE'){ anim(e.who, 'dodge', 440); fxRing(e.who, 'rgba(255,255,255,.7)', 48); comic(e.who, t === 'MISS' ? 'WHIFF!' : 'DODGE!', 'blue'); }
+      if (t === 'MISS' || t === 'DODGE'){ pose(e.who, DODGEP, 460); fxRing(e.who, 'rgba(255,255,255,.7)', 48); comic(e.who, t === 'MISS' ? 'WHIFF!' : 'DODGE!', 'blue'); }
       else if (t === 'BLOCK' || t === 'PARRIED' || t === 'HELD' || /SHIELD/.test(t)){ fxBubble(e.who); fxRing(e.who, 'rgba(143,208,251,.95)', 74); }
       else if (/HEX|VOID/.test(t)){ fxRing(e.who, 'rgba(185,139,255,.95)', 84); fxRise(e.who, ['#b98bff','#6d3fd0','#fff'], 14); }
       else if (e.cls === 'healN') fxRise(e.who, ['#7be08a','#c8ffcf','#ffffff'], 16);
@@ -3686,30 +3906,47 @@ function pennants(){
   }
   return `<svg class="pennants" viewBox="0 0 400 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0 6Q200 34 400 6" stroke="#2b1d3a" stroke-width="1.5" fill="none"/>${tri}</svg>`;
 }
-/* Three backdrops: the meadow for ranked fights, a stadium at dusk for the
-   arena tournaments, and a night ring under spotlights for the Fight Club. */
-function stageTheme(){ return tvMode ? TV.theme : clubMode ? 'club' : (arenaRun ? 'arena' : 'meadow'); }
+/* Arena keeps the stadium, Fight Club the night ring. Normal fights rotate
+   through ten scenes so the backdrop is different every bout. */
+const FIGHT_SCENES = ['meadow','rain','snow','autumn','beach','desert','night','blossom','swamp','canyon'];
+const SCENE_ART = {
+  meadow:'art/meadow.png', rain:'art/rain.png', snow:'art/snow.png', autumn:'art/autumn.png',
+  beach:'art/beach.png', desert:'art/desert.png', night:'art/night.png', blossom:'art/blossom.png',
+  swamp:'art/swamp.png', canyon:'art/canyon.png', arena:'art/arena.png', club:'art/club.png'
+};
+let fightIx = Math.floor(Math.random() * FIGHT_SCENES.length);
+let fightScene = FIGHT_SCENES[fightIx];
+function nextFightScene(){
+  fightIx = (fightIx + 1) % FIGHT_SCENES.length;
+  fightScene = FIGHT_SCENES[fightIx];
+}
+function stageTheme(){
+  if (tvMode) return TV.theme;
+  if (clubMode) return 'club';
+  if (arenaRun) return 'arena';
+  return fightScene;
+}
 function scenery(th){
-  if (th === 'club') return `<span class="spot s1"></span><span class="spot s2"></span>
-    <span class="crowd back"></span><span class="crowd front"></span><span class="neon">FIGHT CLUB</span>
-    <span class="ropes"></span><span class="ground"><i class="mat"></i></span>`;
-  if (th === 'arena') return `<span class="flood f1"></span><span class="flood f2"></span>${pennants()}
-    <span class="crowd back"></span><span class="crowd front"></span><span class="fence"></span>
-    <span class="ground"><i class="ring"></i></span>`;
-  return `<span class="rays"></span><span class="sun"></span>
-    <span class="cloud c1"></span><span class="cloud c2"></span><span class="cloud c3"></span>
-    <span class="bird b1"></span><span class="bird b2"></span>
-    <span class="hills"></span><span class="fence"></span>
-    <span class="ground">${flowers()}${tufts(16)}</span>
-    <span class="bfly f1"></span><span class="bfly f2"></span>`;
+  const art = SCENE_ART[th] || SCENE_ART.meadow;
+  const outdoor = th === 'meadow' || th === 'autumn' || th === 'beach' || th === 'blossom' || th === 'canyon';
+  const life = th === 'club'
+    ? `<span class="spot s1"></span><span class="spot s2"></span>`
+    : th === 'arena'
+    ? `<span class="flood f1"></span><span class="flood f2"></span>`
+    : outdoor
+    ? `<span class="bird b1"></span><span class="bird b2"></span><span class="bfly f1"></span><span class="bfly f2"></span>`
+    : '';
+  return `<div class="scene" aria-hidden="true"><div class="plate" style="background-image:url('${art}')"></div></div>${life}<span class="vignette"></span>`;
 }
 function stage(){
   const th = stageTheme();
   return `<div class="stage th-${th}">
     ${scenery(th)}
     <div class="tint"></div>
-    <div class="fighter left"><i class="shd"></i><img src="${P.def.img}" alt=""></div>
-    <div class="fighter right"><i class="shd"></i><img src="${E.def.img}" alt=""></div>
+    <div class="ring3d">
+      <div class="fighter left"><i class="shd"></i><div class="rig"><img src="${P.def.img}" alt=""></div></div>
+      <div class="fighter right"><i class="shd"></i><div class="rig"><img src="${E.def.img}" alt=""></div></div>
+    </div>
     <canvas class="fx"></canvas>
     ${hud(P,'l')}${hud(E,'r')}
     <div class="banner"></div>
@@ -3799,6 +4036,7 @@ function renderControls(){
 }
 const bossLine = () => VF.boss && VF.boss.hit ? `<div class="mini" style="margin-top:6px">👹 <b>+${VF.boss.hit}</b> damage to the boss${VF.boss.fell ? ' — <b>and it fell! 💥</b>' : ` · ${VF.boss.hp} HP left`}</div>` : '';
 function shell(){
+  document.body.classList.remove('home');
   chatSync(false);
   app.innerHTML = stage() + `<div id="ctrl"></div>
     <div class="card"><div class="log" id="log">${log.join('<br>')}</div></div>`;
@@ -3808,9 +4046,19 @@ function shell(){
   if (sb){ sb.textContent = S.on ? '🔊' : '🔇';
            sb.onclick = () => { sb.textContent = S.toggle() ? '🔊' : '🔇'; }; }
   setBars(); renderControls();
-  introFx();
+  const stg = document.querySelector('.stage'), art = SCENE_ART[stageTheme()] || SCENE_ART.meadow;
+  let began = false;
+  const begin = () => { if (began) return; began = true; if (stg) stg.classList.remove('bgwait'); introFx(); };
+  if (stg && art){
+    const im = new Image();
+    im.onload = begin; im.onerror = begin;
+    stg.classList.add('bgwait');
+    im.src = art;
+    if (im.complete) begin();
+  } else begin();
 }
 function startFight(a,b,ranked,oppLvl){
+  if (!clubMode && !arenaRun) nextFightScene();
   SAVE.checkDay();
   isRanked = !!ranked;
   const el = SAVE.dog(a.id).lvl;
@@ -3918,7 +4166,7 @@ let tab = SC.linkId ? 'club' : /^\/dash\/?$/.test(location.pathname) ? 'dash' : 
 
 function nav(){
   return `<div class="card" style="padding:8px"><div class="tabs">
-    ${[['kennel','🏠 Kennel'],['arena','🏟️ Arena'],['dash', DASH_SKIN[dashTheme()].icon + ' Dash'],['club','🥊 Club'],['ladder','🏆 Ladder'],['packs','🐾 Packs']]
+    ${[['kennel','Kennel'],['arena','Arena'],['dash','Dash'],['club','Club'],['ladder','Ladder'],['packs','Packs']]
       .map(([k,t])=>`<button data-t="${k}" class="${tab===k?'on':''}">${t}</button>`).join('')}
   </div></div>`;
 }
@@ -3937,6 +4185,45 @@ function signInFirst(){ return walletCard() + `<div class="card"><p class="mini"
    their place), by rarity, or by token number (legendaries in their own row). */
 const KSORT = {bond:'🏅 Bond', rarity:'💎 Rarity', number:'# Number'};
 let kSort = (s => KSORT[s] ? s : 'bond')(lsGet('ba_ksort'));
+/* The kennel shows the dogs as a row of tabs (picture + bond) and one open dog below it, instead of a long list of
+   cards: the selected dog (kSel, remembered per browser) gets its bond, record, kit, bond paths and the fight button. */
+let kSel = lsGet('ba_ksel') || '';
+const FOLD = (f => f && typeof f === 'object' ? f : {})(lsGet('ba_fold'));   // which fold-outs are open (remembered per browser)
+function fold(key, title, body, open){
+  const o = FOLD[key] != null ? FOLD[key] : !!open;
+  return `<div class="card fold"><details data-fold="${key}"${o ? ' open' : ''}><summary class="h3">${title}</summary><div class="foldb">${body}</div></details></div>`;
+}
+function kennelList(R){
+  if (kSort === 'bond') return bondOrder(R);
+  if (kSort === 'rarity') return R.slice().sort((a, b) => (b.legendary ? 9 : RARITY_ORDER[b.rarity] || 0) - (a.legendary ? 9 : RARITY_ORDER[a.rarity] || 0) || SAVE.dog(b.id).lvl - SAVE.dog(a.id).lvl);
+  return [...R.filter(f => !f.legendary), ...R.filter(f => f.legendary)];
+}
+const kMedal = r => r ? (r <= 3 ? ['🥇','🥈','🥉'][r-1] : '#' + r) : '';
+function ktab(f, r){
+  const g = SAVE.dog(f.id), on = f.id === kSel;
+  return `<button class="ktab${on ? ' on' : ''}${f.legendary ? ' leg' : f.rarity === 'Mythic' ? ' myth' : ''}" data-ksel="${esc(f.id)}" role="tab" aria-selected="${on}" title="${esc(f.name)} · Bond ${g.lvl}">
+    <img src="${f.img}" alt="" loading="lazy"><span class="kb">${g.lvl}</span>${r && r <= 3 ? `<span class="km">${kMedal(r)}</span>` : ''}${f.borrowed ? '<span class="kl">🤝</span>' : ''}</button>`;
+}
+function kdetail(f, r){
+  const g = SAVE.dog(f.id), D = SAVE.data;
+  const need = BOND.need(g.lvl), max = g.lvl >= BOND.maxLevel, pct = max ? 100 : Math.round(100 * g.xp / need);
+  const fights = g.w + g.l, p = g.path || {};
+  const paths = [4, 8].filter(l => g.lvl >= l && BOND.alt[l]).map(l => `<div class="kpath"><span class="mini"><b>L${l}</b></span>
+    ${['a', 'b'].map(k => `<button class="sm ${(p[l] || 'a') === k ? 'on' : ''}" data-path="${esc(f.id)}|${l}|${k}">${esc((k === 'a' ? BOND.perks[l] : BOND.alt[l]).txt)}</button>`).join('')}</div>`).join('');
+  const fight = D.tickets > 0 ? `⚔️ Fight · ranked <small>${D.tickets} left</small>` : '⚔️ Casual fight <small>no XP</small>';
+  return `<div class="kdog" role="tabpanel">
+    <div class="kdimg"><img src="${f.img}" alt=""></div>
+    <div class="kdinfo">
+      <div class="kdname">${r ? `<span class="kdr">${kMedal(r)}</span>` : ''}<b>${esc(f.name)}</b></div>
+      <div class="kdtags"><span class="tag">${f.legendary ? '★ LEGENDARY' : esc(f.rarity).toUpperCase()}</span>${f.borrowed ? `<span class="tag">🤝 from ${esc(f.borrowed.from)}</span>` : ''}</div>
+      <div class="kdbond"><span class="lvl">BOND ${g.lvl}</span><span class="mini">${max ? 'max bond' : g.xp + ' / ' + need + ' XP'}</span></div>
+      <div class="xp"><i style="width:${pct}%"></i></div>
+      <div class="mini kdrec">${fights ? `<b>${g.w}</b>W <b>${g.l}</b>L · ${Math.round(100 * g.w / fights)} % won` : 'Never fought yet'}</div>
+      <div class="kdkit">${kitOf(f).map(t => `<span class="tag">${t.signature ? '★ ' : ''}${esc(t.value)}</span>`).join('') || '<span class="tag">no kit</span>'}${setBonus(f) ? `<span class="tag">Set: ${esc(f.set)} ${f.setMatch}</span>` : ''}</div>
+      ${paths ? `<div class="kdpaths"><div class="mini">🧭 <b>Bond path</b> — switch any time between fights</div>${paths}</div>` : ''}
+      <button class="kfight" data-f="${esc(f.id)}">${fight}</button>
+    </div></div>`;
+}
 const RARITY_ORDER = {Mythic:5, Legendary:4, Epic:3, Rare:2, Uncommon:1, Common:0};
 function bondOrder(R){
   const sc = f => { const g = SAVE.dog(f.id); return [g.lvl, g.xp, g.w - g.l, -(f.token || 0)]; };
@@ -3947,18 +4234,6 @@ function kennelView(){
   const mb = myBonus();
   const quests = (D.quests||[]).map(q =>
     `<p class="q ${q.got?'done':''}">${q.got?'✅':'▫️'} <span>${esc(q.txt)} <b>${q.n}/${q.goal}</b> · +${q.xp} XP</span></p>`).join('');
-  const card = (f, rank) => {
-    const g = SAVE.dog(f.id);
-    const need = BOND.need(g.lvl), pct = g.lvl>=BOND.maxLevel ? 100 : Math.round(100*g.xp/need);
-    const medal = rank ? (rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : '#' + rank) + ' ' : '';
-    return `<button data-f="${esc(f.id)}"><img src="${f.img}" alt="">
-      <span><b>${medal}${esc(f.name)}</b><br>${esc(f.rarity).toUpperCase()}
-      <br><span class="lvl">BOND ${g.lvl}</span>
-      <span class="xp" style="display:block"><i style="width:${pct}%"></i></span>
-      ${g.w+g.l ? g.w+'W '+g.l+'L' : 'never fought'}${f.borrowed ? `<br><span class="tag">🤝 from ${esc(f.borrowed.from)}</span>` : ''}
-      <span style="display:block;margin-top:4px">${kitOf(f).map(t=>`<span class="tag">${t.signature?'★ ':''}${esc(t.value)}</span>`).join('') || '<span class="tag">no kit</span>'}${setBonus(f) ? `<span class="tag">Set: ${esc(f.set)} ${f.setMatch}</span>` : ''}</span>
-      </span></button>`;
-  };
   if (needLogin()) return walletCard() + (WALLET.loading ? `<div class="card"><p class="mini" style="margin:0">🐾 ${esc(WALLET.progress)}</p></div>` : '') + introCard();
   const R = ROSTER();
   if (!R.length) return walletCard() + (LEND.starter && LEND.starter.had && !LEND.starter.active ? `<div class="card"><h3 class="h3">🎓 YOUR STARTER DOG WENT HOME</h3>
@@ -3971,44 +4246,35 @@ function kennelView(){
       <div class="mini">${esc(WALLET.bondNote)}</div></div><button id="bondOk" class="sm">OK</button></div></div>` : '';
   const defNote = WALLET.defenseNote ? `<div class="card"><div class="wal"><div><b style="font-size:12px">🛡️ Arena defence</b>
       <div class="mini">${esc(WALLET.defenseNote)}</div></div><button id="defOk" class="sm">OK</button></div></div>` : '';
-  let dogs;
-  if (kSort === 'bond') dogs = bondOrder(R).map((f, i) => card(f, i + 1)).join('');
-  else if (kSort === 'rarity') dogs = R.slice().sort((a, b) => (b.legendary ? 9 : RARITY_ORDER[b.rarity] || 0) - (a.legendary ? 9 : RARITY_ORDER[a.rarity] || 0) || SAVE.dog(b.id).lvl - SAVE.dog(a.id).lvl).map(f => card(f)).join('');
-  else {
-    const gen = R.filter(f => !f.legendary).map(f => card(f)).join('');
-    const leg = R.filter(f =>  f.legendary).map(f => card(f)).join('');
-    dogs = (gen || '') + (leg ? `</div><h3 class="h3" style="margin:16px 0 10px">★ ${R === DATA.fighters ? 'THE 20 LEGENDARIES' : 'YOUR LEGENDARIES'} — hand-built, each with its own signature</h3><div class="pick">` + leg : '');
-  }
+  const list = kennelList(R), rank = kSort === 'bond' ? new Map(list.map((f, i) => [f.id, i + 1])) : null;
+  if (!lsGet('ba_ksel') || !list.some(f => f.id === kSel)) kSel = list[0].id;      // until a dog is picked: the top dog
+  const sel = list.find(f => f.id === kSel);
   const top = bondOrder(R)[0], tg = top && SAVE.dog(top.id);
   return walletCard() + prizeCards() + carryNote + bonusNote + defNote + `
-  <div class="card pnl">
-    <div>
-      <h3>TRAINER</h3>
-      <div class="mini"><span class="lvl">LEVEL ${tl}</span></div>
-      <div class="xp"><i style="width:${Math.round(100*ti/250)}%"></i></div>
-      <div class="mini">${ti} / 250 XP · ${D.fights} ranked fights<br>Streak now ${D.streak} · this week's best ${D.wk.streak} · all-time best ${D.best}</div>
-      <div class="tix">🎟️ <b>${D.tickets}</b> ranked fights left<div class="mini">+${SAVE.grant()} a day, banks up to 15 until Sunday — a new week starts fresh. Out of them? Casual still runs — no XP, no ladder.</div></div>
-      ${mb ? `<div class="bon">${mb.emoji} <b>${mb.name}</b> — ${esc(mb.txt)}<div class="mini">Your pack earned it last week.</div></div>` : ''}
+  <div class="card kstat">
+    <div class="kchips">
+      <div><small>TRAINER</small><b>Level ${tl}</b><div class="xp"><i style="width:${Math.round(100*ti/250)}%"></i></div><small>${ti} / 250 XP · ${D.fights} fights</small></div>
+      <div class="tix" title="+${SAVE.grant()} a day, banks up to 15 until Sunday — a new week starts fresh. Out of them? Casual still runs — no XP, no ladder."><small>RANKED FIGHTS</small><b>🎟️ ${D.tickets}</b><small>+${SAVE.grant()} a day · max 15</small></div>
+      <div><small>STREAK</small><b>🔥 ${D.streak}</b><small>week ${D.wk.streak} · best ${D.best}</small></div>
     </div>
-    <div>
-      <h3>TODAY</h3>
+    ${mb ? `<div class="bon">${mb.emoji} <b>${mb.name}</b> — ${esc(mb.txt)} <span class="mini">· your pack earned it last week</span></div>` : ''}
+    <details data-fold="today"${FOLD.today == null || FOLD.today ? ' open' : ''} class="ktoday"><summary class="h3">TODAY <small>${(D.quests||[]).filter(q => q.got).length} / ${(D.quests||[]).length} quests</small></summary>
       ${quests || '<p class="mini">No quests today.</p>'}
-      <div class="mini" style="margin-top:6px">Resets at midnight UTC. Miss a day and the streak goes.</div>
       ${SAVE.dayComplete() ? '<button id="recapOpen" class="sm" style="margin-top:8px">📋 Daily recap</button>'
-        : `<div class="mini" style="margin-top:8px"><b>Day progress:</b> ${D.tickets > 0 ? D.tickets + ' ranked fight' + (D.tickets===1?'':'s') + ' left' : '✅ ranked fights done'} · ${Math.min(ARENA_RUNS, SAVE.arenaDoneToday()) >= ARENA_RUNS ? '✅ tournaments done' : Math.min(ARENA_RUNS, SAVE.arenaDoneToday()) + ' of ' + ARENA_RUNS + ' tournaments'} — the daily recap opens when both are done.</div>`}
-    </div>
+        : `<div class="mini" style="margin-top:6px">${D.tickets > 0 ? D.tickets + ' ranked fight' + (D.tickets===1?'':'s') + ' left' : '✅ ranked fights done'} · ${Math.min(ARENA_RUNS, SAVE.arenaDoneToday()) >= ARENA_RUNS ? '✅ tournaments done' : Math.min(ARENA_RUNS, SAVE.arenaDoneToday()) + ' of ' + ARENA_RUNS + ' tournaments'} · resets at midnight UTC</div>`}
+    </details>
   </div>
   <div class="card">
     <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap;margin:0 0 11px">
-      <p class="mini" style="margin:0;flex:1;min-width:200px"><b>Your kennel${R.length > 1 ? ' · ' + R.length + ' dogs' : ''}.</b> Every Scrappy levels its own bond. The bond stays with the NFT — sell it and the new owner inherits the training.${tg && (tg.w + tg.l || tg.lvl > 1) ? ` Top dog: <b>${esc(top.name)}</b>, Bond ${tg.lvl}.` : ''}</p>
+      <p class="mini" style="margin:0;flex:1;min-width:160px"><b>Your kennel${R.length > 1 ? ' · ' + R.length + ' dogs' : ''}</b> — tap a dog to open it. The bond stays with the NFT.</p>
       <div class="row ksort" style="gap:4px">${Object.entries(KSORT).map(([k, l]) => `<button class="sm ${k === kSort ? 'on' : ''}" data-ksort="${k}" style="margin-top:0">${l}</button>`).join('')}</div>
     </div>
-    <div class="pick">${dogs}</div>
-    <p class="mini" style="margin:11px 0 0"><b>Kit rule.</b> Each Scrappy carries eight traits, one per layer — only the <b>three rarest</b> fight, and at most one of them is an active ability. That keeps a fight readable and makes the individual traits matter, not just the rarity tier. </p>
+    <div class="ktabs" role="tablist" aria-label="Your Scrappys">${list.map(f => ktab(f, rank && rank.get(f.id))).join('')}</div>
+    ${kdetail(sel, rank && rank.get(sel.id))}
+  </div>` + fold('kinfo', 'ℹ️ KITS, BOND UNLOCKS & TV', `<p class="mini" style="margin:11px 0 0"><b>Kit rule.</b> Each Scrappy carries eight traits, one per layer — only the <b>three rarest</b> fight, and at most one of them is an active ability. That keeps a fight readable and makes the individual traits matter, not just the rarity tier. </p>
     <p class="mini" style="margin:7px 0 0"><b>Bond unlocks:</b> ${Object.entries(BOND.perks).map(([l,p])=>`<b>L${l}</b> ${esc(p.txt)}${BOND.alt[l] ? ' <i>or</i> ' + esc(BOND.alt[l].txt) : ''}`).join(' · ')}</p>
     ${LIVE() && !WALLET.demo ? `<p class="mini" style="margin:7px 0 0">📺 <b>Bark Arena TV:</b> ${D.tvOff ? 'your fights are not shown on the stream.' : 'your fights can be replayed on our YouTube stream, with your player name.'}
-      <button class="sm" id="tvOpt" style="margin:0 0 0 6px">${D.tvOff ? 'Show them again' : "Don't show my fights"}</button></p>` : ''}
-  </div>` + pathCard(R) + achCard() + (LIVE() && !WALLET.demo ? refCard() + lendCard() : '');
+      <button class="sm" id="tvOpt" style="margin:0 0 0 6px">${D.tvOff ? 'Show them again' : "Don't show my fights"}</button></p>` : ''}`) + achCard() + (LIVE() && !WALLET.demo ? refCard() + lendCard() : '');
 }
 /* ---- Achievements: badges for milestones. The page unlocks most of them; a podium week, a recruited friend
    and the boss's final blow come from the server. The count shows next to the name on the ladder. ---- */
@@ -4092,9 +4358,9 @@ function achToast(ids){
 function achCard(){
   if (!achLive()) return '';
   const got = ACH.filter(a => achHave(a.id)).length;
-  return `<div class="card"><details${got ? '' : ' open'}><summary class="h3" style="cursor:pointer">🏅 ACHIEVEMENTS · ${got} / ${ACH.length}</summary>
+  return fold('ach', `🏅 ACHIEVEMENTS <small>${got} / ${ACH.length}</small>`, `
     <div class="achs">${ACH.map(a => `<div class="${achHave(a.id) ? 'got' : ''}" title="${esc(a.t)}"><span>${a.e}</span><b>${esc(a.n)}</b><small>${esc(a.t)}</small></div>`).join('')}</div>
-    <p class="mini" style="margin:8px 0 0">Your count shows next to your name on the ladder.</p></details></div>`;
+    <p class="mini" style="margin:8px 0 0">Your count shows next to your name on the ladder.</p>`);
 }
 /* ---- Invites: share scrappyxrp.fun/barkarena/?ref=<name>. When a friend gets their own Pixel Scrappy and
    fights 5 times, both get +3 ranked fights. ---- */
@@ -4111,31 +4377,13 @@ async function refLoad(){
 function refCard(){
   const d = REF.d; if (!d) return '';
   const link = WALLET.name ? 'https://scrappyxrp.fun/barkarena/?ref=' + encodeURIComponent(WALLET.name) : '';
-  return `<div class="card"><h3 class="h3">📣 INVITE FRIENDS</h3>
+  return fold('ref', `📣 INVITE FRIENDS${d.invited ? ` <small>${d.joined} / ${d.invited} joined</small>` : ''}`, `
     <p class="mini" style="margin:0 0 8px">When a friend comes in through your link, gets a Pixel Scrappy of their own and fights ${d.fights} times, <b>you both get +${d.reward} ranked fights</b> — and you the 📣 Recruiter badge.${d.by ? ` You were invited by <b>${esc(d.by)}</b>.` : ''}</p>
     ${link ? `<div class="row" style="gap:8px;flex-wrap:wrap;justify-content:flex-start"><input id="refLink" readonly value="${esc(link)}" style="flex:1;min-width:200px;padding:8px 12px">
       <button id="refCopy" class="sm" style="margin-top:0">Copy</button></div>
       <p class="mini" style="margin:8px 0 0">Invited: <b>${d.invited}</b> · joined with their own Scrappy: <b>${d.joined}</b></p>`
-      : `<p class="mini" style="margin:0"><b>Set a player name</b> (✏️ above) to get your invite link.</p>`}</div>`;
+      : `<p class="mini" style="margin:0"><b>Set a player name</b> (✏️ above) to get your invite link.</p>`}`);
 }
-/* Bond paths: at bond 4 and 8 each dog follows one of two perks. The classic one is the default; the
-   trainer can switch any time outside a fight (the opponent's dog is unknown until the bell). */
-function pathCard(R){
-  const dogs = bondOrder(R).filter(f => SAVE.dog(f.id).lvl >= 4);
-  if (!dogs.length) return '';
-  const row = f => {
-    const g = SAVE.dog(f.id), p = g.path || {};
-    return `<div class="wal" style="margin-top:8px;align-items:flex-start"><div style="min-width:130px"><b>${esc(f.name)}</b> <span class="lvl">BOND ${g.lvl}</span></div>
-      <div style="flex:1">${[4, 8].filter(l => g.lvl >= l).map(l => `<div class="row" style="justify-content:flex-start;gap:6px;flex-wrap:wrap;margin:0 0 6px">
-        <span class="mini" style="min-width:26px"><b>L${l}</b></span>
-        ${['a', 'b'].map(k => `<button class="sm ${(p[l] || 'a') === k ? 'on' : ''}" data-path="${esc(f.id)}|${l}|${k}" style="margin-top:0">${esc((k === 'a' ? BOND.perks[l] : BOND.alt[l]).txt)}</button>`).join('')}
-      </div>`).join('')}</div></div>`;
-  };
-  return `<div class="card"><h3 class="h3">🧭 BOND PATHS</h3>
-    <p class="mini" style="margin:0">At bond 4 and 8 every dog takes one of two paths. Switch any time between fights.</p>
-    ${dogs.map(row).join('')}</div>`;
-}
-
 function ladderView(){
   if (LIVE()) return `<div class="card"><div id="ladderBox"><p class="mini" style="margin:0">Loading the ladder…</p></div>
     <p class="mini" style="margin:10px 0 0">Real players only. Ranked fights and the arena count; casual and demo fights don't.</p>
@@ -4271,7 +4519,7 @@ function arenaView(){
       ${LIVE() && !WALLET.demo ? (A.squad.length
         ? `<br>🛡️ <b>Registered for today.</b> When other players meet these dogs in their arena, each defence earns them bond XP — 18 for a win, 6 for a loss, up to 120 a dog a day — even while you're away.`
         : `<br>🛡️ Pick a squad to register for today: your dogs then defend in other players' arenas and earn bond XP while you're away.`) : ''}</p>
-    <div class="pick">${pick}</div>
+    <div class="pick tiny">${pick}</div>
   </div>
   <div class="card">
     <div class="row">
@@ -4309,7 +4557,7 @@ function clubView(){
       </div>
     </div>`;
   return `<div class="card">${top}</div>
-  ${ROOM ? `<div class="card"><p class="mini" style="margin:0 0 11px"><b>Your fighter.</b> Bond levels and set bonuses count. Pack bonuses don't — this is dog against dog.</p><div class="pick">${pick}</div></div>
+  ${ROOM ? `<div class="card"><p class="mini" style="margin:0 0 11px"><b>Your fighter.</b> Bond levels and set bonuses count. Pack bonuses don't — this is dog against dog.</p><div class="pick tiny">${pick}</div></div>
   <div class="card"><h3 class="h3">WHO'S HERE</h3><div id="clubLobby"><p class="mini" style="margin:0">Looking around…</p></div></div>` : ''}
   <div class="card">
     <h3 class="h3">HOW IT WORKS</h3>
@@ -4541,6 +4789,7 @@ setInterval(() => { if (CHAT.on && !document.hidden && (CHAT.open || Date.now() 
 
 function menu(){
   if (DASH.g) return;                              // a Dash run owns the screen until it is left
+  document.body.classList.add('home');
   SAVE.checkDay();
   chatSync(true);
   app.innerHTML = nav() +
@@ -4566,6 +4815,9 @@ function menu(){
     S.click(); const [id, l, k] = b.dataset.path.split('|'), g = SAVE.dog(id);
     g.path = {...(g.path || {}), [l]: k}; SAVE.save(); menu();
   });
+  app.querySelectorAll('[data-ksel]').forEach(b => b.onclick = () => { S.click(); kSel = b.dataset.ksel; lsSet('ba_ksel', kSel); menu();
+    const t = document.querySelector('.ktab.on'); if (t && t.scrollIntoView) t.scrollIntoView({block: 'nearest', inline: 'nearest'}); });
+  app.querySelectorAll('details[data-fold]').forEach(d => d.ontoggle = () => { FOLD[d.dataset.fold] = d.open; lsSet('ba_fold', FOLD); });
   app.querySelectorAll('[data-ksort]').forEach(b => b.onclick = () => { S.click(); kSort = b.dataset.ksort; lsSet('ba_ksort', kSort); menu(); });
   app.querySelectorAll('[data-f]').forEach(b => b.onclick = () => {
     S.unlock(); S.click();
@@ -4869,7 +5121,7 @@ function dashView(){
     ${overall ? board('🎄 ADVENT OVERALL — TOP ' + A.grandPlaces + ' WIN', A.overall.top, 'Nobody on the overall ranking yet.', `<p class="mini" style="margin:8px 0 0">Your best run of each Advent day, added up${om && om.days ? ` — you've played ${om.days} of ${Math.min(24, A.n)} days` : ''}. Prizes: ${dashGrandText(A)}.</p>`, A.grand)
       : board("📅 THIS WEEK", B && B.week && B.week.top, 'No runs yet this week.', '<p class="mini" style="margin:8px 0 0">Best run of the week. Resets Monday 00:00 UTC.</p>')}
     <div class="card"><h3 class="h3">PILOT</h3>
-      <div class="pick">${pick}</div>
+      <div class="pick tiny">${pick}</div>
       <p class="mini" style="margin:8px 0 0"><b>Scrappy bonus:</b> fly your own Pixel Scrappy and every run scores a little more, by its rarity — Common +5 %, Uncommon +6 %, Rare +7 %, Epic +8 %, Legendary/Mythic +10 %. Small on purpose: a better run still beats a rarer dog. Borrowed, starter and demo dogs fly without it.</p>
       <p class="mini" style="margin:8px 0 0">${post ? `Each run gives your dog a little bond XP (score ÷ 150, up to ${DASH_XP_RUN} a run, ${DASH_XP_DAY} a day — ${Math.max(0, DASH_XP_DAY - sv.xp)} left today). Borrowed dogs fly for fun. Every run is replayed on the server from your taps, so the rankings are fair.` : 'Sign in with your wallet to enter the rankings and earn bond XP. The demo dogs fly for fun.'}</p></div>`;
 }
@@ -5503,7 +5755,7 @@ async function tvPlay(rep){
   turn = 1; log = []; ev = []; over = false; AIM = null;
   app.innerHTML = tvTop(rep) + stage() + tvLow(rep);
   fxInit(document.querySelector('canvas.fx'), TV.theme); auraInit(); setBars();
-  await wait(700); await introFx(); await wait(500);
+  await introFx();
   simulating = true;
   try {
     for (let i = 0; i < 12 && !over; i++){
@@ -5627,7 +5879,7 @@ async function clipBoot(){
   /* v=tt: the TikTok / Reels cut (no crypto words or wallet tags on screen). Both cuts are built the same way, aimed
      at people scrolling past: the decisive moment first (cold open, frozen with a zoom), a quick rewind, the last
      rounds that led to it, and the same moment again at the end — about 10–14 s, so the end runs into the start. */
-  tvMode = true; WAIT_K = TT ? .8 : .85; document.body.classList.add('tv', 'clip', TT ? 'clip-tt' : 'clip-yt');
+  tvMode = true; WAIT_K = TT ? 1 : 1.05; document.body.classList.add('tv', 'clip', TT ? 'clip-tt' : 'clip-yt');
   if (!S.on) S.toggle(); S.unlock();
   let rep = null, s = null;
   try {

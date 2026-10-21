@@ -23,7 +23,7 @@ for (const x of [A, B, H]) await call(x, "/me/kennel");
 await call(B, "/profile", {name: "Newbie"}); await call(H, "/profile", {name: "Hodler"});
 const br = await chromium.launch({executablePath: process.env.CHROMIUM || undefined}); const errs = [];
 async function player(acct){
-  const p = await br.newPage({viewport:{width:420,height:1000}}); p.on("pageerror", e => errs.push(acct.slice(0,6) + ": " + e.message)); p.on("dialog", d => d.accept());
+  const p = await br.newPage({viewport:{width:420,height:1000}}); await p.addInitScript(() => localStorage.setItem("ba_fold", JSON.stringify({lend: true, ref: true, ach: true, kinfo: true}))); p.on("pageerror", e => errs.push(acct.slice(0,6) + ": " + e.message)); p.on("dialog", d => d.accept());
   await p.goto(U + "/"); await p.evaluate(([t, a]) => localStorage.setItem("ba_session", JSON.stringify({token:t, account:a})), [tok(acct), acct]);
   await p.reload(); await p.waitForFunction(() => OWNED && !WALLET.loading, null, {timeout:20000}); await p.waitForTimeout(800);
   return p;
@@ -39,7 +39,7 @@ const pb = await player(B);
 const dogs = await pb.evaluate(() => OWNED.map(f => ({id: f.id, borrowed: !!f.borrowed, lvl: SAVE.dog(f.id).lvl})));
 console.log("B kennel:", JSON.stringify(dogs));
 await pb.screenshot({path: S + "/lend-borrower.png", fullPage: true});
-await pb.locator('[data-f="N2931"]').click();
+await pb.locator('[data-ksel="N2931"]').click(); await pb.locator('.kfight[data-f="N2931"]').click();
 for (let i = 0; i < 300 && !(await pb.locator("#ctrl .res").count()); i++){ const bt = pb.locator("#ctrl:not(.busy) [data-a]"); if (await bt.count()) await bt.first().click().catch(()=>{}); await pb.waitForTimeout(100); }
 await pb.waitForTimeout(1200);
 const bxp = await pb.evaluate(() => ({wk: SAVE.data.wk.xp, trainer: SAVE.data.trainerXp}));

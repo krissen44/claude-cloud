@@ -195,6 +195,9 @@ if (worker.scheduled) { setTimeout(() => worker.scheduled({}, env), 20e3).unref(
 const GAME = fs.readFileSync(path.join(ROOT, "public", "index.html"));
 // WalletConnect bundle for "Joey (mobile)", fetched only when a player picks it
 const WC_JS = (() => { try { return fs.readFileSync(path.join(ROOT, "public", "wc.js")); } catch { return null; } })();
+// the fight backdrops (pixel art, public/art/*.png), read once
+const ART = (() => { const m = {}; try { for (const f of fs.readdirSync(path.join(ROOT, "public", "art")))
+  if (/^[a-z0-9-]+\.(png|webp)$/.test(f)) m["/art/" + f] = fs.readFileSync(path.join(ROOT, "public", "art", f)); } catch {} return m; })();
 
 /* Admin dashboard at /admin: player numbers, a table of every player and
    full backups (JSON) / spreadsheets (CSV). Data comes from /api/admin/*,
@@ -694,6 +697,11 @@ http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === "/favicon.ico") { res.writeHead(204); res.end(); return; }
+    if (ART[url.pathname]) {
+      res.writeHead(200, {"content-type": url.pathname.endsWith(".webp") ? "image/webp" : "image/png", "cache-control": "public, max-age=86400"});
+      res.end(ART[url.pathname]); return;
+    }
+    if (url.pathname.startsWith("/art/")) { res.writeHead(404); res.end(); return; }
     if (url.pathname === "/wc.js" && WC_JS) {
       res.writeHead(200, {"content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=86400"});
       res.end(WC_JS); return;
