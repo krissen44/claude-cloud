@@ -704,6 +704,25 @@ body.home .kstat{background:rgba(255,255,255,.04);border-radius:16px;padding:14p
 .pick.tiny .tag{font-size:9px;padding:1px 5px}
 @media(max-width:560px){.pick.tiny{grid-template-columns:repeat(3,1fr)!important}.pick.tiny img{width:64px!important;height:64px!important}}
 
+/* ---------- ladder: all active players, scrollable ---------- */
+.lhead,.lrow{display:grid;grid-template-columns:38px 1fr 64px 70px 56px 40px;gap:6px;align-items:center;padding:7px 10px}
+.lhead{font-size:10px;letter-spacing:.06em;opacity:.65;text-transform:uppercase}
+.lhead span:nth-child(n+3),.lrow span:nth-child(n+3){text-align:right;font-variant-numeric:tabular-nums}
+.lbox{max-height:min(460px,60vh);overflow-y:auto;border-radius:12px;background:var(--kdog,rgba(127,127,127,.06));overscroll-behavior:contain}
+.lrow{font-size:13px;border-bottom:1px solid rgba(127,127,127,.12)}.lrow:last-child{border-bottom:0}
+.lrow.top{font-weight:700}.lrow.you{background:#f6e7b8;color:#1a1408;position:sticky;top:0;bottom:0;z-index:1}body.home .lrow.you{background:#3a3320;color:#fff}
+.lrow span.on{color:var(--accent,#f0c14a);font-weight:700}
+.lname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lpk{margin-left:4px}
+@media(max-width:560px){.lhead,.lrow{grid-template-columns:30px 1fr 50px 58px 44px 30px;gap:4px;padding:7px 6px}.lrow{font-size:12px}}
+/* ---------- packs: compact cards, details on tap ---------- */
+.pk.click{cursor:pointer;transition:transform .15s}.pk.open{outline:2px solid var(--accent,#f0c14a)}.pk.click:hover{transform:translateY(-2px)}
+.pk .pkrow{display:flex;gap:12px;flex-wrap:wrap;margin:6px 0}.pk .pkrow b{font-size:16px}.pk .pkrow small{display:block;font-size:10px;opacity:.7;letter-spacing:.04em}
+.pkd{margin:0 0 12px;padding:14px;border-radius:16px;background:var(--kdog,rgba(127,127,127,.08));animation:kdin .25s ease-out}
+.pkd .pkdh{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}.pkd .pkdh b{font-size:17px}
+.pkd table{width:100%;border-collapse:collapse;font-size:12.5px}.pkd td,.pkd th{padding:5px 6px;text-align:right}.pkd td:first-child,.pkd th:first-child{text-align:left}
+.pkd th{font-size:10px;letter-spacing:.05em;opacity:.65;font-weight:600}.pkd tr.you td{color:var(--accent,#f0c14a);font-weight:700}
+.pkd .pkhist{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.pkd .pkhist span{font-size:11px;padding:4px 8px;border-radius:8px;background:rgba(127,127,127,.12)}
+
 </style>
 </head>
 <body>
@@ -3028,15 +3047,51 @@ function postStats(wk){
   if (!LIVE() || !WALLET.token || WALLET.demo) return;
   api('/stats', {method:'POST', body:{wins:wk.wins, losses:wk.losses||0, xp:wk.xp, streak:wk.streak}}).catch(()=>{});
 }
+/* The ladder: every player active this week in one scrollable list, sorted by XP, wins, streak or win rate
+   (the server sends them all as `all`; an older server only sends the top 10 per board). */
+const LADDER = {sort: (k => ['xp','wins','streak','rate'].includes(k) ? k : 'xp')(lsGet('ba_lsort')), j: null};
+const packOf = id => PACKS.find(p => p.id === id);
+function ladderRows(){
+  const j = LADDER.j, k = LADDER.sort;
+  const rate = x => x.wins + x.losses ? x.wins / (x.wins + x.losses) : 0;
+  const val = x => k === 'rate' ? rate(x) : x[k];
+  return j.all.slice().sort((a, b) => val(b) - val(a) || b.xp - a.xp || b.wins - a.wins);
+}
+function ladderRender(){
+  const box = document.getElementById('ladderBox'); if (!box || !LADDER.j) return;
+  const j = LADDER.j;
+  if (!Array.isArray(j.all)){                       // older server: the three top-10 boards
+    const board = (rows, label, sfx) => `<div><h3>${label}</h3>${rows.length ? rows.map((x,i) =>
+      `<p class="lb ${x.you?'you':''}"><span>${i+1}.</span><span>${esc(x.you ? 'YOU' : x.who)}${x.team ? ' <span class="tag">TEAM</span>' : ''}</span><b>${x.v}${sfx||''}</b></p>`).join('')
+      : '<p class="mini">Nobody yet.</p>'}</div>`;
+    box.innerHTML = `<p class="mini" style="margin:0 0 10px"><b>Week of ${esc(j.week)}</b> · ${j.players} player${j.players===1?'':'s'}</p>
+      <div class="pnl3">${board(j.xp,'MOST XP')}${board(j.wins,'MOST WINS')}${board(j.streak,'LONGEST STREAK','🔥')}</div>`;
+    return;
+  }
+  const rows = ladderRows(), me = rows.findIndex(x => x.you), k = LADDER.sort;
+  const pct = x => x.wins + x.losses ? Math.round(100 * x.wins / (x.wins + x.losses)) + '%' : '—';
+  const medal = i => i < 3 ? ['🥇','🥈','🥉'][i] : i + 1;
+  box.innerHTML = `<div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap;margin:0 0 10px">
+      <p class="mini" style="margin:0"><b>Week of ${esc(j.week)}</b> · ${rows.length} active player${rows.length===1?'':'s'} · resets Monday 00:00 UTC</p>
+      <div class="row ksort" style="gap:4px">${[['xp','XP'],['wins','Wins'],['streak','🔥 Streak'],['rate','Win %']].map(([v, l]) =>
+        `<button class="sm ${v === k ? 'on' : ''}" data-lsort="${v}" style="margin-top:0">${l}</button>`).join('')}</div></div>
+    ${rows.length ? `<div class="lhead"><span>#</span><span>Player</span><span>XP</span><span>W–L</span><span>Win %</span><span>🔥</span></div>
+    <div class="lbox" id="lbox">${rows.map((x, i) => { const pk = packOf(x.pack);
+      return `<div class="lrow${x.you ? ' you' : ''}${i < 3 ? ' top' : ''}"><span>${medal(i)}</span>
+        <span class="lname">${esc(x.you ? 'YOU' : x.who)}${x.team ? ' <span class="tag">TEAM</span>' : ''}${x.ach ? ` <span class="tag" title="achievements">🏅${x.ach}</span>` : ''}${pk ? ` <span class="lpk" title="${esc(pk.name)}">${pk.emoji}</span>` : ''}</span>
+        <span class="${k === 'xp' ? 'on' : ''}">${x.xp}</span><span class="${k === 'wins' ? 'on' : ''}">${x.wins}–${x.losses}</span>
+        <span class="${k === 'rate' ? 'on' : ''}">${pct(x)}</span><span class="${k === 'streak' ? 'on' : ''}">${x.streak}</span></div>`; }).join('')}</div>
+    ${me > 6 ? `<div class="row" style="margin-top:8px"><button class="sm" id="lme">↓ Jump to me (#${me + 1})</button></div>` : ''}`
+    : '<p class="mini">Nobody has fought this week yet.</p>'}`;
+  box.querySelectorAll('[data-lsort]').forEach(b => b.onclick = () => { S.click(); LADDER.sort = b.dataset.lsort; lsSet('ba_lsort', LADDER.sort); ladderRender(); });
+  const jm = document.getElementById('lme');
+  if (jm) jm.onclick = () => { S.click(); const r = box.querySelector('.lrow.you'), lb = document.getElementById('lbox'); if (r && lb) lb.scrollTop = r.offsetTop - lb.offsetTop - lb.clientHeight / 2; };
+}
 async function fillLadder(){
   const box = document.getElementById('ladderBox'); if (!box) return;
   try {
-    const r = await api('/ladder'); const j = await r.json();
-    const board = (rows, label, sfx) => `<div><h3>${label}</h3>${rows.length ? rows.map((x,i) =>
-      `<p class="lb ${x.you?'you':''}"><span>${i+1}.</span><span>${esc(x.you ? 'YOU' : x.who)}${x.team ? ' <span class="tag">TEAM</span>' : ''}${x.ach ? ` <span class="tag" title="achievements">🏅${x.ach}</span>` : ''}</span><b>${x.v}${sfx||''}</b></p>`).join('')
-      : '<p class="mini">Nobody yet.</p>'}</div>`;
-    box.innerHTML = `<p class="mini" style="margin:0 0 10px"><b>Week of ${esc(j.week)}</b> · ${j.players} player${j.players===1?'':'s'} on the board · resets Monday 00:00 UTC</p>
-      <div class="pnl3">${board(j.xp,'MOST XP')}${board(j.wins,'MOST WINS')}${board(j.streak,'LONGEST STREAK','🔥')}</div>`;
+    const r = await api('/ladder'); LADDER.j = await r.json();
+    ladderRender();
   } catch(e){ box.innerHTML = '<p class="mini">The ladder is not reachable right now.</p>'; }
 }
 
@@ -4426,6 +4481,23 @@ function packStats(p){
     <tr><td>Win rate</td><td colspan="4">${rate}</td></tr>
   </table>`;
 }
+/* One pack opened: this week's numbers, who is in it (live), and its last weeks with the bonuses it won. */
+let PKOPEN = null;
+function packDetail(id, rows, won){
+  const p = rows.find(x => x.id === id); if (!p) return '';
+  const mem = (PACKDATA && PACKDATA.members && PACKDATA.members[id]) || null;
+  const weeks = PACKDATA && PACKDATA.weeks ? Object.keys(PACKDATA.weeks).sort().reverse().slice(1) : [];
+  const hist = weeks.map(w => { const r = standings(w).find(x => x.id === id), aw = awards(w), bk = Object.keys(aw).find(k => aw[k] === id);
+    return r && r.members ? `<span>${w.slice(5)} · Ø ${(r.wins / r.members).toFixed(1)} · ${r.members} 🐾${bk ? ' · ' + BONUS[bk].emoji : ''}</span>` : ''; }).filter(Boolean).join('');
+  return `<div class="pkd" id="pkd"><div class="pkdh"><b>${p.emoji} ${esc(p.name)}</b><button class="sm" data-pkclose="1" style="margin:0">✕ Close</button></div>
+    ${packStats(p)}
+    <h3 class="h3" style="margin:12px 0 4px">MEMBERS THIS WEEK</h3>
+    ${mem ? (mem.length ? `<table><tr><th>Player</th><th>W</th><th>L</th><th>XP</th><th>🔥</th></tr>${mem.map(m =>
+      `<tr class="${m.you ? 'you' : ''}"><td>${esc(m.you ? 'YOU' : m.who)}${m.team ? ' <span class="tag">TEAM</span>' : ''}</td><td>${m.wins}</td><td>${m.losses}</td><td>${m.xp}</td><td>${m.streak}</td></tr>`).join('')}</table>`
+      : '<p class="mini">Nobody in this pack yet.</p>') : `<p class="mini">${packsLive() ? 'Loading…' : 'Sign in to see who is in each pack.'}</p>`}
+    ${p.members && mem && mem.some(m => m.team) ? '<p class="mini" style="margin:6px 0 0">TEAM wallets don\u2019t count for the standings.</p>' : ''}
+    ${hist ? `<h3 class="h3" style="margin:12px 0 4px">LAST WEEKS</h3><div class="pkhist">${hist}</div>` : ''}</div>`;
+}
 function packsView(){
   const wkNow = SAVE.weekOf(), wkLast = SAVE.weekOf(Date.now()-7*864e5);
   const rows = standings(wkNow), won = awards(wkLast), mine = SAVE.data.pack;
@@ -4434,11 +4506,13 @@ function packsView(){
   const list = rows.slice().sort((a,b)=>b.avgW-a.avgW).map(p => {
     const bk = byBonus[p.id];
     const held = bk ? holdOf(wkLast, bk) : 0;
-    return `<div class="pk ${p.id===mine?'mine':''} ${p.id===pend?'pend':''}">
+    const fights = p.wins + p.losses;
+    return `<div class="pk click ${p.id===mine?'mine':''} ${p.id===pend?'pend':''} ${p.id===PKOPEN?'open':''}" data-pkopen="${p.id}" title="Tap for members and history">
       <div class="pkh"><b>${p.emoji} ${esc(p.name)}</b>
         ${bk?`<span class="bdg">${BONUS[bk].emoji} ${BONUS[bk].name}${held>1?' ×'+held:''}</span>`:''}</div>
-      <div class="mini">${p.members}/${PACK_MAX} members · best streak ${p.streak}🔥</div>
-      ${packStats(p)}
+      <div class="pkrow"><div><small>Ø WINS</small><b>${p.members ? (p.wins / p.members).toFixed(1) : '0.0'}</b></div>
+        <div><small>MEMBERS</small><b>${p.members}/${PACK_MAX}</b></div><div><small>WIN RATE</small><b>${fights ? Math.round(100 * p.wins / fights) + '%' : '—'}</b></div>
+        <div><small>STREAK</small><b>${p.streak}🔥</b></div></div>
       <div class="mini">
         ${held>=MAX_HOLD?'<b>Barred from that board next week</b> — three in a row is the cap.'
           :(held>0?'Defending next week needs +'+Math.round(DEFEND[Math.min(held,DEFEND.length-1)]*100)+'% over the runner-up.':'')}</div>
@@ -4456,15 +4530,16 @@ function packsView(){
     <div class="row" style="justify-content:flex-end;margin:0 0 8px"><button class="sm" data-weekrecap="1">📊 Last week's results</button></div>
     <p class="mini" style="margin:0 0 11px"><b>Packs.</b> Up to ${PACK_MAX} members. Ranked by <b>wins per member</b> (Ø per member · Wins), so a small sharp pack beats a big lazy one. Losses don't subtract — but they show, and so does each pack's win rate.
     <br><b>One pack a week.</b> Joining is instant if you have no pack — and then you're in for the week. Switching or leaving can only be queued, and it happens Monday 00:00 UTC, so nobody hops into whichever pack is about to collect a bonus.${locked && !mine ? ' <b>You already had a pack this week</b>, so a new one starts Monday.' : ''}</p>
+    ${PKOPEN ? packDetail(PKOPEN, rows, won) : ''}
     <div class="pkg">${list}</div>
+    <p class="mini" style="margin:8px 0 0">Tap a pack for its members and its last weeks.</p>
   </div>
-  <div class="card">
-    <h3 style="font-family:'Press Start 2P',monospace;font-size:9px;margin:0 0 9px;color:var(--ink2)">WEEKLY BONUSES</h3>
+  ` + fold('pbonus', '🎁 WEEKLY PACK BONUSES', `
     ${Object.entries(BONUS).map(([k,v])=>`<p class="q"><span>${v.emoji} <b>${v.name}</b> — ${esc(v.txt)}<br>
       <span class="mini">goes to the pack leading <b>${v.board==='wins'?'most wins':(v.board==='xp'?'most XP':'longest streak')}</b></span></span></p>`).join('')}
     <p class="mini" style="margin:8px 0 0"><b>One bonus per pack.</b> Top two boards and you keep the first — the runner-up inherits the second. Defence cancels attack on purpose, so the leading pack runs into the wall that locks it out.</p>
     <p class="mini" style="margin:8px 0 0"><b>Holding gets harder.</b> Week one you just need first place. To defend you need +10% over the runner-up, then +20%. After three weeks straight you're barred from that board and it changes hands. Two or three weeks of dominance is earnable; forever isn't.</p>
-  </div>`;
+  `);
 }
 
 
@@ -4865,6 +4940,9 @@ function menu(){
     r.won === 3 ? S.win() : (r.won ? S.heal() : S.lose());
     menu();
   };
+  app.querySelectorAll('[data-pkopen]').forEach(c => c.onclick = e => { if (e.target.closest('button')) return; S.click();
+    PKOPEN = PKOPEN === c.dataset.pkopen ? null : c.dataset.pkopen; menu(); const d = document.getElementById('pkd'); if (d && d.scrollIntoView) d.scrollIntoView({block: 'nearest'}); });
+  app.querySelectorAll('[data-pkclose]').forEach(b => b.onclick = () => { S.click(); PKOPEN = null; menu(); });
   app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { S.click(); packAction('join', b.dataset.join); });
   app.querySelectorAll('[data-leave]').forEach(b => b.onclick = () => { S.click(); packAction('leave'); });
   app.querySelectorAll('[data-cancel]').forEach(b => b.onclick = () => { S.click(); packAction('cancel'); });

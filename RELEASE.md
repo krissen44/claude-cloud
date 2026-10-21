@@ -21,6 +21,13 @@ Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit 
   unlocks / TV opt-out, achievements, invites and lending fold away (`fold()`, open state kept while the page
   re-renders; lending opens by itself while a loan is running). Dog pickers in Arena, Club and Dash use small tiles.
   Page height with 12 dogs: desktop 2,621 → 1,400 px, phone 4,880 → 1,652 px.
+- **Ladder: every active player (owner, 21 Oct)** — one list of all players who fought this week in a scrolling box
+  (max ~460 px), sortable by XP / Wins / 🔥 Streak / Win % (remembered, `ba_lsort`), with W–L, win rate, streak, pack
+  emoji, TEAM and 🏅 tags; your row stays visible at the edge (sticky) and "↓ Jump to me" scrolls to it. Server: `/ladder`
+  adds `all` (old pages keep the top-10 boards).
+- **Packs: tap for details** — compact pack cards (Ø wins, members, win rate, streak); tapping one opens its full numbers,
+  the members this week (name, W, L, XP, streak; you highlighted) and its last weeks with the bonuses it won. Server:
+  `/packs` adds `members`. The bonus rules fold away. Checks in `tools/test/ui-shots.mjs` (30 seeded players).
 - Clip speed retuned for the faster fights (`WAIT_K` 1.05 / 1) so Shorts stay 10–14 s.
 - Tests: everything re-run (see the commit); `tools/test/ui-shots.mjs` = screenshots of all menu tabs (desktop + phone).
 - **Dash goes up but stays hidden until 30 Nov 2026 (owner, 21 Oct):** no Dash tab, `/dash` opens the kennel

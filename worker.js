@@ -426,7 +426,12 @@ async function packs(env, account) {
     weeks[w] = await packRows(env, w);
   }
   const me = account ? await myPack(env, account) : null;
-  return json({week: wk, weeks, max: PACK_MAX, me: me && {pack: me.pack, pending: me.pending, locked: isLocked(me, wk)}});
+  // who is in each pack this week, with their week (names or short wallets, as on the ladder)
+  const names = await st.profiles(), members = {};
+  for (const r of await st.weekRows(wk)) if (r.pack && PACK_IDS.includes(r.pack)) (members[r.pack] = members[r.pack] || []).push({who: displayName(names, r.account),
+    wins: r.wins | 0, losses: r.losses | 0, xp: r.xp | 0, streak: r.streak | 0, ...(r.account === account ? {you: true} : {}), ...(isTeam(env, r.account) ? {team: true} : {})});
+  for (const k in members) members[k].sort((a, b) => b.wins - a.wins || b.xp - a.xp);
+  return json({week: wk, weeks, max: PACK_MAX, members, me: me && {pack: me.pack, pending: me.pending, locked: isLocked(me, wk)}});
 }
 /* One pack per week. Joining with no pack is instant, and from then on the
    week is locked: switching or leaving only queues a move for Monday. Having
@@ -2240,7 +2245,11 @@ async function ladder(env, me, week) {
   const ach = await achCounts(env);
   const fmt = (rows) => rows.map(r => ({who: displayName(names, r.account), v: r.v, you: r.account === me, ...(ach[r.account] ? {ach: ach[r.account]} : {}), ...(isTeam(env, r.account) ? {team: true} : {})}));
   const mine = me ? {xp: await st.rank(wk, "xp", me), wins: await st.rank(wk, "wins", me), streak: await st.rank(wk, "streak", me)} : null;
-  return json({week:wk, players: await st.count(wk), xp: fmt(x), wins: fmt(w), streak: fmt(s), mine});
+  // every player active this week (the page shows them all in a scrollable, sortable list)
+  const all = (await st.weekRows(wk)).filter(r => (r.xp | 0) > 0 || (r.wins | 0) > 0 || (r.losses | 0) > 0).map(r => ({who: displayName(names, r.account),
+    xp: r.xp | 0, wins: r.wins | 0, losses: r.losses | 0, streak: r.streak | 0, pack: r.pack || null, ...(r.account === me ? {you: true} : {}),
+    ...(ach[r.account] ? {ach: ach[r.account]} : {}), ...(isTeam(env, r.account) ? {team: true} : {})}));
+  return json({week:wk, players: await st.count(wk), xp: fmt(x), wins: fmt(w), streak: fmt(s), mine, all});
 }
 /* Public, read-only standings for the website (scrappyxrp.fun/barkarena/):
    this week's player boards, packs this week and how last week ended.

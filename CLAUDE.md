@@ -201,7 +201,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
   (bob on `.rig`); moves use `pose(side, KEYS, ms)` (CROUCH, TAUNTP, WINDUP, RECOIL, LIFT, DODGEP, HURT, THROW, SLAM);
   `.lglo/.mglo` auras; menu screens get `body.home` (dark). **Kennel** = dog tabs `ktab` + one open dog `kdetail`
   (`kSel`/`ba_ksel`, bond paths + ⚔️ fight button `.kfight[data-f]`), `kennelList`, trainer strip `.kstat`, fold-outs
-  `fold(key, title, body, open)` (`FOLD` keeps open state); pickers elsewhere `.pick.tiny`. Screenshots: `tools/test/ui-shots.mjs`.
+  `fold(key, title, body, open)` (`FOLD` keeps open state); pickers elsewhere `.pick.tiny`. **Ladder** = all active players (`/ladder` → `all`, `LADDER`, `ladderRender`, `.lbox` scroll, sort `ba_lsort`); **packs** open on tap (`PKOPEN`, `packDetail`, `/packs` → `members`). Screenshots + checks: `tools/test/ui-shots.mjs`.
 - **Replays (v31)**: every finished non-demo fight is recorded unless the player opted out (`SAVE.data.tvOff`, kennel
   button, server blob `tvoff`): `REC.cur` in `startFight`, `recRolls` wraps `resolve` in `go()` and keeps the engine's
   `Math.random` draws (rounded to 1e-6 and *used* rounded, so `rollsReplay` reproduces the fight exactly), `recSend` in
