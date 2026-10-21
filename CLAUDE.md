@@ -84,11 +84,12 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/arena/rivals` | ✔ | Up to 30 Scrappys held by other players, today's registered squads first `{token,id,uri,lvl,owner,squad}` |
 | `/arena/squad` (POST `{ids}`), `/arena/result` (POST `{id, attackerWon}`) | ✔ | Register today's squad / report an arena fight vs another player's dog |
 | `/arena/defense`, `/arena/defense/claim` (POST `{upTo}`) | ✔ | Pending defence bond XP for the caller / mark it collected |
-| `/chat[?since=id]` (GET), `/chat` (POST `{text}`) | ✔ | In-game chat: last 80 messages (no wallets in the feed), plain text, no links except scrappyxrp.fun/xrp.cafe, no family seeds, 1 msg / 4 s; 403 `muted` |
+| `/chat[?since=id&ch=pack]` (GET), `/chat` (POST `{text, ch?}`) | ✔ | In-game chat (v36: `ch=pack` = own pack channel): last 80 messages (no wallets in the feed), plain text, no links except scrappyxrp.fun/xrp.cafe, no family seeds, 1 msg / 4 s; 403 `muted` |
 | `/club/me` (incl. `lobby` = open challenges), `/club/create` (POST `{dogId, opponent?, open?}`), `/club/state?id=`, `/club/join` (POST `{id,dogId}`), `/club/cancel`, `/club/move` (POST `{id, move}`), `/club/leave` | ✔ | Fight Club beta: the server is the referee (see below) |
 | `/save` (GET/POST) | ✔ | Full browser save per wallet (cloud backup + cross-device sync), file `DATA_DIR/saves/<account>.json` |
 | `/lend/seek` (POST `{on}`) | ✔ | A non-holder with a name puts themselves on the "looking for a dog" list (7 days); `/lend` GET returns `seeking` + `seekers` |
 | `/lend` (GET; POST `{dogId,to,days}`), `/lend/end` (POST `{id}`), `/lend/report` (POST `{id,bond,trainer}`), `/lend/claim` (POST `{upTo}`) | ✔ | Lending: loans given/taken + rewards waiting for the owner; borrower reports XP earned with the dog |
+| `/public/fame` | – | Hall of Fame (v36): every frozen week's podium, prize token, best pack, sha256, anchor (CORS `*`, 5 min) |
 | `/public/results[?week=]` | – | Frozen results of a finished week: canonical `json` string + `sha256` + `anchor` tx + prizes (CORS `*`) |
 | `/prizes`, `/prizes/claim` (POST `{week,place}`), `/prizes/status?uuid=` | ✔ | The player's prize offers; claim → Xaman NFTokenAcceptOffer payload for the ledger sell offer |
 | `/admin/season`, `/admin/anchor` (POST `{week}`), `/admin/prize` (POST `{week,place,nftId}`), `/admin/xaman?uuid=` | `?key=ADMIN_KEY` | Week close: results, treasury, Xaman payloads signed by the issuer wallet, payload status |
@@ -256,7 +257,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
   `bossHit` from `fightDone` (damage = rival's lost HP, cap 500/player/day), `bossDown` → `bonusAdd` +3 to all hitters, chat,
   Discord, achievement `bossfall`. Next max = 1.1 × last dealt (2,500–60,000). Client `BOSS`, `bossLoad`, `bossCard`
   (arena tab), `bossLine` (result). Website section `#boss`.
-- **Achievements (v32, v35)**: `ACH` (27) + **weekly badges** `WEEKLY` (3 a week via `weeklyThis`, ids `wk:<week>:<c>`, `weeklyTrack` after each ranked/arena fight, server `achOk`), `SAVE.data.ach`, `achScan/achUnlock/achSync/achToast/achCard`; server blob `ach`
+- **Achievements (v32, v35, v36)**: `ACH` (30) + **weekly badges** `WEEKLY` (3 a week via `weeklyThis`, ids `wk:<week>:<c>`, `weeklyTrack` after each ranked/arena fight, server `achOk`), `SAVE.data.ach`, `achScan/achUnlock/achSync/achToast/achCard`; server blob `ach`
   (`achGrant` for podium in `weekFrozen`, recruiter in `refCheck`, bossfall); ladder rows `ach` = count.
 - **Invites (v32)**: `?ref=<name>` (game `ba_ref`, website passes it on) → `/ref` POST once (`refSet`: only players
   without any fight yet); `refCheck` after each `/stats`: friend holds an own Scrappy + 5 fights → `bonusAdd` +3 both,
@@ -303,6 +304,13 @@ hand over one combined package for the week start; don't tell the owner to uploa
   another trainer's higher entry), `bondCarry` in `kennel()` → `carry` for dogs trained by someone else (`bondSeed`: before any write or read,
   each dog is looked up once in `saveAll()` for the most trained copy, `scanned` flag — the save upload on sign-in runs before the kennel). Client `bondAdopt` (takes the higher bond, `WALLET.bondNote` card in the kennel).
 - **NFT pictures are checked (v35)**: `imgOk` in `serveImg` (server, before caching/serving; a bad cache copy is refetched) and `imgComplete` in `imageFor` (page) — a gateway can send a cut-off picture with status 200.
+- **Share card (v36)**: `shareCard(kind)` → `cardData` + `cardDraw` (canvas 1200×675, Press Start 2P, `cardFit`, scene plate, rarity glow) → modal (`.cardbox`, share sheet / save / copy text `cardText`). Kinds `week` (kennel `#cardWeek`, rank from `LADDER.j`), `last` (week results `#recapCard`), `win` (result screen `#cardWin`, P/E). Link `cardRefUrl()` = `?ref=<name>`. Test `tools/test/card.mjs`.
+- **Welcome pack + comeback (v36)**: `SAVE.welcome(named)` (from `welcomeCheck`, kennel render + load): new save (no fights, no trainer XP) → `d.welcome={from}`; `welcomeOn()` = first 3 UTC days → `award` doubles **bond** XP (`out.welcome`); checklist name + 3 fights + pack → +3 tickets (`w.paid`). Comeback: `d.lastFight` (stamped in `award`, fallback `updatedAt`) ≥ 7 days → +5 tickets once (`d.comebackAt`). Cards `welcomeCard`, notes `WALLET.welcomeNote/comebackNote`.
+- **Boss extras (v36)**: kennel line `bossMini` (tap → arena); worker `bossMark` at 50/25 % once (`b.told`) → chat + Discord stats.
+- **Revenge (v36)**: result screen after a ranked loss `#revenge` → same `E.def`, level clamped to `rivalBand`, 1 ticket.
+- **Pack chat (v36)**: `/chat?ch=pack` / POST `{text, ch:'pack'}` → blob `chat:pack:<id>` (`packChatLoad`, `myPack`), shared mute/rate limit; `/admin/chat` returns `packs`, del takes `ch`. Client `CHAT.ch`, `CHAT.P`, tabs `.chtabs`, seen per pack `ba_chat_pseen:<id>`.
+- **Trait album (v36)**: `albumAdd(id)` from `award` (ranked/arena; all traits of the dog, not Legendaries) → `d.album {traitId: day}`, `d.albumDone {layer: day}` +2 tickets per full layer (`ALBUM_LAYERS`, `ALBUM_REWARD`); `albumCard` fold; ach `album50/albumset/albumall`.
+- **Hall of Fame (v36)**: `/api/public/fame` (`publicFame`, 26 weeks, frozen ones only) → website `#fame`.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 
@@ -329,6 +337,10 @@ v31.3 (package for Mon 12 Oct) Joey Wallet first + "⭐ Recommended" in game/web
 (`.pick span` had overridden `.lvl`'s white text), link page `/links/`.
 
 v33 (package for Mon 19 Oct) Scrappy Sleigh/Rocket Dash mini game + weekly Dash board.
+
+v34–v36 (one package for Sun 25 → Mon 26 Oct, `bark-arena-game-v36-komplett.zip`): owner's new look + compact kennel,
+bond 20 + tougher rivals + arena of the week + weekly badges, picture check, share card, welcome/comeback, boss alerts,
+revenge, pack chat, trait album, Hall of Fame.
 
 ### Where things stand
 - **Live:** game **v32** (uploaded early by the owner on 9 Oct, incl. v31.3 + lending market + Discord channels); the stats

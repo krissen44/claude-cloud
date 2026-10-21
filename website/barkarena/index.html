@@ -113,6 +113,16 @@ section{margin-top:56px}
 .lbtabs button[aria-selected=true]{background:var(--accent);color:#fff}
 .lbmeta{margin:12px 0 0}
 .boards{display:grid;gap:14px;margin-top:16px}
+.fame{display:grid;gap:14px;margin-top:16px}
+@media(min-width:820px){.fame{grid-template-columns:repeat(2,1fr)}}
+.fame .wk{display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin:0 0 8px}
+.fame .wk h3{margin:0;font-size:17px}
+.fame ol{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.fame li{display:grid;grid-template-columns:40px 1fr auto;gap:10px;align-items:center}
+.fame li img{width:40px;height:40px;image-rendering:pixelated;border-radius:8px;background:#eef3f9}
+.fame li .rk{font-size:22px;text-align:center}
+.fame li small{display:block;color:var(--muted,#5b6577);font-size:12px}
+.fame .proofl{margin:10px 0 0;font-size:12px;word-break:break-all}
 @media(min-width:820px){.boards{grid-template-columns:repeat(3,1fr)}}
 .adv{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
 @media (max-width:640px){.adv{grid-template-columns:repeat(4,1fr)}}
@@ -326,6 +336,14 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
     </div>
   </section>
 
+  <!-- ===================================================== hall of fame -->
+  <section id="fame" hidden>
+    <p class="kicker">Every week, sealed on the XRPL</p>
+    <h2>Hall of Fame</h2>
+    <p class="lead">The champions of every finished week — with the NFT they won and the hash that proves the results were never changed.</p>
+    <div class="fame" id="fameList"></div>
+  </section>
+
   <!-- ===================================================== how to play -->
   <section id="how">
     <p class="kicker">How to play</p>
@@ -390,7 +408,13 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
       <div class="card"><h3>📋 Daily quests</h3>
         <p>Three quests a day for extra trainer XP, for example: win 2 fights (60 XP), land a hit of 8+ (40 XP), use 3 abilities (40 XP), fight 3 times (30 XP).</p></div>
       <div class="card"><h3>🏅 Achievements</h3>
-        <p>27 badges to collect — first win, beating a rarer dog or a Legendary, streaks of 5 up to 30, arena champion, bond 5 up to 20, up to 1,000 fights, Fight Club wins, the weekly boss, a podium week and more. <b>Every Monday three new weekly badges</b> appear (win 10 ranked fights, beat 2 Legendaries, a knockout week …) — each one you earn counts too. Your count shows next to your name on the ladder.</p></div>
+        <p>30 badges to collect — first win, beating a rarer dog or a Legendary, streaks of 5 up to 30, arena champion, bond 5 up to 20, up to 1,000 fights, Fight Club wins, the weekly boss, a podium week and more. <b>Every Monday three new weekly badges</b> appear (win 10 ranked fights, beat 2 Legendaries, a knockout week …) — each one you earn counts too. Your count shows next to your name on the ladder.</p></div>
+      <div class="card"><h3>📖 Trait album</h3>
+        <p>Every trait you fight with lands in your album (126 in all, across 8 layers) — borrowed dogs count too. Complete a layer and you get <b>+2 ranked fights</b>.</p></div>
+      <div class="card"><h3>🎁 Welcome &amp; comeback</h3>
+        <p>New trainers get <b>double bond XP for 3 days</b> and a little checklist (name, 3 ranked fights, a pack) worth +3 ranked fights. Away for a week? Come back to <b>+5 ranked fights</b>.</p></div>
+      <div class="card"><h3>📸 Share card</h3>
+        <p>Post your week — or a big win — as a card: XP, win rate, record, rank and your dog. The link on it carries your name, so friends who join through it count as your invites.</p></div>
       <div class="card"><h3>🔥 Streak & trainer level</h3>
         <p>Your streak counts wins in a row in ranked fights and live arena fights. Casual fights and ghosts don't touch it. Your trainer level rises every 250 XP.</p></div>
     </div>
@@ -429,6 +453,8 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
         <p style="margin-top:8px">Bonuses apply to ranked fights for the whole following week.</p></div>
       <div class="card"><h3>⚖️ No dynasties</h3>
         <p>One bonus per pack: top two boards and the runner-up inherits the second. Defending a bonus needs +10% over the runner-up, then +20%; after three weeks in a row the holder sits that board out.</p></div>
+      <div class="card"><h3>💬 Pack chat</h3>
+        <p>Every pack has its own channel in the game chat (🐾 Pack tab) — only its members read it. Plan the boss hunt, cheer each other on.</p></div>
       <div class="card"><h3>📊 Everything on the table</h3>
         <p>Pack cards show totals and per-member numbers: wins, losses, fights, XP and win rate. Every Monday the weekly results show the final pack order and who earned which bonus.</p></div>
     </div>
@@ -659,6 +685,21 @@ function claimPrize(key, place, token){
       .catch(function(){ if (!data) $("lbmeta").textContent = "The leaderboard can't be reached right now — try again in a moment."; });
   }
   load(); setInterval(load, 60000);
+  /* Hall of Fame: every finished week's podium (prize NFT pictures from the game server's cache) */
+  fetch(API.replace("/board", "/fame")).then(function(r){ return r.ok ? r.json() : null; }).then(function(j){
+    if (!j || !j.weeks || !j.weeks.length) return;
+    var img = function(t){ return API.replace("/board", "/dogimg?t=" + t); };
+    $("fameList").innerHTML = j.weeks.map(function(w){
+      return '<div class="card"><div class="wk"><h3>Week of ' + esc(w.week) + '</h3><span class="meta">' + w.players + ' players</span></div><ol>' +
+        w.podium.map(function(p){ return '<li><span class="rk">' + (w.podium.length && p.token ? '<img src="' + img(p.token) + '" alt="Pixel Scrappy #' + p.token + '" loading="lazy">' : ["🥇","🥈","🥉"][p.place - 1]) + '</span>' +
+          '<span>' + ["🥇","🥈","🥉"][p.place - 1] + ' <b>' + esc(p.name) + '</b><small>' + p.xp + ' XP · ' + p.wins + '–' + p.losses + '</small></span>' +
+          '<b>' + (p.token ? 'won #' + p.token : '') + '</b></li>'; }).join("") + '</ol>' +
+        (w.pack ? '<p class="meta" style="margin:8px 0 0">🐾 Best pack: ' + (PACKS[w.pack.id] || esc(w.pack.id)) + ' · ' + w.pack.perMember + ' wins per member</p>' : '') +
+        '<p class="meta proofl">' + (w.anchor ? '⚓ <a href="https://livenet.xrpl.org/transactions/' + esc(w.anchor) + '" target="_blank" rel="noopener">sealed on the XRPL</a> · ' : '') +
+        'SHA-256 ' + esc(w.sha256.slice(0, 24)) + '… · <a href="' + API.replace("/board", "/results?week=" + w.week) + '" target="_blank" rel="noopener">raw results</a></p></div>';
+    }).join("");
+    $("fame").hidden = false;
+  }).catch(function(){});
 })();
 </script>
 </body>

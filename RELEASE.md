@@ -4,6 +4,32 @@ Changes collect here during the week and go live together when the new week star
 Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit flash, new /clip) — no Dash yet (no
 `dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
 
+## v36 — also for Sun 25 → Mon 26 Oct: one package with v34 + v35 + v36 → `bark-arena-game-v36-komplett.zip` (replaces the v35 ZIP) + `scrappyxrp-website-v36.zip`
+- **Share card (owner: "a game card like a PnL trading card")**: a 1200×675 picture drawn in the page (`cardDraw`,
+  canvas, pixel font): big green **+XP**, win rate, "▲ n % vs last week", record, rank, best streak, trainer level, the
+  open dog on the arena plate with its rarity glow, player name + pack + badges, and the invite link
+  `game.scrappyxrp.fun/?ref=<name>` (friends who join through it count as invites). Three kinds: **📸 Share my week**
+  (kennel strip), **last week** (button in the week results), **📸 Share this win** (result screen of a ranked win: both
+  dogs, HP left, KO, "UPSET WIN" vs a rarer dog). Modal with 📤 Share (phones: share sheet with the PNG), ⬇️ Save image,
+  📋 Copy text. Test `tools/test/card.mjs` (env `PS2P` = Press Start 2P woff2 for true-to-life screenshots).
+- **Welcome pack**: a new player (no fights, no trainer XP) gets **double bond XP for 3 days** and a checklist card
+  (name, 3 ranked fights, join a pack) → **+3 ranked fights** once. Ladder XP is not doubled (fair play).
+- **Comeback bonus**: after 7 days without a ranked/arena fight, the next kennel visit gives **+5 ranked fights** and a note.
+- **Boss in the kennel**: one line with health bar, % and days left (tap → arena). The server announces the boss at
+  **50 %** and **25 %** once each in the chat and on Discord (#arena-stats) — more players join in earlier.
+- **🔁 Revenge**: after a ranked loss, one tap fights the same rival again (1 ticket).
+- **Hall of Fame** (website `#fame`, server `/api/public/fame`): every finished week — podium with the prize NFT,
+  best pack, SHA-256 and the XRPL anchor link. Hidden until there is a frozen week.
+- **Pack chat**: the chat gets tabs 🌍 All / 🐾 Pack for pack members; pack channels (`chat:pack:<id>`) follow the same
+  rules (no links, no seeds, mute, 4 s). `/admin` shows pack messages too (tagged), with delete/mute.
+- **Trait album** (kennel fold "📖 TRAIT ALBUM"): every trait you fight with (own, borrowed or starter dog) is collected;
+  8 layers with progress; a complete layer pays **+2 ranked fights** once; badges Collector (50), Full set, Encyclopedia
+  (all 126) → 30 achievements.
+- Website guide: 30 badges, trait album, welcome/comeback, share card, pack chat, Hall of Fame.
+- Not touched (owner, 21 Oct): Fight Club — hardly used right now.
+- Tests: `tools/test/v36.mjs` (boss alert once, Hall of Fame, pack chat privacy + admin, welcome ×2 + checklist,
+  album + layer reward, comeback once, revenge) + `card.mjs`.
+
 ## v35 — for the week roll Sun 25 → Mon 26 Oct, together with v34 (one package: `bark-arena-game-v35-komplett.zip`)
 - **Fix: a rival's picture showed as coloured noise** (owner's screenshot, #4464 in the swamp): an IPFS gateway can answer
   200 with a cut-off picture, and the server kept it in its cache for good. Now `imgOk` checks every picture (PNG must end

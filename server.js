@@ -359,12 +359,15 @@ async function funnel(){
 async function chat(body, path){
   const j = await api(path || "chat", body);
   const muted = new Set(j.mute || []);
-  $("chat").innerHTML = (j.msgs || []).length ? "<table>" + j.msgs.slice().reverse().map(m =>
+  const all = (j.msgs || []).map(m => ({...m, ch: ""}));
+  for (const [id, ms] of Object.entries(j.packs || {})) for (const m of ms) all.push({...m, ch: id});
+  all.sort((x, y) => x.at - y.at);
+  $("chat").innerHTML = all.length ? "<table>" + all.slice(-120).reverse().map(m =>
     "<tr><td class='muted'>" + new Date(m.at).toISOString().slice(5,16).replace("T"," ") + "</td><td>" + (m.sys ? "<i>system</i>" : "<b>" + esc(m.who) + "</b>" + (m.team ? " (team)" : "") + "<br><span class='mono'>" + esc(m.a) + "</span>") +
-    "</td><td style='white-space:normal;text-align:left'>" + esc(m.text) + "</td><td><button class='btn ghost' data-cdel='" + m.id + "'>Delete</button>" +
+    "</td><td style='white-space:normal;text-align:left'>" + (m.ch ? "<span class='muted'>[pack " + esc(m.ch) + "]</span> " : "") + esc(m.text) + "</td><td><button class='btn ghost' data-cdel='" + m.id + "' data-cch='" + m.ch + "'>Delete</button>" +
     (m.a ? " <button class='btn ghost' data-cmute='" + m.a + "'>" + (muted.has(m.a) ? "Unmute" : "Mute") + "</button>" : "") + "</td></tr>").join("") + "</table>"
     : "<p class='muted'>No messages yet.</p>";
-  $("chat").querySelectorAll("[data-cdel]").forEach(b => b.onclick = () => chat({id: +b.dataset.cdel}, "chat/del"));
+  $("chat").querySelectorAll("[data-cdel]").forEach(b => b.onclick = () => chat({id: +b.dataset.cdel, ch: b.dataset.cch || undefined}, "chat/del"));
   $("chat").querySelectorAll("[data-cmute]").forEach(b => b.onclick = () => chat({account: b.dataset.cmute, on: b.textContent === "Mute"}, "chat/mute"));
 }
 /* week close */

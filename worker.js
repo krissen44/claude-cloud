@@ -948,9 +948,21 @@ async function bossHit(env, account, win, dealt, kind) {
   b.hp = Math.max(0, b.hp - hit);
   let fell = false;
   if (was > 0 && b.hp === 0) { b.down = Date.now(); b.killer = account; fell = true; }
+  // halfway and the last quarter are announced once (chat + Discord), so more players join in early
+  const mark = !fell && [50, 25].find(p => was > b.max * p / 100 && b.hp <= b.max * p / 100 && !(b.told || []).includes(p));
+  if (mark) b.told = [...(b.told || []), mark];
   await st.blobSet("boss:" + b.week, b);
+  if (mark) await bossMark(env, b, mark).catch(() => {});
   if (fell) { await achGrant(env, account, "bossfall").catch(() => {}); await bossDown(env, b).catch(() => {}); }
   return {hit, hp: b.hp, max: b.max, fell};
+}
+async function bossMark(env, b, p) {
+  const who = b.name ? `${b.name} (Legendary #${b.n})` : `Legendary #${b.n}`;
+  const left = Math.max(0, Math.ceil((Date.parse(weekOf() + "T00:00:00Z") + 7 * 864e5 - Date.now()) / 864e5));
+  const line = p === 50 ? `is at HALF health` : `is down to its LAST QUARTER`;
+  await chatSystem(env, `👹 The boss ${who} ${line} — ${b.hp} HP left, ${left} day${left === 1 ? "" : "s"} to go. Every ranked or arena fight hits it!`);
+  await discord(env, `👹 **Boss alert:** ${who} ${line} — **${b.hp} / ${b.max} HP**, ${Object.keys(b.by).length} trainers on it, ${left} day${left === 1 ? "" : "s"} left.\n` +
+    `Every ranked or arena fight hits it. Bring it down before Monday: everyone who hit it gets +${BOSS_REWARD} ranked fights. ${GAME_URL(env)}`, "stats");
 }
 async function bossDown(env, b) {
   const names = await storeOf(env).profiles(), name = a => displayName(names, a);
@@ -1294,7 +1306,9 @@ const starterWeek = (s, wk) => !!s && s.start < Date.parse(wk + "T00:00:00Z") + 
 const ACH_IDS = ["first", "upset", "legend", "streak5", "streak10", "champ", "bond5", "bond10", "fights50", "fights250",
   "club", "pack", "boss", "bossfall", "kennel3", "recruiter", "podium",
   // v35: next tiers + badges for weekly badges
-  "streak20", "streak30", "bond15", "bond20", "fights500", "fights1000", "club10", "kennel10", "weekly5", "weekly20"];
+  "streak20", "streak30", "bond15", "bond20", "fights500", "fights1000", "club10", "kennel10", "weekly5", "weekly20",
+  // v36: trait album
+  "album50", "albumset", "albumall"];
 // weekly badges: wk:<monday>:<challenge> — only for this week or the one before (late syncs)
 const WEEKLY_C = ["win10", "win25", "fight40", "upset3", "leg2", "ko5", "clutch2", "flaw2", "abil15", "champ1", "boss5", "streak7"];
 const achOk = id => ACH_IDS.includes(id) || (m => !!m && WEEKLY_C.includes(m[2]) && (m[1] === weekOf() || m[1] === weekOf(new Date(Date.now() - 7 * 864e5))))(/^wk:(\d{4}-\d{2}-\d{2}):([a-z0-9]+)$/.exec(String(id)));
@@ -1698,8 +1712,17 @@ async function chatSystem(env, text) {
   await chatSave(env, c);
 }
 const chatPublic = m => ({id: m.id, at: m.at, who: m.who || null, text: m.text, ...(m.sys ? {sys: true} : {}), ...(m.team ? {team: true} : {})});
-async function chatGet(env, account, since) {
+/* Pack channel: each pack has its own room (blob chat:pack:<id>), same rules; mute and rate limit are shared. */
+const packChatKey = id => "chat:pack:" + id;
+async function packChatLoad(env, id) { return (await storeOf(env).blobGet(packChatKey(id))) || {seq: 0, msgs: []}; }
+async function chatGet(env, account, since, ch) {
   const c = await chatLoad(env), n = Math.max(0, +since || 0);
+  if (ch === "pack") {
+    const pk = (await myPack(env, account)).pack;
+    if (!pk) return json({pack: null, seq: 0, msgs: [], muted: !!c.mute[account]});
+    const r = await packChatLoad(env, pk);
+    return json({pack: pk, seq: r.seq, msgs: r.msgs.filter(m => m.id > n).map(chatPublic), muted: !!c.mute[account]});
+  }
   return json({seq: c.seq, msgs: c.msgs.filter(m => m.id > n).map(chatPublic), muted: !!c.mute[account]});
 }
 function chatClean(t) {
@@ -1723,20 +1746,34 @@ async function chatPost(env, account, b) {
   c.last[account] = now;
   for (const [a, t] of Object.entries(c.last)) if (now - t > 3600e3) delete c.last[a];
   const names = await storeOf(env).profiles();
-  c.msgs.push({id: ++c.seq, at: now, a: account, who: displayName(names, account), text, ...(isTeam(env, account) ? {team: true} : {})});
+  const msg = {at: now, a: account, who: displayName(names, account), text, ...(isTeam(env, account) ? {team: true} : {})};
+  if (b.ch === "pack") {
+    const pk = (await myPack(env, account)).pack;
+    if (!pk) return json({error: "no_pack"}, 400);
+    await chatSave(env, c);                                   // the rate limit
+    const r = await packChatLoad(env, pk);
+    r.msgs.push({id: ++r.seq, ...msg}); r.msgs = r.msgs.slice(-CHAT_KEEP);
+    await storeOf(env).blobSet(packChatKey(pk), r);
+    return json({ok: true, seq: r.seq});
+  }
+  c.msgs.push({id: ++c.seq, ...msg});
   await chatSave(env, c);
   return json({ok: true, seq: c.seq});
 }
 async function adminChat(env, p, b) {
   const c = await chatLoad(env);
-  if (p === "/admin/chat/del") { c.msgs = c.msgs.filter(m => m.id !== +b.id); await chatSave(env, c); }
+  if (p === "/admin/chat/del" && PACK_IDS.includes(b.ch)) {
+    const r = await packChatLoad(env, b.ch); r.msgs = r.msgs.filter(m => m.id !== +b.id); await storeOf(env).blobSet(packChatKey(b.ch), r);
+  } else if (p === "/admin/chat/del") { c.msgs = c.msgs.filter(m => m.id !== +b.id); await chatSave(env, c); }
   if (p === "/admin/chat/mute") {
     const a = String(b.account || "");
     if (!/^r\w{20,40}$/.test(a)) return json({error: "bad_account"}, 400);
     if (b.on) c.mute[a] = Date.now(); else delete c.mute[a];
     await chatSave(env, c);
   }
-  return json({msgs: c.msgs, mute: Object.keys(c.mute)});
+  const packs = {};
+  for (const id of PACK_IDS) packs[id] = (await packChatLoad(env, id)).msgs;
+  return json({msgs: c.msgs, mute: Object.keys(c.mute), packs});
 }
 async function lendStart(env, account, b) {
   const st = storeOf(env), hold = await st.allHoldings(), loans = await activeLoans(env);
@@ -1884,6 +1921,21 @@ function publicResult(rec) {
     prizes: d.prizes.map(p => ({place: p.place, name: p.name, pack: p.pack || null,
       token: (rec.prizes[p.place] || {}).token || null, status: (rec.prizes[p.place] || {}).status || "pending"})),
     verify: "sha256(json) must equal the sha256 in the memo of the anchor transaction"};
+}
+/* Hall of Fame for the website: every finished week (newest first) with its podium, best pack, prizes and proof. */
+async function publicFame(env) {
+  const st = storeOf(env), out = [];
+  for (const wk of lastWeeks(26)) {
+    const rec = await st.resultGet(wk); if (!rec) continue;
+    const d = JSON.parse(rec.json), pr = publicResult(rec).prizes;
+    const podium = d.prizes.filter(p => ["1", "2", "3"].includes(p.place)).map(p => {
+      const x = d.players.find(y => y.account === p.account) || {}, z = pr.find(y => y.place === p.place) || {};
+      return {place: +p.place, name: p.name, xp: x.xp || 0, wins: x.wins || 0, losses: x.losses || 0, token: z.token || null};
+    });
+    out.push({week: wk, players: d.players.length, podium, pack: d.packs[0] && d.packs[0].wins > 0 ? {id: d.packs[0].id, perMember: d.packs[0].perMember} : null,
+      sha256: rec.sha256, anchor: rec.anchor ? rec.anchor.txid : null});
+  }
+  return json({weeks: out});
 }
 async function publicResults(env, week) {
   const weeks = week ? [week] : lastWeeks(8);
@@ -2418,6 +2470,12 @@ export default {
         r.headers.set("cache-control", "no-store");
         return r;
       }
+      if (p === "/public/fame") {
+        const r = await publicFame(env);
+        r.headers.set("access-control-allow-origin", "*");
+        r.headers.set("cache-control", "public, max-age=300");
+        return r;
+      }
       if (p === "/public/results") {
         const r = await publicResults(env, url.searchParams.get("week"));
         r.headers.set("access-control-allow-origin", "*");
@@ -2509,7 +2567,7 @@ export default {
       if (p === "/replay" && req.method === "POST") return withCors(await replayPost(env, account, await req.json().catch(() => null)), cors);
       if (p === "/tv") return withCors(await tvOpt(env, account, req.method === "POST" ? await req.json().catch(() => ({})) : null), cors);
       if (p === "/lend/seek" && req.method === "POST") return withCors(await lendSeek(env, account, await req.json().catch(() => ({}))), cors);
-      if (p === "/chat" && req.method === "GET") return withCors(await chatGet(env, account, url.searchParams.get("since")), cors);
+      if (p === "/chat" && req.method === "GET") return withCors(await chatGet(env, account, url.searchParams.get("since"), url.searchParams.get("ch")), cors);
       if (p === "/chat" && req.method === "POST") return withCors(await chatPost(env, account, await req.json().catch(() => ({}))), cors);
       if (p === "/lend/claim" && req.method === "POST") {
         const b = await req.json().catch(() => ({}));
