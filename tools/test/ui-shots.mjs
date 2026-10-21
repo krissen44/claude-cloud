@@ -35,7 +35,7 @@ for (const [vw, vh, tag] of [[1100, 900, "desk"], [390, 844, "phone"]]) {
   await p.screenshot({path: `${OUT}/${tag}-kennel.png`, fullPage: true});
   const h = await p.evaluate(() => document.documentElement.scrollHeight);
   console.log(tag, "kennel page height", h);
-  if (process.env.EXTRA) await p.evaluate(process.env.EXTRA);
+  if (process.env.EXTRA) { await p.evaluate(process.env.EXTRA); await p.waitForTimeout(700); await p.screenshot({path: `${OUT}/${tag}-extra.png`}); }
   for (const t of (process.env.TABS || "").split(",").filter(Boolean)) {
     await p.evaluate(t => { tab = t; menu(); if (t === "packs") loadPacks(); if (t === "ladder") fillLadder(); }, t); await p.waitForTimeout(1500);
     if (t === "ladder") {

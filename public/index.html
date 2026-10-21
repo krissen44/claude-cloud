@@ -723,6 +723,14 @@ body.home .kstat{background:rgba(255,255,255,.04);border-radius:16px;padding:14p
 .pkd th{font-size:10px;letter-spacing:.05em;opacity:.65;font-weight:600}.pkd tr.you td{color:var(--accent,#f0c14a);font-weight:700}
 .pkd .pkhist{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.pkd .pkhist span{font-size:11px;padding:4px 8px;border-radius:8px;background:rgba(127,127,127,.12)}
 
+/* recap overlays (day complete / week results) on the dark menu: a solid card over a dimmed, blurred page */
+body.home .recap{background:rgba(4,7,6,.84);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+body.home .recap .card{background:#151d19;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:22px 20px;
+  box-shadow:0 24px 60px rgba(0,0,0,.65);color:#f4f7f2}
+body.home .recap .stat,body.home .recap .pr{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.09)}
+body.home .recap .pr.mine{border-color:#f0c14a}
+body.home .recap h3{color:#8fa196}
+
 </style>
 </head>
 <body>
