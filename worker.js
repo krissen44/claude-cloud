@@ -1004,7 +1004,10 @@ const dashDog = d => {
   const token = Number.isInteger(d.token) && d.token > 0 && d.token <= 5000 ? d.token : null;
   return name || token ? {name, token} : null;
 };
+// Dash opens on 30 Nov 2026 (env DASH_OPEN = another day); before that only team wallets can play (testing)
+const dashOpenAt = env => Date.parse((env.DASH_OPEN || "2026-11-30") + "T00:00:00Z");
 async function dashStart(env, account, b) {
+  if (Date.now() < dashOpenAt(env) && !isTeam(env, account)) return json({error: "not_open", opens: new Date(dashOpenAt(env)).toISOString().slice(0, 10)}, 403);
   const id = rid(), seed = crypto.getRandomValues(new Uint32Array(1))[0];
   const {bonus, rarity} = await dashBonusOf(env, account, b.dogId);
   await dashRunPut(env, id, {a: account, at: Date.now(), dog: dashDog(b.dog), seed, bonus});

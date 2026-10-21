@@ -18,7 +18,7 @@ fs.writeFileSync(D + "/store.json", JSON.stringify({players: {}, weekly: {}, hol
   ["dashday:" + day(-1)]: {[C]: {best: 1500, runs: 2, at: T0 + 864e5}, [B]: {best: 700, runs: 1, at: T0 + 864e5 + 1}},
   ["dashday:" + day(0)]: {[C]: {best: 60, runs: 1, at: Date.now() - 1000}, [B]: {best: 140, runs: 1, at: Date.now() - 900}}}}));
 const log = fs.openSync(S + "/dashserver.log", "w");
-const srv = spawn("node", [new URL("./tut-mock.mjs", import.meta.url).pathname], {env: {...process.env, PORT: String(PORT), DATA_DIR: D, ISSUER: "rI", TAXON: "369", ADMIN_KEY: "adm", DASH_ADVENT: day(-2)}, stdio: ["ignore", log, log]});
+const srv = spawn("node", [new URL("./tut-mock.mjs", import.meta.url).pathname], {env: {...process.env, PORT: String(PORT), DATA_DIR: D, ISSUER: "rI", TAXON: "369", ADMIN_KEY: "adm", DASH_ADVENT: day(-2), DASH_OPEN: day(-2)}, stdio: ["ignore", log, log]});
 const bye = c => { try { srv.kill(); } catch (e) {} process.exit(c); };
 setTimeout(() => { console.log("TIMEOUT"); bye(1); }, 300000);
 process.on("uncaughtException", e => { console.log("ERR", e && e.stack || e); bye(1); });
@@ -100,7 +100,7 @@ const startRun = async p => {
   await p.evaluate(b => { window.__bot = setInterval(eval(b), 16); }, "(" + bot.toString() + ")");
 };
 const crash = p => p.evaluate(() => { clearInterval(window.__bot); const G = DASH.g; if (G.state === "run"){ G.shield = false; G.blink = 0; G.want = false; } });
-const p = await page({width: 1000, height: 900}, "/dash");
+const p = await page({width: 1000, height: 900}, "/dash?dash=sleigh");
 ok(await p.locator(".dashhero").count() === 1 && await p.locator(".adoor").count() === 24 && await p.locator(".adoor.today").count() === 1, "hangar with the Advent calendar (24 doors, today glowing)");
 await p.screenshot({path: S + "/shots/dash-hangar.png", fullPage: true});
 await startRun(p);

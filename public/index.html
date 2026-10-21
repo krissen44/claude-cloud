@@ -4162,11 +4162,15 @@ function recSend(v){
   r.close = Math.abs(P.hp / P.maxHp - E.hp / E.maxHp) < .15;
   api('/replay', {method:'POST', body: r}).catch(() => {});
 }
-let tab = SC.linkId ? 'club' : /^\/dash\/?$/.test(location.pathname) ? 'dash' : 'kennel';   // a ?duel= invite link opens the Club, /dash the Dash
+/* Scrappy Dash opens on 30 Nov 2026 (owner's decision): before that the tab and /dash are hidden; ?dash=sleigh|rocket
+   shows it for a preview (the server lets only team wallets play before the opening, env DASH_OPEN). */
+const DASH_OPEN_FROM = Date.parse('2026-11-30T00:00:00Z');
+const dashOpen = () => Date.now() >= DASH_OPEN_FROM || /[?&]dash=/.test(location.search);
+let tab = SC.linkId ? 'club' : /^\/dash\/?$/.test(location.pathname) && dashOpen() ? 'dash' : 'kennel';   // a ?duel= invite link opens the Club, /dash the Dash
 
 function nav(){
   return `<div class="card" style="padding:8px"><div class="tabs">
-    ${[['kennel','Kennel'],['arena','Arena'],['dash','Dash'],['club','Club'],['ladder','Ladder'],['packs','Packs']]
+    ${[['kennel','Kennel'],['arena','Arena'],...(dashOpen() ? [['dash','Dash']] : []),['club','Club'],['ladder','Ladder'],['packs','Packs']]
       .map(([k,t])=>`<button data-t="${k}" class="${tab===k?'on':''}">${t}</button>`).join('')}
   </div></div>`;
 }
@@ -4789,6 +4793,7 @@ setInterval(() => { if (CHAT.on && !document.hidden && (CHAT.open || Date.now() 
 
 function menu(){
   if (DASH.g) return;                              // a Dash run owns the screen until it is left
+  if (tab === 'dash' && !dashOpen()) tab = 'kennel';
   document.body.classList.add('home');
   SAVE.checkDay();
   chatSync(true);

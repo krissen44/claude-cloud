@@ -197,6 +197,7 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
 .perks{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 .perks span{background:var(--raised);box-shadow:0 0 0 1px var(--line);border-radius:999px;padding:6px 12px;font-size:13.5px;font-weight:600}
 .mint-widget{display:flex;justify-content:center;width:100%;min-height:200px}
+[hidden]{display:none!important}
 </style>
 <link rel="stylesheet" href="/pixelscrappy/scrappy-theme.css">
 </head>
@@ -261,7 +262,7 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
   <nav class="toc" aria-label="On this page">
     <a href="#mint">🐾 Get a fighter</a>
     <a href="#boss">👹 Boss</a>
-    <a href="#dash" id="dashToc">🛷 Dash</a>
+    <a href="#dash" id="dashToc" hidden>🛷 Dash</a>
     <a href="#leaderboard">🏆 Leaderboard</a>
     <a href="#how">📖 How to play</a>
     <a href="#fight">🥊 Fighting</a>
@@ -285,7 +286,7 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
   </section>
 
   <!-- ===================================================== Scrappy Dash mini game -->
-  <section id="dash">
+  <section id="dash" hidden>
     <p class="kicker">New mini game · free</p>
     <h2 id="dashH">🛷 Scrappy Sleigh Dash</h2>
     <p class="lead" id="dashLead">Your Scrappy flies a sleigh over the snowy roofs. One button: <b>hold</b> to climb, let go to sink, a <b>quick tap</b> drops a gift. Hit the glowing chimneys for a combo up to ×5, dodge tall chimneys and crows (snow owls hunt anyone hiding at the top) — it gets faster every second. Runs last 30–90 seconds, no tickets, play as often as you like. The best run of the week counts.</p>
@@ -552,6 +553,9 @@ function claimPrize(key, place, token){
     }).catch(function(){ body.innerHTML = '<p class="meta">The game server isn\'t reachable right now.</p>' + joey; });
 }
 (function(){   // Scrappy Dash: sleigh until Christmas, then the rocket to the moon — the server says which
+  // hidden until the opening on 30 Nov 2026 (?dash=1 shows it for a preview)
+  if (Date.now() < Date.parse("2026-11-30T00:00:00Z") && !/[?&]dash=/.test(location.search)) return;
+  document.getElementById("dash").hidden = false; document.getElementById("dashToc").hidden = false;
   fetch("https://game.scrappyxrp.fun/api/public/dash", {cache: "no-store"}).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
     if (!d) return;
     var esc = function(t){ return String(t).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };

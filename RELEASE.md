@@ -23,7 +23,12 @@ Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit 
   Page height with 12 dogs: desktop 2,621 → 1,400 px, phone 4,880 → 1,652 px.
 - Clip speed retuned for the faster fights (`WAIT_K` 1.05 / 1) so Shorts stay 10–14 s.
 - Tests: everything re-run (see the commit); `tools/test/ui-shots.mjs` = screenshots of all menu tabs (desktop + phone).
-- **Upload:** the whole ZIP via "Neue Dateien hochladen" (it contains `public/art/`). Includes Dash (v33).
+- **Dash goes up but stays hidden until 30 Nov 2026 (owner, 21 Oct):** no Dash tab, `/dash` opens the kennel
+  (`DASH_OPEN_FROM`, `dashOpen()`); `?dash=sleigh` shows it for a preview; the server refuses runs before the opening
+  except for team wallets (`dashOpenAt`, env `DASH_OPEN=YYYY-MM-DD` moves the date); the website hides its Dash section and
+  link until then. 30 Nov = one warm-up day before the Advent calendar starts on 1 Dec. Test `tools/test/dash-gate.mjs`.
+- **Upload:** game ZIP via "Neue Dateien hochladen" (it contains `public/art/`); website ZIP
+  `scrappyxrp-website-v34.zip` → `public_html/` (only `barkarena/index.html`).
 
 ## Shorts rework (13 Oct, after the owner's YouTube review: reach fell from ~1,250 to 50–450 views per Short)
 Why: every Short was the same template ("Nobody bet on the …" 11×), 3–5 a day, 17–25 s with a long end card, links in

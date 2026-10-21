@@ -181,7 +181,7 @@ const env = {
   DISCORD_WEBHOOK_CLUB: process.env.DISCORD_WEBHOOK_CLUB || "",
   FAIRPLAY: process.env.FAIRPLAY || "", FAIR_SINCE: process.env.FAIR_SINCE || "",
   // Scrappy Dash: skin override, Advent start day, prizes and how many places win
-  DASH_THEME: process.env.DASH_THEME || "", DASH_ADVENT: process.env.DASH_ADVENT || "",
+  DASH_THEME: process.env.DASH_THEME || "", DASH_OPEN: process.env.DASH_OPEN || "", DASH_ADVENT: process.env.DASH_ADVENT || "",
   DASH_DAY_PRIZE: process.env.DASH_DAY_PRIZE || "", DASH_DAY_PLACES: process.env.DASH_DAY_PLACES || "",
   DASH_GRAND_PRIZES: process.env.DASH_GRAND_PRIZES || "",   // rarity per overall place, default Epic,Rare,Rare,Uncommon,Uncommon
   STORE, KV, FILES,

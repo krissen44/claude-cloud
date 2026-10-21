@@ -64,7 +64,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 
 ### Environment variables (Hostinger)
 `ISSUER=rGAVUGyhdbxQs1G7nwCCFU4w8P4HfgFKD6`, `TAXON=369` (empty/`*` = any taxon), `XUMM_API_KEY`, `XUMM_API_SECRET`,
-`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK_FIGHTS` (#fights) / `_STATS` (#arena-stats) / `_CLUB` (#search-arena-fight), fallback `DISCORD_WEBHOOK`, `DISCORD_CLIPS` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `DASH_THEME` (v33, sleigh|rocket), `DASH_ADVENT` (start day, default 2026-12-01), `DASH_DAY_PRIZE` (text) / `DASH_DAY_PLACES` (1), `DASH_GRAND_PRIZES` (rarity per overall place, default `Epic,Rare,Rare,Uncommon,Uncommon`), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
+`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK_FIGHTS` (#fights) / `_STATS` (#arena-stats) / `_CLUB` (#search-arena-fight), fallback `DISCORD_WEBHOOK`, `DISCORD_CLIPS` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `DASH_THEME` (v33, sleigh|rocket), `DASH_OPEN` (opening day, default 2026-11-30), `DASH_ADVENT` (start day, default 2026-12-01), `DASH_DAY_PRIZE` (text) / `DASH_DAY_PLACES` (1), `DASH_GRAND_PRIZES` (rarity per overall place, default `Epic,Rare,Rare,Uncommon,Uncommon`), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
 `META_HOSTS`, `ORIGIN`, `PORT`.
 
 ### API (`/api/...`)
@@ -274,7 +274,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
   `worker.scheduled` runs `tick` every 5 minutes from `server.js`. Fights: `discordHighlight` (from `replayKeep`: upset /
   arena final / Club, link `/clip?id=`, KV throttle 30 min + 8/day) and `discordClip` in `server.js` (clip of the day as
   a video attachment when the factory's `.json` lands, `DISCORD_CLIPS`/day, state `DATA_DIR/clips/.discord.json`).
-- **Scrappy Dash (v33)**: tab `dash` (also path `/dash`), one-tap endless runner in a canvas (`DASH`, `dashView`, `dashPlay`,
+- **Scrappy Dash (v33)**: **hidden until 30 Nov 2026** (`DASH_OPEN_FROM`/`dashOpen()` in the page, `?dash=` previews; worker `dashOpenAt`, env `DASH_OPEN`, team wallets may play before; website `#dash` `hidden` until then). Tab `dash` (also path `/dash`), one-tap endless runner in a canvas (`DASH`, `dashView`, `dashPlay`,
   `dashStep`, `dashDraw`, `dashOver`; logical 480×300, 340×300 on phones). Hold = climb, tap < 180 ms = drop (`dashDrop`;
   the tap that starts a run never drops, `startPress`). Gifts keep the sleigh's speed (fall straight down on screen) into
   glowing chimneys: 25 × combo (≤ 5); a wasted gift breaks the combo. Speed `150 + 4.2·t` (max 420). No safe lane at the top: `s.hi` (time above y 70) → more crows aimed at the sleigh's height + sky foes `f.sky` (snow owl / comet, `K.hawk`, ❗ warning at the edge) — balance check `node tools/test/dash-camp.mjs`. Free, no tickets;
