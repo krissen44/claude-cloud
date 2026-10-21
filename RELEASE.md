@@ -4,7 +4,14 @@ Changes collect here during the week and go live together when the new week star
 Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit flash, new /clip) — no Dash yet (no
 `dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
 
-## v35 — for the week roll Sun 1 → Mon 2 Nov (owner, 22 Oct)
+## v35 — for the week roll Sun 25 → Mon 26 Oct, together with v34 (one package: `bark-arena-game-v35-komplett.zip`)
+- **Fix: a rival's picture showed as coloured noise** (owner's screenshot, #4464 in the swamp): an IPFS gateway can answer
+  200 with a cut-off picture, and the server kept it in its cache for good. Now `imgOk` checks every picture (PNG must end
+  with IEND, JPEG/GIF/WEBP likewise) before it is cached or served; a broken one is fetched from the other gateways, and a
+  broken copy already in the cache is replaced on the next request. The page checks the same (`imgComplete`) and fetches
+  directly otherwise. Also: no CSS `filter` on fighting sprites any more (aura glow, KO grey, Double Team) — animated
+  pixel art with a filter can glitch on some graphics drivers; the glows are separate elements. Tests `img-check.mjs`,
+  `fight-fuzz.mjs` (many fights, every scene, desktop + phone).
 - **Bond up to 20** (was 10). Levels 11–20 take longer (`BOND.need`: 465 + 90 per level past 10, ≈ 8,700 XP from 10 to
   20). New perks: 12 +1 max health · 14 Deep Breath (Second Wind heals 5) · 16 +2 max health · 18 +1 starting energy ·
   20 Legend of the kennel (+2 max health). Server clamps 10 → `BOND_MAX` 20 everywhere (rivals, referee, replays, Club, registry).

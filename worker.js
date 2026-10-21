@@ -2340,20 +2340,39 @@ async function check(env, account) {
 
 /* An NFT image through the gateways, kept on disk for good (images never change). */
 const COLLECTION_BASE = "ipfs://bafybeid7e5yfl4x2mr5hlhs2z574ohmmcx4eewarnwbv7a3euln7sgz3de/";
+/* A picture is only kept when it is complete: a gateway can answer 200 with an error page or cut the transfer short,
+   and a broken PNG then shows as coloured noise in the ring (owner's report, 22 Oct) — and stayed so, from the cache. */
+function imgOk(buf) {
+  const b = new Uint8Array(buf), n = b.length, has = (o, ...x) => x.every((v, k) => b[o + k] === v);
+  if (n < 64) return false;
+  if (has(0, 0x89, 0x50, 0x4E, 0x47)) {                                   // PNG: must end with the IEND chunk
+    for (let k = n - 8; k >= Math.max(0, n - 64); k--) if (has(k, 0x49, 0x45, 0x4E, 0x44)) return true;
+    return false;
+  }
+  if (has(0, 0xFF, 0xD8)) { for (let k = n - 2; k >= Math.max(0, n - 32); k--) if (has(k, 0xFF, 0xD9)) return true; return false; }   // JPEG
+  if (has(0, 0x47, 0x49, 0x46)) return b[n - 1] === 0x3B;                  // GIF
+  if (has(0, 0x52, 0x49, 0x46, 0x46) && has(8, 0x57, 0x45, 0x42, 0x50)) return n >= (b[4] | b[5] << 8 | b[6] << 16 | b[7] << 24) + 8;   // WEBP
+  return false;
+}
 async function serveImg(env, u) {
   u = resolveUrl(u, env) || u;
   if (!/^https:\/\//i.test(u) || !hostAllowed(u, env)) return json({error:"img_not_allowed"}, 400);
   const hit = env.FILES ? await env.FILES.getBin("img:" + u) : null;
-  if (hit) return new Response(hit.body, {status:200, headers:{"content-type": hit.type, "cache-control":"public, max-age=86400"}});
+  const head = type => ({"content-type": type, "cache-control":"public, max-age=86400"});
+  if (hit && imgOk(hit.body)) return new Response(hit.body, {status:200, headers: head(hit.type)});
+  // all gateways raced first; if the winner sent a broken picture, the others one after another
+  const alts = ipfsAlternatives(u, env);
   let r;
-  try { r = await fetchAny(ipfsAlternatives(u, env), {cf: {cacheTtl: META_TTL, cacheEverything: true}}); }
+  try { r = await fetchAny(alts, {cf: {cacheTtl: META_TTL, cacheEverything: true}}); }
   catch (e) { return json({error:"img_" + e.message}, 502); }
-  const type = r.headers.get("content-type") || "image/png";
-  const h = new Headers({"content-type": type, "cache-control":"public, max-age=86400"});
-  if (!env.FILES) return new Response(r.body, {status:200, headers:h});
-  const buf = await r.arrayBuffer();
-  await env.FILES.putBin("img:" + u, buf, type);
-  return new Response(buf, {status:200, headers:h});
+  let buf = await r.arrayBuffer(), type = r.headers.get("content-type") || "image/png";
+  for (let k = 0; !imgOk(buf) && k < alts.length; k++) {
+    try { const x = await fetchAny([alts[k]], {}); const b2 = await x.arrayBuffer(); if (imgOk(b2)) { buf = b2; type = x.headers.get("content-type") || type; } } catch {}
+  }
+  if (!imgOk(buf)) return json({error: "img_broken"}, 502);
+  if (!/^image\//.test(type)) type = "image/png";
+  if (env.FILES) await env.FILES.putBin("img:" + u, buf, type);
+  return new Response(buf, {status:200, headers: head(type)});
 }
 
 /* ------------------------------------------------------------------ plumbing */

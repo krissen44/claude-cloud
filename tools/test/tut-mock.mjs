@@ -65,6 +65,8 @@ globalThis.fetch = async (u, o = {}) => {
   }
   if (u.includes("/ipfs/")) {
     const t = +u.match(/(\d+)\.(json|png)/)[1];
+    // BROKEN_IMG=<token> (tests): ipfs.io sends that picture cut off, the other gateways send it whole
+    if (u.endsWith(".png") && String(t) === process.env.BROKEN_IMG && u.includes("ipfs.io")) return new Response(png(t).subarray(0, 300), {headers: {"content-type": "image/png"}});
     if (u.endsWith(".png")) return new Response(png(t), {headers: {"content-type": "image/png"}});
     return Response.json(meta(t));
   }

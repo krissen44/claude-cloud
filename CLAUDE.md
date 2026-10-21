@@ -302,6 +302,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
   (only dogs the saver holds and is the newest holder of, by holdings `updated`; a new holder's lower save doesn't overwrite
   another trainer's higher entry), `bondCarry` in `kennel()` → `carry` for dogs trained by someone else (`bondSeed`: before any write or read,
   each dog is looked up once in `saveAll()` for the most trained copy, `scanned` flag — the save upload on sign-in runs before the kennel). Client `bondAdopt` (takes the higher bond, `WALLET.bondNote` card in the kennel).
+- **NFT pictures are checked (v35)**: `imgOk` in `serveImg` (server, before caching/serving; a bad cache copy is refetched) and `imgComplete` in `imageFor` (page) — a gateway can send a cut-off picture with status 200.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
 
