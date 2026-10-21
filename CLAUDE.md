@@ -126,7 +126,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
   (old AI: 67–71), adaptive 48/47/43. Real players won 76 % (top 88–95 %) against the old AI in week 2. Re-run after AI/rule changes.
 - **Rivals (ranked fights)**: random collection dogs (#21–5000, `COLLECTION_SIZE`), fetched in the background into a rotating pool
   (`OPP`), ~12% Legendaries, never a token in `/taken`; demo dogs only until the pool loads. Bond level ±1 of yours.
-- **Rivals (arena)**: only Scrappys other signed-in players hold (`/api/arena/rivals`, from `holdings[].dogs` + the
+- **Rivals (arena)**: since v35 every dog of every player active this week (team out, round-robin by owner, 90 max; page loads 18 then more); only Scrappys other signed-in players hold (`/api/arena/rivals`, from `holdings[].dogs` + the
   owner's cloud save for the real bond level), labelled "#123 from <name|short wallet>" (`RIVALS`, `ensureRivals`,
   `ghostOpp`, `rivalLabel`). No other players yet / demo → a "wild" collection dog without owner. No invented handles anywhere.
 - **Arena defence XP**: picking a squad registers it for the UTC day (`/api/arena/squad`, `arenaRegister`). Rivals come
@@ -147,7 +147,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 - **Tickets**: 5/day + 1 per extra owned Scrappy (max 10), bank max 15 — unused ones carry to the next day but **not into a new week** (Monday starts at the daily grant, `newWeek` in `checkDay`). Ranked XP: win 30, loss 12, +10 vs rarer.
   Casual = no XP and does **not** touch the streak.
 - **Streak**: consecutive wins in ranked fights and live arena fights only (`streakAfter`).
-- **Bond** levels 1–10 (`need = 60 + (l-1)*45`), perks at 2/4/6/8/10. Trainer level every 250 XP. 3 daily quests.
+- **Bond** levels 1–20 since v35 (`need` = 60 + (l-1)·45 below 10, then 465 + (l-10)·90), perks at 2/4/6/8/10/12/14/16/18/20 (server `BOND_MAX`). Rival bond `rivalBand` (±1; ≥ yours from 6; up to +2 from 10 — page + referee), rarer rivals and a sharper AI (`ek`) past bond 10. Trainer level every 250 XP. 3 daily quests.
 - **Arena**: **3 knockout tournaments per UTC day** (`ARENA_RUNS`), squad up to 3, quarter/semi/final, XP 0/35/60/100
   shared across the squad, ghosts half XP. A tournament counts when it starts. Demo is unlimited.
 - **Packs** (server-enforced): 4 packs, max 10 members, ranked by **wins per member**. One pack a week: joining with no
@@ -256,7 +256,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
   `bossHit` from `fightDone` (damage = rival's lost HP, cap 500/player/day), `bossDown` → `bonusAdd` +3 to all hitters, chat,
   Discord, achievement `bossfall`. Next max = 1.1 × last dealt (2,500–60,000). Client `BOSS`, `bossLoad`, `bossCard`
   (arena tab), `bossLine` (result). Website section `#boss`.
-- **Achievements (v32)**: `ACH` (17), `SAVE.data.ach`, `achScan/achUnlock/achSync/achToast/achCard`; server blob `ach`
+- **Achievements (v32, v35)**: `ACH` (27) + **weekly badges** `WEEKLY` (3 a week via `weeklyThis`, ids `wk:<week>:<c>`, `weeklyTrack` after each ranked/arena fight, server `achOk`), `SAVE.data.ach`, `achScan/achUnlock/achSync/achToast/achCard`; server blob `ach`
   (`achGrant` for podium in `weekFrozen`, recruiter in `refCheck`, bossfall); ladder rows `ach` = count.
 - **Invites (v32)**: `?ref=<name>` (game `ba_ref`, website passes it on) → `/ref` POST once (`refSet`: only players
   without any fight yet); `refCheck` after each `/stats`: friend holds an own Scrappy + 5 fights → `bonusAdd` +3 both,

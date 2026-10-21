@@ -731,6 +731,24 @@ body.home .recap .stat,body.home .recap .pr{background:rgba(255,255,255,.05);bor
 body.home .recap .pr.mine{border-color:#f0c14a}
 body.home .recap h3{color:#8fa196}
 
+/* the week results: wide, everything at a glance (two columns on desktop, one on phones) */
+.recap .card.wkres{max-width:min(1180px,96vw);padding:20px 22px}
+.wkres .grid{grid-template-columns:repeat(4,1fr);margin:10px 0 4px}
+.wkres .wkcols{display:grid;grid-template-columns:1fr 1.25fr;gap:20px;align-items:start}
+.wkres .pr{padding:6px 8px;margin-bottom:5px}.wkres .pr .mini{font-size:11px}
+.wkres .pnl3{grid-template-columns:repeat(3,1fr);gap:8px}.wkres .pnl3>div{padding:10px 10px!important}
+.wkres .pnl3 h3{margin:0 0 6px}.wkres .lb{font-size:12px;margin:3px 0}
+.wkres h3{margin:10px 0 6px}
+@media(max-width:900px){.wkres .wkcols{grid-template-columns:1fr}.wkres .grid{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.wkres .pnl3{grid-template-columns:1fr}}
+
+/* weekly badges in the achievements fold */
+.wkbs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 14px}
+.wkb{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:12px;background:rgba(127,127,127,.1);border:1px solid transparent}
+.wkb>span{font-size:22px;line-height:1}.wkb b{display:block;font-size:13px}.wkb small{display:block;font-size:11px;opacity:.75}
+.wkb .xp{margin:5px 0 3px}.wkb.got{border-color:var(--accent,#f0c14a)}
+@media(max-width:560px){.wkbs{grid-template-columns:1fr}}
+
 </style>
 </head>
 <body>
@@ -763,14 +781,19 @@ let P, E, turn, log, over, ev, busy = false, lastGain = null, isRanked = true, s
 /* ============================ progression ============================ */
 //@engine  (shared with the server: server.js runs these sections for Fight Club — keep them free of DOM/UI)
 const BOND = {
-  maxLevel: 10,
-  need: l => 60 + (l - 1) * 45,                 // xp to reach the next level
+  maxLevel: 20,                                 // 1…10 until v35; levels 11–20 take longer (+90 XP a level)
+  need: l => l < 10 ? 60 + (l - 1) * 45 : 465 + (l - 10) * 90,   // xp to reach the next level
   perks: {
     2: {id:'energy',  txt:'+1 starting energy'},
     4: {id:'hp2',     txt:'+2 max health'},
     6: {id:'wind',    txt:'Second Wind — heal 3 once, when you drop below a quarter'},
     8: {id:'hp2b',    txt:'+2 max health'},
-    10:{id:'cheap',   txt:'Abilities cost 1 less'}
+    10:{id:'cheap',   txt:'Abilities cost 1 less'},
+    12:{id:'hp1',     txt:'+1 max health'},
+    14:{id:'wind5',   txt:'Deep Breath — Second Wind heals 5'},
+    16:{id:'hp2c',    txt:'+2 max health'},
+    18:{id:'focus',   txt:'+1 starting energy'},
+    20:{id:'legend',  txt:'Legend of the kennel — +2 max health'}
   },
   // bond paths: at 4 and 8 the trainer picks one of two perks for each dog ('a' = the classic one, the default)
   alt: {
@@ -798,6 +821,9 @@ function kitFrom(ids){
   }
   return kit;
 }
+// the rival's bond for a dog at bond l: matched ±1 at first, from 6 never below yours, from 10 up to 2 above
+// (the server's referee checks the same band — worker.js rivalBand)
+const rivalBand = l => [l >= 6 ? l : Math.max(1, l - 1), Math.min(BOND.maxLevel, l >= 10 ? l + 2 : l + 1)];
 const perksAt = (l, path) => Object.entries(BOND.perks).filter(([k]) => +k <= l)
   .map(([k, v]) => path && path[k] === 'b' && BOND.alt[k] ? BOND.alt[k] : v);
 const hasPerk = (l, id, path) => perksAt(l, path).some(p => p.id === id);
@@ -1156,8 +1182,12 @@ function build(def, lvl, bonus, path){
   let hp = C.base_hp + (C.rarity_hp_bonus[def.rarity]||0);
   if (hasPerk(lvl,'hp2',path)) hp += 2;
   if (hasPerk(lvl,'hp2b',path)) hp += 2;
+  if (hasPerk(lvl,'hp1',path)) hp += 1;
+  if (hasPerk(lvl,'hp2c',path)) hp += 2;
+  if (hasPerk(lvl,'legend',path)) hp += 2;
   let en = C.start_energy;
   if (hasPerk(lvl,'energy',path)) en += 1;
+  if (hasPerk(lvl,'focus',path)) en += 1;
   if (hasPerk(lvl,'swift',path)) en += 1;
   const cheap = hasPerk(lvl,'cheap',path);
   const ts = kitOf(def).map(t => cheap && t.kind==='active' ? {...t, cost: Math.max(1, t.cost-1)} : t);
@@ -1171,7 +1201,7 @@ function build(def, lvl, bonus, path){
   return {def, lvl, hp, maxHp:hp, energy:en, set: sb,
           fang: !!(bonus && bonus.key==='fang'), hide: !!(bonus && bonus.key==='hide'),
           actives: ts.filter(t => t.kind==='active'), passives,
-          wind: hasPerk(lvl,'wind',path), snap: hasPerk(lvl,'snap',path), phoenix: passives.some(p => p.effect==='phoenix'),
+          wind: hasPerk(lvl,'wind',path), windHeal: hasPerk(lvl,'wind5',path) ? 5 : 3, snap: hasPerk(lvl,'snap',path), phoenix: passives.some(p => p.effect==='phoenix'),
           hexed:false, hexTurns:0, counter:false, shield:0, hold:false,
           run:0, extra:0, boon:0, seen:{bite:0, guard:0, taunt:0}, hist:[], idle:0};
 }
@@ -1214,7 +1244,7 @@ function damage(f, n, txt, kind, opt){
     push({t:'float',who:sideOf(f),cls:'healN',txt:'PHOENIX'});
   }
   if (f.wind && f.hp > 0 && f.hp < f.maxHp*0.25){
-    f.wind = false; f.hp = Math.min(f.maxHp, f.hp + 3);
+    f.wind = false; f.hp = Math.min(f.maxHp, f.hp + (f.windHeal || 3));
     say(`&nbsp;&nbsp;↳ <b>Second Wind</b> — back up, +3.`);
     push({t:'float',who:sideOf(f),cls:'healN',txt:'SECOND WIND'});
   }
@@ -1374,14 +1404,14 @@ function aiPickAbility(f, foe, pr, sk){
 function ai(f, foe, seen){
   if (!f.lv && AIM && foe === P && !simulating) f.lv = AIM.lv.map(x => x * .5);   // how this player played around it last time
   aiLearn(f, foe);
-  const sk = aiSkill(foe);
+  const sk = aiSkill(foe), ek = Math.max(0, ((foe.lvl || 1) - 10) / 10);   // ek: past bond 10 the rival gets sharper still
   if (seen && has(f,'insight') && Math.random() < .30 && seen.type in COUNTER) return {type: COUNTER[seen.type]};
   const mem = !!AIM && foe === P && !simulating;            // the long memory is about the player only
   const pr = f.hist.length >= 2 || (mem && AIM.n >= 6) ? predictFoe(f, mem ? sk : null) : null;
   // which answer to the read has been working: counter it, or counter the counter-player
   let lvl = 0;
   if (f.lv) for (let s = 1; s < 3; s++) if (f.lv[s] > f.lv[lvl] + .2) lvl = s;
-  if (pr && pr.conf > .5 - .12 * sk && Math.random() < Math.min(.55 + .35 * sk, pr.conf + .25 * sk)){
+  if (pr && pr.conf > .5 - .12 * sk - .12 * ek && Math.random() < Math.min(.55 + .35 * sk + .08 * ek, pr.conf + .25 * sk + .2 * ek)){
     f.read = pr.move;
     const m = rot(pr.move, lvl + 1);
     // a counter that is a bite may as well be the better hit, if one is ready
@@ -1396,6 +1426,11 @@ function ai(f, foe, seen){
     const lead = f.hp / f.maxHp - foe.hp / foe.maxHp;
     if (lead > .15) return {type: Math.random() < .6 ? 'guard' : 'taunt'};
     if (lead < -.05) return {type:'bite'};
+  }
+  // a veteran rival (foe past bond 10) answers the foe's favourite move instead of guessing
+  if (ek && f.hist.length >= 2 && Math.random() < .55 * ek){
+    const fav = MOVES.reduce((a, b) => (f.seen[b] || 0) > (f.seen[a] || 0) ? b : a, 'bite');
+    return {type: COUNTER[fav]};
   }
   // Two turns without landing anything and it stops being patient.
   if (f.idle >= 2 && Math.random() < .6) return {type:'bite'};
@@ -1650,9 +1685,13 @@ function pickOpponent(exceptId){
   // Real collection rivals when we have them; the five demo dogs only until the pool has loaded.
   // Each one met leaves the pool and a fresh one is fetched, so faces keep changing.
   const real = (typeof OPP !== 'undefined' && !WALLET.demo) ? OPP.pool.filter(f => f.id !== exceptId && !f.legendary && !taken(f)) : [];
-  const legendary = legs.length && Math.random() < .12;       // Legendaries: about one fight in eight
+  // a well-trained dog meets tougher rivals: more Legendaries from bond 8, and the rarer of 2–3 drawn collection dogs
+  const myL = exceptId && typeof SAVE !== 'undefined' ? SAVE.dog(exceptId).lvl : 1;
+  const legendary = legs.length && Math.random() < (myL >= 16 ? .35 : myL >= 12 ? .25 : myL >= 8 ? .18 : .12);   // base: one fight in eight
   if (real.length && !legendary){
-    const f = real[rint(0, real.length - 1)];
+    const rk = x => RARITY_ORDER[x.rarity] || 0;
+    let f = null;
+    for (let k = 0; k < (myL >= 14 ? 3 : myL >= 8 ? 2 : 1); k++){ const c = real[rint(0, real.length - 1)]; if (!f || rk(c) > rk(f)) f = c; }
     OPP.pool = OPP.pool.filter(x => x !== f); lsSet('ba_opps', OPP.pool); oppTopUp();
     return f;
   }
@@ -1685,8 +1724,9 @@ function ensureRivals(){
         const r = await api('/arena/rivals'); const j = await r.json();
         if (r.ok){ RIVALS.list = j.rivals || []; RIVALS.total = j.total || 0; RIVALS.at = Date.now(); RIVALS.ready = []; }
       }
-      for (const x of (RIVALS.list || []).slice(0, 9)){
-        if (RIVALS.ready.some(y => y.token === x.token)) continue;
+      // the list alternates owners: 18 first (plenty of different players), then 6 more whenever the fresh ones run low
+      const todo = (RIVALS.list || []).filter(x => !RIVALS.ready.some(y => y.token === x.token)).slice(0, RIVALS.ready.length ? 6 : 18);
+      for (const x of todo){
         try { const def = await loadDef({nft_id: 'riv' + x.token, uri: x.uri}); RIVALS.ready.push({...x, def}); } catch(e){}
       }
     } catch(e){}
@@ -1707,11 +1747,14 @@ function until(t){
 }
 function ghostOpp(round, used){
   used = used || new Set();
-  // registered squads first, then other players' dogs; repeats only once everyone has been met
-  const fresh = RIVALS.ready.filter(x => !used.has(x.token)), sq = fresh.filter(x => x.squad);
-  const pool = sq.length ? sq : fresh.length ? fresh : RIVALS.ready;
+  // other players' dogs (everyone who played this week): a different owner each round, dogs not met yet first,
+  // today's registered squads a little more often; repeats only once everyone has been met
+  const fresh = RIVALS.ready.filter(x => !used.has(x.token)), newOwner = fresh.filter(x => !used.has('o:' + x.owner));
+  const base = newOwner.length ? newOwner : fresh.length ? fresh : RIVALS.ready, sq = base.filter(x => x.squad);
+  const pool = sq.length && Math.random() < .5 ? sq : base;
   if (pool.length){
-    const x = pool[rint(0, pool.length - 1)]; used.add(x.token);
+    const x = pool[rint(0, pool.length - 1)]; used.add(x.token); used.add('o:' + x.owner);
+    if (RIVALS.ready.filter(y => !used.has(y.token)).length < 4) ensureRivals();      // keep a few fresh faces loaded
     return {def: x.def, lvl: x.lvl, path: x.path || null, who: x.owner, rid: x.id, squad: !!x.squad};
   }
   // nobody else has played yet: a wild collection dog, no owner to show
@@ -3926,12 +3969,18 @@ async function play(){
     let xp = win ? 30 : 12;
     const rk = ['Common','Uncommon','Rare','Epic','Mythic','Legendary'];
     if (rk.indexOf(E.def.rarity) > rk.indexOf(P.def.rarity)) xp += 10;
+    const weeklyFinal = !!(arenaRun && arenaRun.round === 2);          // the final of a tournament (read before it moves on)
     if (arenaRun){ arenaAfterFight(win); lastGain = {xp:0, levels:[]}; }
     else {
       if (isRanked){ SAVE.bump('f3'); if (win) SAVE.bump('w2'); }
       lastGain = SAVE.award(P.def.id, win, xp, isRanked);
     }
-    if (isRanked || arenaRun) achScan({win, rarer: rk.indexOf(E.def.rarity) > rk.indexOf(P.def.rarity), legendary: !!E.def.legendary});
+    if (isRanked || arenaRun){
+      achScan({win, rarer: rk.indexOf(E.def.rarity) > rk.indexOf(P.def.rarity), legendary: !!E.def.legendary});
+      weeklyTrack({win, ranked: isRanked && !arenaRun, rarer: rk.indexOf(E.def.rarity) > rk.indexOf(P.def.rarity), legendary: !!E.def.legendary,
+        ko: E.hp <= 0, low: P.hp > 0 && P.hp < P.maxHp * .25, lost: P.maxHp - P.hp, abil: E.hist.filter(m => m === 'ability').length,
+        final: weeklyFinal, boss: !!(VF.boss && VF.boss.hit)});
+    }
     await wait(700);
   }
   busy = false;
@@ -4125,7 +4174,7 @@ function startFight(a,b,ranked,oppLvl){
   SAVE.checkDay();
   isRanked = !!ranked;
   const el = SAVE.dog(a.id).lvl;
-  const eo = oppLvl || Math.max(1, Math.min(BOND.maxLevel, el + rint(-1,1)));   // matched, not random
+  const band = rivalBand(el), eo = oppLvl || rint(band[0], band[1]);   // matched, not random (harder from bond 6 and 10)
   const mb = isRanked ? myBonus() : null;
   P = build(a, el, mb, SAVE.dog(a.id).path); E = build(b, eo, null, arenaRun && arenaRun.opp ? arenaRun.opp.path || null : null); turn = 1; log = []; ev = []; over = false;
   hist = {bite:0, guard:0, taunt:0}; plannedE = null;
@@ -4362,15 +4411,69 @@ const ACH = [
   {id:'bossfall', e:'🗡️', n:'Final blow',     t:'Bring a weekly boss down'},
   {id:'kennel3',  e:'🏠', n:'Kennel keeper',  t:'Hold 3 Pixel Scrappys'},
   {id:'recruiter',e:'📣', n:'Recruiter',      t:'Invite a friend who gets their own Scrappy'},
-  {id:'podium',   e:'🥇', n:'Podium',         t:'Finish a week in the top 3'}
+  {id:'podium',   e:'🥇', n:'Podium',         t:'Finish a week in the top 3'},
+  // v35: the next tiers
+  {id:'streak20', e:'🌋', n:'Wildfire',       t:'Win 20 in a row'},
+  {id:'streak30', e:'🌠', n:'Untouchable',    t:'Win 30 in a row'},
+  {id:'bond15',   e:'🔮', n:'Kindred',        t:'Reach bond 15 with a dog'},
+  {id:'bond20',   e:'👑', n:'Legend of the kennel', t:'Reach bond 20 with a dog'},
+  {id:'fights500',e:'🏅', n:'Old hand',       t:'Fight 500 ranked fights'},
+  {id:'fights1000',e:'🏛️', n:'Hall of fame',  t:'Fight 1,000 ranked fights'},
+  {id:'club10',   e:'🥋', n:'Club regular',   t:'Win 10 Fight Club duels'},
+  {id:'kennel10', e:'🏰', n:'Big kennel',     t:'Hold 10 Pixel Scrappys'},
+  {id:'weekly5',  e:'📅', n:'Every week',     t:'Earn 5 weekly badges'},
+  {id:'weekly20', e:'🗓️', n:'Never misses',   t:'Earn 20 weekly badges'}
 ];
+/* Weekly badges: three new challenges every Monday, the same for everyone (drawn from the week), each one its own
+   badge (id wk:<week>:<challenge>) that counts towards the achievements on the ladder. Progress lives in the save. */
+const WEEKLY = [
+  {c:'win10',   e:'🏆', n:'Ten up',         t:'Win 10 ranked fights',               goal:10, add: x => x.ranked && x.win ? 1 : 0},
+  {c:'win25',   e:'🎯', n:'Busy week',      t:'Win 25 ranked or arena fights',      goal:25, add: x => x.win ? 1 : 0},
+  {c:'fight40', e:'🥊', n:'Regular',        t:'Fight 40 ranked or arena fights',    goal:40, add: () => 1},
+  {c:'upset3',  e:'⚡', n:'Giant week',     t:'Beat 3 rarer dogs',                  goal:3,  add: x => x.win && x.rarer ? 1 : 0},
+  {c:'leg2',    e:'👑', n:'Crown hunter',   t:'Beat 2 Legendaries',                 goal:2,  add: x => x.win && x.legendary ? 1 : 0},
+  {c:'ko5',     e:'💥', n:'Knockouts',      t:'Win 5 fights by knockout',           goal:5,  add: x => x.win && x.ko ? 1 : 0},
+  {c:'clutch2', e:'😤', n:'Clutch',         t:'Win 2 fights below a quarter health', goal:2, add: x => x.win && x.low ? 1 : 0},
+  {c:'flaw2',   e:'✨', n:'Untouched',      t:'Win 2 fights losing 3 HP or less',   goal:2,  add: x => x.win && x.lost <= 3 ? 1 : 0},
+  {c:'abil15',  e:'🌀', n:'Signature week', t:'Use your ability 15 times',          goal:15, add: x => x.abil},
+  {c:'champ1',  e:'🏟️', n:'Arena champion', t:'Win an arena tournament',            goal:1,  add: x => x.final && x.win ? 1 : 0},
+  {c:'boss5',   e:'👹', n:'Boss chipper',   t:'Hit the weekly boss in 5 fights',    goal:5,  add: x => x.boss ? 1 : 0},
+  {c:'streak7', e:'🔥', n:'Hot week',       t:'Reach a 7-win streak',               goal:7,  set: () => (SAVE.data.wk || {}).streak || 0}
+];
+function weeklyThis(wk){
+  wk = wk || SAVE.weekOf();
+  const r = seeded('weekly' + wk), pool = WEEKLY.slice(), out = [];
+  while (out.length < 3 && pool.length) out.push(pool.splice(Math.floor(r() * pool.length), 1)[0]);
+  return out;
+}
+const weeklyId = (wk, c) => 'wk:' + wk + ':' + c;
+function weeklyDef(id){
+  const m = /^wk:(\d{4}-\d{2}-\d{2}):([a-z0-9]+)$/.exec(id || ''); if (!m) return null;
+  const w = WEEKLY.find(x => x.c === m[2]); return w ? {id, e: w.e, n: w.n + ' · week of ' + m[1].slice(5), t: w.t, weekly: true} : null;
+}
+const achDef = id => ACH.find(a => a.id === id) || weeklyDef(id);
+const weeklyCount = () => Object.keys({...(SAVE.data.ach || {}), ...ACHD.server}).filter(id => id.startsWith('wk:')).length;
+/* after every ranked or arena fight: count it towards this week's three challenges */
+function weeklyTrack(x){
+  if (!achLive()) return;
+  const d = SAVE.data, wk = SAVE.weekOf();
+  if (!d.wkach || d.wkach.week !== wk) d.wkach = {week: wk, p: {}};
+  const done = [];
+  for (const w of weeklyThis(wk)){
+    const id = weeklyId(wk, w.c); if (achHave(id)) continue;
+    d.wkach.p[w.c] = w.set ? Math.max(d.wkach.p[w.c] || 0, w.set()) : (d.wkach.p[w.c] || 0) + (w.add(x) || 0);
+    if (d.wkach.p[w.c] >= w.goal) done.push(id);
+  }
+  SAVE.save();
+  if (done.length) achUnlock(done);
+}
 const ACHD = {server: {}};
 const achLive = () => LIVE() && !!WALLET.token && !WALLET.demo;
 const achHave = id => !!((SAVE.data.ach || {})[id] || ACHD.server[id]);
 function achUnlock(ids){
   if (!achLive()) return;
   const d = SAVE.data; d.ach = d.ach || {};
-  const fresh = [...new Set(ids)].filter(id => !achHave(id) && ACH.some(a => a.id === id));
+  const fresh = [...new Set(ids)].filter(id => !achHave(id) && achDef(id));
   if (!fresh.length) return;
   for (const id of fresh) d.ach[id] = Date.now();
   SAVE.save();
@@ -4393,6 +4496,17 @@ function achScan(ctx){
   if (d.pack) out.push('pack');
   if (VF.boss && VF.boss.hit) out.push('boss');
   if ((OWNED || []).filter(f => !f.borrowed).length >= 3) out.push('kennel3');
+  if (d.best >= 20) out.push('streak20');
+  if (d.best >= 30) out.push('streak30');
+  if (lv >= 15) out.push('bond15');
+  if (lv >= 20) out.push('bond20');
+  if (d.fights >= 500) out.push('fights500');
+  if (d.fights >= 1000) out.push('fights1000');
+  if ((d.club.w || 0) >= 10) out.push('club10');
+  if ((OWNED || []).filter(f => !f.borrowed).length >= 10) out.push('kennel10');
+  const wc = weeklyCount();
+  if (wc >= 5) out.push('weekly5');
+  if (wc >= 20) out.push('weekly20');
   achUnlock(out);
 }
 async function achSync(){
@@ -4414,9 +4528,9 @@ function achToast(ids){
   let box = document.getElementById('achToast');
   if (!box){ box = document.createElement('div'); box.id = 'achToast'; document.body.appendChild(box); }
   for (const id of ids){
-    const a = ACH.find(x => x.id === id); if (!a) continue;
+    const a = achDef(id); if (!a) continue;
     const el = document.createElement('div');
-    el.innerHTML = `<span>${a.e}</span><div><b>Achievement unlocked</b><br>${esc(a.n)} — ${esc(a.t)}</div>`;
+    el.innerHTML = `<span>${a.e}</span><div><b>${a.weekly ? 'Weekly badge earned' : 'Achievement unlocked'}</b><br>${esc(a.n)} — ${esc(a.t)}</div>`;
     box.appendChild(el);
     setTimeout(() => el.classList.add('out'), 4200); setTimeout(() => el.remove(), 4800);
   }
@@ -4424,8 +4538,15 @@ function achToast(ids){
 }
 function achCard(){
   if (!achLive()) return '';
-  const got = ACH.filter(a => achHave(a.id)).length;
-  return fold('ach', `🏅 ACHIEVEMENTS <small>${got} / ${ACH.length}</small>`, `
+  const got = ACH.filter(a => achHave(a.id)).length, wk = SAVE.weekOf(), wc = weeklyCount();
+  const p = (SAVE.data.wkach && SAVE.data.wkach.week === wk && SAVE.data.wkach.p) || {};
+  const next = new Date(Date.parse(wk + 'T00:00:00Z') + 7 * 864e5), left = Math.max(0, Math.ceil((next - Date.now()) / 864e5));
+  const weekly = weeklyThis(wk).map(w => { const id = weeklyId(wk, w.c), have = achHave(id), n = have ? w.goal : Math.min(w.goal, p[w.c] || 0);
+    return `<div class="wkb${have ? ' got' : ''}"><span>${w.e}</span><div><b>${esc(w.n)}</b><small>${esc(w.t)}</small>
+      <div class="xp"><i style="width:${Math.round(100 * n / w.goal)}%"></i></div><small>${have ? '✅ earned' : n + ' / ' + w.goal}</small></div></div>`; }).join('');
+  return fold('ach', `🏅 ACHIEVEMENTS <small>${got} / ${ACH.length} · ${wc} weekly</small>`, `
+    <h3 class="h3" style="margin:0 0 8px">📅 THIS WEEK'S BADGES <small style="text-transform:none;letter-spacing:0">· new ones in ${left} day${left === 1 ? '' : 's'}</small></h3>
+    <div class="wkbs">${weekly}</div>
     <div class="achs">${ACH.map(a => `<div class="${achHave(a.id) ? 'got' : ''}" title="${esc(a.t)}"><span>${a.e}</span><b>${esc(a.n)}</b><small>${esc(a.t)}</small></div>`).join('')}</div>
     <p class="mini" style="margin:8px 0 0">Your count shows next to your name on the ladder.</p>`);
 }
@@ -4753,7 +4874,7 @@ function weekRecapHtml(wk, lad){
   };
   const m = lad.mine || {};
   const you = ['xp','wins','streak'].map(k => m[k] ? `#${m[k].rank}` : '—');
-  return `<div class="card" role="dialog" aria-label="Weekly results">
+  return `<div class="card wkres" role="dialog" aria-label="Weekly results">
     <h2>WEEK RESULTS</h2>
     <p class="mini" style="text-align:center;margin:0">Week of <b>${esc(wk)}</b> · ${lad.players} player${lad.players===1?'':'s'} on the board</p>
     <div class="grid">
@@ -4763,11 +4884,11 @@ function weekRecapHtml(wk, lad){
       <div class="stat"><b>${myBk ? BONUS[myBk].emoji + ' ' + BONUS[myBk].name : '—'}</b><span class="mini">${mine ? 'your pack\'s bonus now' : 'join a pack for bonuses'}</span></div>
     </div>
     ${!lad.players && !rows.some(p => p.members) ? '<p class="mini" style="text-align:center;margin:12px 0 0"><b>No results for that week yet.</b> Nobody had played — this fills in once a week with real fights has ended.</p>' : ''}
-    <h3>PACK STANDINGS</h3>
-    <p class="mini" style="margin:0 0 8px">Ranked by wins per member (the number on the right).</p>
-    ${packs}
+    <div class="wkcols"><div>
+    <h3>PACK STANDINGS <span class="mini" style="font-family:inherit;letter-spacing:0">· Ø wins per member on the right</span></h3>
+    ${packs}</div><div>
     <h3>PLAYER RANKING</h3>
-    <div class="pnl3">${board('xp','MOST XP')}${board('wins','MOST WINS')}${board('streak','LONGEST STREAK','🔥')}</div>
+    <div class="pnl3">${board('xp','MOST XP')}${board('wins','MOST WINS')}${board('streak','LONGEST STREAK','🔥')}</div></div></div>
     <p class="mini" style="margin:10px 0 0">A fresh week is running: every board started at zero on Monday 00:00 UTC.</p>
     <div class="row" style="margin-top:12px"><button id="recapClose">Close</button></div>
   </div>`;

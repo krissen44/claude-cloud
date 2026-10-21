@@ -4,6 +4,27 @@ Changes collect here during the week and go live together when the new week star
 Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit flash, new /clip) — no Dash yet (no
 `dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
 
+## v35 — for the week roll Sun 1 → Mon 2 Nov (owner, 22 Oct)
+- **Bond up to 20** (was 10). Levels 11–20 take longer (`BOND.need`: 465 + 90 per level past 10, ≈ 8,700 XP from 10 to
+  20). New perks: 12 +1 max health · 14 Deep Breath (Second Wind heals 5) · 16 +2 max health · 18 +1 starting energy ·
+  20 Legend of the kennel (+2 max health). Server clamps 10 → `BOND_MAX` 20 everywhere (rivals, referee, replays, Club, registry).
+- **Harder for well-trained dogs** (owner: "too easy for high levels"; the backup shows a bond-10 dog at 227 W / 5 L):
+  rival bond band `rivalBand` — ±1 below 6, never below yours from 6, up to +2 from 10 (page + referee, same rule);
+  more Legendary rivals (12 % → 18 % from bond 8, 25 % from 12, 35 % from 16) and the rarer of 2–3 drawn collection dogs
+  from bond 8/14; past bond 10 the AI reads more boldly and answers the player's favourite move ("veteran" `ek`).
+  `node tools/test/ai-sim.mjs` now runs bond 1/5/10/15/20.
+- **Arena rivals = every player of the week**: all dogs of players with a ladder row, a kennel visit or a squad this week
+  (team wallets out — the issuer holds the treasury), up to 90, shuffled round-robin so owners alternate; the page loads
+  18 and more as they run low, and picks a different owner each round (today's squads a bit more often). Wild dogs only
+  when nobody else played this week.
+- **Achievements grow**: 10 new ones (streak 20/30, bond 15/20, 500/1,000 fights, 10 Club wins, 10 Scrappys, 5/20
+  weekly badges) and **three new weekly badges every Monday** (drawn from 12 challenges by the week, the same for
+  everyone: win 10 ranked, beat 2 Legendaries, 5 knockouts, an arena title, …) with progress bars in the kennel; each
+  earned one counts on the ladder (`wk:<week>:<id>`, server accepts this week's and last week's).
+- **Week results fit the screen**: wide two-column card (stats + packs | three boards), no scrolling on a laptop.
+- Website guide: bond 20 + perks, tougher rivals, arena of the week, 27 badges + weekly badges.
+- Tests: `tools/test/v35.mjs` (perks, rival band on the referee, arena pool, weekly badges, week results fit) + the suite.
+
 ## v34 — the owner's new look + a compact kennel (21 Oct) · package `bark-arena-game-v34-komplett.zip`
 - **Owner's UI/animation work (21 Oct, made on v32.5, merged onto v33):** pixel-art fight backdrops (`public/art/*.png`,
   12 scenes; ranked/casual fights rotate through 10 — meadow, rain, snow, autumn, beach, desert, night, blossom, swamp,

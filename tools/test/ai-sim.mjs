@@ -1,5 +1,5 @@
 import fs from "node:fs"; import vm from "node:vm";
-// Opponent AI benchmark: player strategies vs the AI at bond 1/5/10, run on the engine sections of the page.
+// Opponent AI benchmark: player strategies vs the AI at bond 1/5/10/15/20 (LEVELS=…), run on the engine sections of the page.
 // node tools/test/ai-sim.mjs [path/to/index.html] [fights per cell]
 const file = process.argv[2] || new URL("../../public/index.html", import.meta.url).pathname, N = +(process.argv[3] || 1500);
 const html = fs.readFileSync(file,"utf8");
@@ -24,7 +24,7 @@ const S={
      const best=Object.keys(row).sort((a,b)=>row[b]-row[a])[0]; return best&&row[best]>=2?{type:CT[best]}:{type:R(['bite','guard','taunt'])}; },
 };
 function fight(defA,defB,lv,s,M){
-  P=build(defA,lv,null);E=build(defB,Math.max(1,Math.min(10,lv+rint(-1,1))),null);turn=1;log=[];ev=[];over=false;let k=0;
+  const band=typeof rivalBand==='function'?rivalBand(lv):[Math.max(1,lv-1),Math.min(10,lv+1)]; P=build(defA,lv,null);E=build(defB,rint(band[0],band[1]),null);turn=1;log=[];ev=[];over=false;let k=0;
   while(!over&&k<40){const before=E.hist[E.hist.length-1]||'^'; const pa=s(M); const ea=ai(E,P,pa); resolve(pa,ea);
     if(M&&ea.type!=='ability'){ const r=M[before]=M[before]||{}; r[ea.type]=(r[ea.type]||0)+1; } k++;}
   return verdict()==='YOU WIN';
@@ -35,5 +35,5 @@ function run(name,lv,n,F){ let w=0; let M={}; if(typeof aimNew==='function') AIM
 const api=vm.runInContext(code,vm.createContext({console}));
 const F=api.DATA.fighters;
 const out=[];
-for(const s of Object.keys(api.S)){ const row=[s.padEnd(12)]; for(const lv of [1,5,10]) row.push(("L"+lv+" "+(100*api.run(s,lv,N,F)).toFixed(0)+"%").padEnd(9)); out.push(row.join(" ")); }
+for(const s of Object.keys(api.S)){ const row=[s.padEnd(12)]; for(const lv of (process.env.LEVELS||'1,5,10,15,20').split(',').map(Number)) row.push(("L"+lv+" "+(100*api.run(s,lv,N,F)).toFixed(0)+"%").padEnd(9)); out.push(row.join(" ")); }
 console.log(out.join("\n"));

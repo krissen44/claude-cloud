@@ -15,7 +15,9 @@ fs.writeFileSync(S + "/hold-ui.json", JSON.stringify({[A]: [2723, 2715, 2724, 8,
     weekly[wk + "|" + a] = {account: a, week: wk, wins: w, losses: l, xp: w * 30 + l * 12, streak: (i * 3) % 17, pack: i < 24 ? ids[i % 4] : null, updated: Date.now()};
     if (i % 3) profiles[a] = {name: ["Bark", "Woof", "Chomp", "Rex", "Pixel", "Nova", "Taco"][i % 7] + i};
     if (i < 24) packs[a] = {pack: ids[i % 4], week: wk, lockWeek: wk}; }
-  weekly[wk + "|" + A] = {account: A, week: wk, wins: 12, losses: 5, xp: 420, streak: 3, pack: "moon", updated: Date.now()}; packs[A] = {pack: "moon", week: wk, lockWeek: wk};
+  weekly[wk + "|" + A] = {account: A, week: wk, wins: 12, losses: 5, xp: 420, streak: 3, pack: "moon", updated: Date.now()};
+  const lw = new Date(Date.parse(wk) - 7 * 864e5).toISOString().slice(0, 10);       // last week too (week results)
+  for (const r of Object.values(weekly)) weekly[lw + "|" + r.account] = {...r, week: lw, wins: r.wins + 20, xp: r.xp + 600}; packs[A] = {pack: "moon", week: wk, lockWeek: wk};
   fs.writeFileSync(D + "/store.json", JSON.stringify({players: {}, weekly, holdings: {}, packs, profiles, blobs: {}})); }
 const tok = a => { const b0 = Buffer.from(JSON.stringify({a, exp: 2e9})).toString("base64url"); return b0 + "." + createHmac("sha256", "testsecret").update(b0).digest("base64url"); };
 const srv = spawn("node", [new URL("./tut-mock.mjs", import.meta.url).pathname], {env: {...process.env, PORT: String(PORT), DATA_DIR: D, ISSUER: "rI", TAXON: "369", HOLD_FILE: S + "/hold-ui.json"}, stdio: "ignore"});

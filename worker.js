@@ -510,23 +510,38 @@ async function setProfile(env, account, b) {
    their owner has trained them to, labelled with the owner's name. */
 const today = () => new Date().toISOString().slice(0, 10);
 const DEFENSE_XP = {win: 18, loss: 6}, DEFENSE_CAP = 120;            // bond XP per defence, per dog per day
+// bond levels run 1…20 since v35 (were 1…10); every server-side clamp uses this
+const BOND_MAX = 20;
+// the rival's bond band for a dog at bond l — the same rule as rivalBand in public/index.html
+const rivalBand = l => [l >= 6 ? l : Math.max(1, l - 1), Math.min(BOND_MAX, l >= 10 ? l + 2 : l + 1)];
+/* Arena rivals: every dog of every player who played this week (a ladder row, a kennel visit or a squad this week),
+   not only today's squads — so the arena is full of real players' dogs and nobody has to meet a wild one. The list
+   alternates owners (shuffled round-robin), so a tournament meets different people. Team wallets stay out (the issuer
+   holds the prize treasury). Squads registered today keep their flag (their owners earn defence XP). */
 async function arenaRivals(env, account) {
   const st = storeOf(env), hold = await st.allHoldings(), names = await st.profiles(), reg = await st.arenaRegAll(), day = today();
-  const squads = [], others = [];
+  const wk = weekOf(), wkStart = Date.parse(wk + "T00:00:00Z"), active = new Set((await st.weekRows(wk)).map(r => r.account));
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const owners = [];
+  let total = 0, squads = 0;
   for (const [owner, h] of Object.entries(hold)) {
-    if (owner === account) continue;
-    const save = (await st.saveGet(owner) || {}).data || {};
+    if (owner === account || isTeam(env, owner)) continue;
     const r = reg[owner] && reg[owner].day === day ? reg[owner].ids : [];
+    if (!active.has(owner) && !((h.updated || 0) >= wkStart) && !r.length) continue;          // not seen this week
+    const save = (await st.saveGet(owner) || {}).data || {}, dogs = [];
     for (const d of h.dogs || []) {
       const g = (save.dogs || {})[d.id] || {};
-      const x = {token: d.t, id: d.id, uri: d.uri, lvl: Math.max(1, Math.min(10, g.lvl | 0 || 1)), path: cleanPath(g.path), owner: displayName(names, owner), squad: r.includes(d.id)};
-      (x.squad ? squads : others).push(x);
+      dogs.push({token: d.t, id: d.id, uri: d.uri, lvl: Math.max(1, Math.min(BOND_MAX, g.lvl | 0 || 1)), path: cleanPath(g.path), owner: displayName(names, owner), squad: r.includes(d.id)});
     }
+    if (!dogs.length) continue;
+    total += dogs.length; squads += dogs.filter(x => x.squad).length;
+    // a player's squad and trained dogs come first in their own queue
+    owners.push(shuffle(dogs).sort((a, b) => (b.squad - a.squad) || (b.lvl > 1) - (a.lvl > 1)));
   }
-  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-  // today's registered squads first; other players' dogs only fill up while few squads are in
-  const out = [...shuffle(squads), ...shuffle(others)].slice(0, 30);
-  return json({rivals: out, total: squads.length + others.length, squads: squads.length});
+  const out = [];
+  shuffle(owners);
+  for (let k = 0; out.length < 90 && owners.some(q => q.length); k++) for (const q of owners) if (q.length && out.length < 90) out.push(q.shift());
+  return json({rivals: out, total, squads, players: owners.length});
 }
 /* Register today's arena squad: these dogs defend (and earn bond XP) in other players' arenas. */
 async function arenaSquad(env, account, b) {
@@ -574,7 +589,7 @@ async function clubFighter(env, account, dogId) {
   const meta = await metaFor(env, dog.uri);
   const def = env.ENGINE.defFromMeta({nft_id: dog.id}, meta);
   const save = (await storeOf(env).saveGet(account) || {}).data || {};
-  const lvl = Math.max(1, Math.min(10, ((save.dogs || {})[dog.id] || {}).lvl | 0 || 1));
+  const lvl = Math.max(1, Math.min(BOND_MAX, ((save.dogs || {})[dog.id] || {}).lvl | 0 || 1));
   return {acct: account, name: displayName(await storeOf(env).profiles(), account), def, lvl, path: cleanPath(((save.dogs || {})[dog.id] || {}).path), img: meta.image, uri: dog.uri};
 }
 function clubTick(env, d) {
@@ -715,19 +730,20 @@ async function defOfUri(env, id, uri) { return env.ENGINE.defFromMeta({nft_id: i
 /* The rival, rebuilt on the server: another player's dog (arena, their real bond), a Legendary or a collection dog. */
 async function rivalOf(env, account, o, lvl, kind, stage) {
   o = o || {};
-  const st = storeOf(env), near = x => Math.max(1, Math.min(10, Math.max(lvl - 1, Math.min(lvl + 1, x | 0 || lvl))));
+  const [lo, hi] = rivalBand(lvl);
+  const st = storeOf(env), near = x => Math.max(lo, Math.min(hi, x | 0 || lvl));
   if (o.rid) {
     for (const [owner, h] of Object.entries(await st.allHoldings())) {
       if (owner === account) continue;
       const d = (h.dogs || []).find(x => x.id === String(o.rid));
       if (!d) continue;
       const g = (((await st.saveGet(owner)) || {}).data || {}).dogs || {}, mine = g[d.id] || {};
-      return {def: await defOfUri(env, d.id, d.uri), lvl: Math.max(1, Math.min(10, mine.lvl | 0 || 1)), path: cleanPath(mine.path), owner};
+      return {def: await defOfUri(env, d.id, d.uri), lvl: Math.max(1, Math.min(BOND_MAX, mine.lvl | 0 || 1)), path: cleanPath(mine.path), owner};
     }
     return null;
   }
   // a wild rival: ranked fights are matched ±1 bond; wild arena dogs grow with the round
-  const wildLvl = x => kind === "arena" ? Math.max(1, Math.min(10, x | 0 || 1, 3 + (stage | 0))) : near(x);
+  const wildLvl = x => kind === "arena" ? Math.max(1, Math.min(BOND_MAX, x | 0 || 1, 3 + (stage | 0))) : near(x);
   if (o.legendary) {
     const n = o.legendary | 0;
     return n >= 1 && n <= 20 ? {def: legendaryDef(n), lvl: wildLvl(o.lvl), path: null} : null;
@@ -759,7 +775,7 @@ async function fightStart(env, account, b) {
   if (!dog) return json({error: "not_your_dog"}, 400);
   const save = (((await storeOf(env).saveGet(account)) || {}).data || {}).dogs || {};
   // the page's bond level, but never more than one above what its cloud save last said
-  const saved = Math.max(1, (save[dog.id] || {}).lvl | 0 || 1), lvl = Math.max(1, Math.min(10, b.lvl | 0 || 1, saved + 1));
+  const saved = Math.max(1, (save[dog.id] || {}).lvl | 0 || 1), lvl = Math.max(1, Math.min(BOND_MAX, b.lvl | 0 || 1, saved + 1));
   const opp = await rivalOf(env, account, {...(b.opp || {}), lvl: b.oppLvl}, lvl, kind, b.stage).catch(() => null);
   if (!opp) return json({error: "bad_rival"}, 400);
   let def;
@@ -829,7 +845,7 @@ async function fightGhost(env, account, b) {
     const dog = await fighterDog(env, account, x.id);
     if (!dog) return json({error: "not_your_dog"}, 400);
     const saved = Math.max(1, (save[dog.id] || {}).lvl | 0 || 1);
-    mine.push({def: await defOfUri(env, dog.id, dog.uri), lvl: Math.max(1, Math.min(10, x.lvl | 0 || 1, saved + 1)), path: cleanPath(x.path)});
+    mine.push({def: await defOfUri(env, dog.id, dog.uri), lvl: Math.max(1, Math.min(BOND_MAX, x.lvl | 0 || 1, saved + 1)), path: cleanPath(x.path)});
   }
   const lines = [];
   let won = 0;
@@ -1276,7 +1292,12 @@ const starterWeek = (s, wk) => !!s && s.start < Date.parse(wk + "T00:00:00Z") + 
    them; a few only the server can see (a podium week, a recruited friend). Shown in the kennel, and the
    count next to the name on the ladder. */
 const ACH_IDS = ["first", "upset", "legend", "streak5", "streak10", "champ", "bond5", "bond10", "fights50", "fights250",
-  "club", "pack", "boss", "bossfall", "kennel3", "recruiter", "podium"];
+  "club", "pack", "boss", "bossfall", "kennel3", "recruiter", "podium",
+  // v35: next tiers + badges for weekly badges
+  "streak20", "streak30", "bond15", "bond20", "fights500", "fights1000", "club10", "kennel10", "weekly5", "weekly20"];
+// weekly badges: wk:<monday>:<challenge> — only for this week or the one before (late syncs)
+const WEEKLY_C = ["win10", "win25", "fight40", "upset3", "leg2", "ko5", "clutch2", "flaw2", "abil15", "champ1", "boss5", "streak7"];
+const achOk = id => ACH_IDS.includes(id) || (m => !!m && WEEKLY_C.includes(m[2]) && (m[1] === weekOf() || m[1] === weekOf(new Date(Date.now() - 7 * 864e5))))(/^wk:(\d{4}-\d{2}-\d{2}):([a-z0-9]+)$/.exec(String(id)));
 async function achGrant(env, account, id) {
   const st = storeOf(env), m = (await st.blobGet("ach")) || {};
   const me = m[account] = m[account] || {};
@@ -1287,7 +1308,7 @@ async function achGrant(env, account, id) {
 async function achPost(env, account, b) {
   const st = storeOf(env), m = (await st.blobGet("ach")) || {}, me = m[account] = m[account] || {};
   const serverOnly = new Set(["recruiter", "podium", "bossfall"]);
-  for (const id of (Array.isArray(b && b.ids) ? b.ids : []).slice(0, 40)) if (ACH_IDS.includes(id) && !serverOnly.has(id) && !me[id]) me[id] = Date.now();
+  for (const id of (Array.isArray(b && b.ids) ? b.ids : []).slice(0, 40)) if (achOk(id) && !serverOnly.has(id) && !me[id]) me[id] = Date.now();
   await st.blobSet("ach", m);
   return json({ach: me});
 }
@@ -1527,7 +1548,7 @@ async function replayPost(env, account, b) {
   // the rival's owner (arena) must be a real player: name or short wallet, nothing invented
   const names = await storeOf(env).profiles(), w = String(b.E.who || "");
   const vs = w ? Object.keys(names).find(a => names[a].name === w) || null : null;
-  const lvl = x => Math.max(1, Math.min(10, x | 0 || 1));
+  const lvl = x => Math.max(1, Math.min(BOND_MAX, x | 0 || 1));
   const id = await replayKeep(env, {kind: b.kind, stage: b.kind === "arena" ? Math.max(0, Math.min(2, b.stage | 0)) : null,
     by: account, vs: vs && vs !== account ? vs : null, close: !!b.close,
     P: {def: slimDef(b.P.def || {}), lvl: lvl(b.P.lvl), bonus: ["fang", "hide", "spirit"].includes(b.P.bonus) ? b.P.bonus : null, path: cleanPath(b.P.path)},
@@ -2049,7 +2070,7 @@ async function savePut(env, account, b) {
    Dogs that changed hands before this existed are looked up once in the other saves (the most trained one wins). */
 const bondKey = g => [g.lvl | 0, g.xp | 0];
 const bondMore = (a, b) => { const x = bondKey(a), y = bondKey(b); return x[0] !== y[0] ? x[0] > y[0] : x[1] > y[1]; };
-const bondClean = g => ({lvl: Math.max(1, Math.min(10, g.lvl | 0 || 1)), xp: Math.max(0, g.xp | 0), w: Math.max(0, g.w | 0), l: Math.max(0, g.l | 0),
+const bondClean = g => ({lvl: Math.max(1, Math.min(BOND_MAX, g.lvl | 0 || 1)), xp: Math.max(0, g.xp | 0), w: Math.max(0, g.w | 0), l: Math.max(0, g.l | 0),
   ...(g.path && typeof g.path === "object" ? {path: cleanPath(g.path)} : {})});
 // Once per dog, before anything is booked for it: the most trained copy in the other wallets' saves (training from before
 // the registry existed, or from a seller). Entries made before this check (no `scanned`) get it once too — they could
