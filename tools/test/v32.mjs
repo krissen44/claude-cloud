@@ -159,7 +159,7 @@ await p.evaluate(() => { const id = OWNED[0].id; SAVE.dog(id).lvl = 4; SAVE.save
 ok(await p.locator("[data-path]").count() === 2, "bond path card shows two choices at bond 4");
 await p.click('[data-path$="|4|b"]');
 ok(await p.evaluate(() => SAVE.dog(OWNED[0].id).path[4] === "b"), "path b chosen");
-await p.click(".pick > button:first-child");
+await p.click(".kfight");
 await p.waitForFunction(() => document.querySelector("#ctrl .acts"), null, {timeout: 15000});
 await p.waitForFunction(() => !VF.wait, null, {timeout: 10000});
 ok(await p.evaluate(() => VF.on && !!VF.fid), "page fight is refereed (VF on)");
