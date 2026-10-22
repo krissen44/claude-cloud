@@ -299,6 +299,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
   Board `advent.days[].prize` (plan) / `.won` {name, score, token, status, key, place}, `grandPrizes`, `grandWon`; client doors show the
   prize image (`dashImgUrl` → `/public/dogimg`, future ones blurred), `todayCard`, `.agrand`; prize cards also in the Dash tab.
   Website `dashPrizes` + `claimPrize` (modal, polls `/public/dash/claim?uuid=`). `treasuryFree` = issuer pieces no prize used yet.
+- **Standalone Dash (22 Oct)**: `node tools/dash/standalone.mjs <out.html>` builds an offline one-file Scrappy Dash (the page's CSS, `DATA` demo dogs, `S`, the `//@dash` sim and the Dash UI cut by markers + stubs; own hangar `menu()` with skin switch, best score in `localStorage`). No server, no rankings.
 - **Bond travels with the NFT (fix 12 Oct)**: blob `bonds` {nftId: {lvl, xp, w, l, path, by, at}} — `bondRecord` from `savePut`
   (only dogs the saver holds and is the newest holder of, by holdings `updated`; a new holder's lower save doesn't overwrite
   another trainer's higher entry), `bondCarry` in `kennel()` → `carry` for dogs trained by someone else (`bondSeed`: before any write or read,
