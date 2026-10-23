@@ -517,6 +517,17 @@ button.dashgo:active{transform:translateY(3px);box-shadow:0 1px 0 #0e1726}
 .dwrap.xmas .dbody>.card.advent{border:5px solid transparent;
   background:linear-gradient(#152035,#152035) padding-box,repeating-linear-gradient(45deg,#d32f2f 0 10px,#fff 10px 20px) border-box}
 .dwrap.xmas .dbody>.card.advent:before{left:-5px;right:-5px;top:-12px}
+/* wreaths: two in the hero hanging on red ribbons, one on top of every card */
+.dashhero>.xwr{position:absolute;z-index:2;top:20px;width:64px;height:82px;pointer-events:none;
+  background:linear-gradient(#c62828,#c62828) 50% 0/4px 14px no-repeat,var(--wreath) 50% 100%/64px 68px no-repeat;image-rendering:pixelated;
+  filter:drop-shadow(0 3px 4px rgba(0,0,0,.6));transform-origin:50% 0;animation:xsway 4s ease-in-out infinite}
+.dashhero>.xwr.l{left:6%}.dashhero>.xwr.r{right:6%;animation-delay:-2s}
+@keyframes xsway{50%{transform:rotate(3deg)}0%,100%{transform:rotate(-3deg)}}
+.dwrap.xmas .dbody>.card:not(.dashhero):after{content:'';position:absolute;z-index:3;top:-28px;right:16px;width:64px;height:68px;pointer-events:none;
+  background:var(--wreath) center/contain no-repeat;image-rendering:pixelated;filter:drop-shadow(0 2px 3px rgba(0,0,0,.55))}
+.dwrap.xmas .dbody>.card.advent:after{top:-32px;right:12px}
+@media (max-width:560px){.dashhero>.xwr{width:48px;height:64px;background-size:4px 12px,48px 51px;top:18px}.dashhero>.xwr.l{left:2%}.dashhero>.xwr.r{right:2%}
+  .dwrap.xmas .dbody>.card:not(.dashhero):after{width:48px;height:51px;top:-22px}}
 .xholly{position:absolute;right:10px;top:-14px;z-index:2;width:44px;height:30px;pointer-events:none;
   background:radial-gradient(circle at 22px 18px,#e53935 4px,transparent 5px),radial-gradient(circle at 28px 16px,#e53935 4px,transparent 5px),radial-gradient(circle at 25px 22px,#c62828 4px,transparent 5px),
     radial-gradient(ellipse 13px 6px at 11px 15px,#2e7d32 98%,transparent),radial-gradient(ellipse 13px 6px at 37px 13px,#2e7d32 98%,transparent)}
@@ -528,7 +539,7 @@ button.dashgo:active{transform:translateY(3px);box-shadow:0 1px 0 #0e1726}
 .dwrap.xmas .adoor.past{background:rgba(255,213,79,.1);border-color:#c9a227}
 .dwrap.xmas .agrand>div{border-color:#c9a227;background:rgba(255,213,79,.06)}
 @media (max-width:560px){.dashhero.dash-sleigh{min-height:440px;padding-bottom:160px}.xfly{top:52%}}
-@media (prefers-reduced-motion:reduce){.xsky .xl,.xfly,.xbob,.xlights i,.dwrap.xmas>.dbody:after{animation:none}.xfly{transform:translateX(30px)}}
+@media (prefers-reduced-motion:reduce){.dashhero>.xwr,.xsky .xl,.xfly,.xbob,.xlights i,.dwrap.xmas>.dbody:after{animation:none}.xfly{transform:translateX(30px)}}
 /* the two looks of the Dash, and a locked one */
 .dskins{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 10px}
 .dskins button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 6px;border:2px solid #0e1726;border-radius:10px;
@@ -5794,7 +5805,7 @@ function dashAdvent(A){
   const txt = A.on ? `Today's best run wins <b>${esc(A.dayPrize)}</b>${A.dayPlaces > 1 ? ` (top ${A.dayPlaces})` : ''}. The overall ranking adds up your best run of every day — after Christmas Eve the top ${A.grandPlaces} win: ${gp}. Play every day!`
     : A.done ? 'The calendar is done — thanks for flying! The winners are below.'
     : `From ${A.from} to ${A.to}: every door hides a Pixel Scrappy for the best run of that day — it unlocks on its day. The top ${A.grandPlaces} of the overall ranking (your daily bests added up) win: ${gp}. ${A.n > -14 ? `Only ${1 - A.n} day${1 - A.n === 1 ? '' : 's'} to go — practise now!` : 'Practise now!'}`;
-  return `<div class="card advent"><i class="xholly" aria-hidden="true"></i><h3 class="h3">${head}</h3><p class="mini" style="margin:0 0 10px">${txt}</p>${A.on ? todayCard : ''}<div class="adoors">${doors}</div>${grand}</div>`;
+  return `<div class="card advent"><h3 class="h3">${head}</h3><p class="mini" style="margin:0 0 10px">${txt}</p>${A.on ? todayCard : ''}<div class="adoors">${doors}</div>${grand}</div>`;
 }
 // "1 Nov" for a locked look
 const dashDate = day => new Date(day + 'T12:00:00Z').toLocaleDateString('en-GB', {day: 'numeric', month: 'short', timeZone: 'UTC'});
@@ -5831,13 +5842,42 @@ function dashSleighUrl(){
     return DASH.sleighUrl = c.toDataURL();
   } catch(e){ return ''; }
 }
+// a pixel-art Christmas wreath (32×34): fir ring with needle texture, snow on top, berries, gold baubles, a red bow
+function dashWreathUrl(){
+  if (DASH.wreathUrl) return DASH.wreathUrl;
+  try {
+    const W = 32, H = 34, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+    const px = (a, b, col) => { x.fillStyle = col; x.fillRect(a, b, 1, 1); };
+    const hash = (a, b) => ((a * 73856093) ^ (b * 19349663)) >>> 0;
+    const cx = 15.5, cy = 15.5;
+    for (let b = 0; b < 32; b++) for (let a = 0; a < W; a++){
+      const d = Math.hypot(a - cx, b - cy), h = hash(a, b) % 7;
+      if (d >= 6.2 && d < 7.2 || d >= 13.2 && d < 14.2) px(a, b, '#0b3014');
+      else if (d >= 7.2 && d < 13.2){
+        const lit = (a - cx) + (b - cy) < -4, edge = d > 12 || d < 8;
+        px(a, b, h === 0 ? '#7cc576' : h < 3 ? (lit ? '#4caf50' : '#2e7d32') : edge ? '#1b5e20' : lit ? '#388e3c' : '#256d2b');
+        if (b < cy - 6 && d > 10.5 && h < 3) px(a, b, h ? '#ffffff' : '#dbe9ff');   // snow on the top
+      }
+    }
+    // berries (2×2 with a shine) and gold baubles around the ring
+    for (const ang of [200, 235, 300, 340, 20, 150]){ const r = ang * Math.PI / 180, a = Math.round(cx + Math.cos(r) * 10.2), b = Math.round(cy + Math.sin(r) * 10.2);
+      x.fillStyle = '#7f0000'; x.fillRect(a - 1, b - 1, 3, 3); x.fillStyle = '#e53935'; x.fillRect(a - 1, b - 1, 2, 2); px(a - 1, b - 1, '#ffcdd2'); }
+    for (const ang of [265, 55, 120]){ const r = ang * Math.PI / 180, a = Math.round(cx + Math.cos(r) * 9.6), b = Math.round(cy + Math.sin(r) * 9.6);
+      x.fillStyle = '#b8860b'; x.fillRect(a - 1, b - 1, 3, 3); x.fillStyle = '#ffd54f'; x.fillRect(a - 1, b - 1, 2, 2); px(a - 1, b - 1, '#fff8e1'); }
+    // the bow at the bottom: two loops, a knot and two tails
+    const bow = ['.oo.......oo.', 'oRRo.....oRRo', 'oRrRo.o.oRrRo', 'oRRrRoKoRrRRo', '.oRRRoKoRRRo.', '..ooooKoooo..', '....oRoRo....', '...oRo.oRo...', '..oRo...oRo..', '..oo.....oo..'];
+    const bc = {o: '#6d0f0f', R: '#d32f2f', r: '#ff8a80', K: '#a31515'};
+    bow.forEach((row, j) => { for (let i = 0; i < row.length; i++) if (bc[row[i]]) px(9 + i, 23 + j, bc[row[i]]); });
+    return DASH.wreathUrl = c.toDataURL();
+  } catch(e){ return ''; }
+}
 const XMAS_BULBS = ['#ff5252', '#ffd54f', '#69f0ae', '#40c4ff', '#ff80ab'];
 function dashXmasHero(dog){
   const bulbs = Array.from({length: 26}, (_, i) => `<i style="--c:${XMAS_BULBS[i % 5]};--d:${(i % 3) * .5}s"></i>`).join('');
   const sl = dashSleighUrl();
   return `<div class="xsky" aria-hidden="true"><i class="xl xsk"></i><i class="xl xfar"></i><i class="xl xmid"></i>
       ${sl ? `<div class="xfly"><div class="xbob">${dog ? `<img class="xdog" src="${dog.img}" alt="">` : ''}<img class="xsl" src="${sl}" alt=""></div></div>` : ''}<i class="xshade"></i></div>
-    <div class="xlights" aria-hidden="true">${bulbs}</div><i class="dashsnow" aria-hidden="true"></i>`;
+    <div class="xlights" aria-hidden="true">${bulbs}</div>${dashWreathUrl() ? '<i class="xwr l" aria-hidden="true"></i><i class="xwr r" aria-hidden="true"></i>' : ''}<i class="dashsnow" aria-hidden="true"></i>`;
 }
 function dashView(){
   const th = dashTheme(), K = DASH_SKIN[th], me = dashPickDog(), sv = dashSave(), B = DASH.board && (DASH.board.skin || 'sleigh') === th ? DASH.board : null;
@@ -5849,7 +5889,7 @@ function dashView(){
   const overall = A && (A.on || A.done), open = dashSkinOpen(th), locked = !dashCanFly(th);
   const skins = `<div class="dskins">${['rocket', 'sleigh'].map(k => `<button data-dskin="${k}" class="${th === k ? 'on' : ''}${dashSkinOpen(k) ? '' : ' shut'}">
       <span>${DASH_SKIN[k].icon} ${DASH_SKIN[k].title}</span><small>${dashSkinOpen(k) ? 'open now' : '🔒 ' + dashDate(dashOpensOf(k))}</small></button>`).join('')}</div>`;
-  return `${skins}<div class="dwrap${locked ? ' locked' : ''}${th === 'sleigh' ? ' xmas' : ''}">${locked ? dashLock(th) : ''}<div class="dbody"${locked ? ' aria-hidden="true"' : ''}>
+  return `${skins}<div class="dwrap${locked ? ' locked' : ''}${th === 'sleigh' ? ' xmas' : ''}"${th === 'sleigh' && dashWreathUrl() ? ` style="--wreath:url(${dashWreathUrl()})"` : ''}>${locked ? dashLock(th) : ''}<div class="dbody"${locked ? ' aria-hidden="true"' : ''}>
     <div class="card dashhero dash-${th}">
       ${th === 'sleigh' ? dashXmasHero(me) : ''}
       <div class="dashtitle">${K.icon} SCRAPPY<br>${K.title}</div>

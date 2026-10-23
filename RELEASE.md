@@ -21,7 +21,8 @@ Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit 
 - **Sleigh Dash dressed for Christmas** (owner, 23 Oct): the hangar shows the game's painted winter plates as a slowly
   scrolling night town, your pilot flies past in the pixel sleigh, a string of blinking lights on top, snow falling over
   the whole page, snow-capped cards, a candy-cane frame + holly on the Advent calendar, future doors wrapped as red/green
-  presents with ribbons. Looks only (`dashXmasHero`, `.dwrap.xmas`); Rocket keeps its space look.
+  presents with ribbons, **pixel Christmas wreaths** (`dashWreathUrl`: fir ring, snow, berries, gold baubles, red bow) —
+  two swaying on ribbons in the hero, one on every card. Looks only (`dashXmasHero`, `.dwrap.xmas`); Rocket keeps its space look.
 - **Advent doors**: future doors = the prize Scrappy blurred behind a 🔒 (rarity shown); today's door = a wrapped gift
   box — tap it, the lid flies off and the Scrappy pops out (remembered per device, `ba_adv_open:<day>`); past doors show
   the Scrappy and the day's winner. Today's prize card appears after opening. **Overall prizes show place + rarity only**
