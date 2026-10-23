@@ -4,6 +4,22 @@ Changes collect here during the week and go live together when the new week star
 Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit flash, new /clip) — no Dash yet (no
 `dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
 
+## v38 — Scrappy Dash in new clothes (same package; Dash stays hidden until 30 Nov)
+- **Why**: owner, 23 Oct: the Dash pixel graphics look old-fashioned and lack detail (flat rectangles, no shading).
+- **Painted background plates** (`public/art/dash-<sleigh|rocket>-<sky|far|mid>.png`, 480 px wide, far/mid tile
+  sideways, parallax .06 / .2): sleigh = dithered night sky with aurora, stars and a shaded moon · jagged snowy alpine
+  range lit by the moon + pine forest · an old town with two churches, lit windows, snowy gables, fir trees with lights;
+  rocket = nebula, spiral galaxy, ringed planet · lunar ridges and craters · moon base (domes, habitats, masts, solar
+  fields). Painted by `tools/dash/plates.mjs` (seeded, reproducible); the owner can swap in own art of the same size.
+- **Houses drawn once, in detail** (`dashHouseArt`): brick / planks / plaster / half-timbered walls, shading away from
+  the moon, cornice + lumpy snow cover, icicles, garlands, framed windows with snowy sills and shutters, front doors with
+  a lamp and wreath, brick chimneys with stone caps; moon base: metal panels, rivets, hazard band, glowing portholes,
+  railings, vent hatches, lattice towers. Window life, light strings, smoke and the target arrow stay animated.
+- **Pixel sprites** (`dashPx`): sleigh with gold runners + gift sack, rocket, gift, candy cane, bone, shield star,
+  crow (2 frames), snow owl (2 frames), asteroid; live moon/earth shaded. Looks only — the simulation is unchanged
+  (server replays still match: `tools/test/dash.mjs`).
+- Offline build (`tools/dash/standalone.mjs`) inlines the plates.
+
 ## v37 — fairer competition, also for Sun 25 → Mon 26 Oct (same package, `bark-arena-game-v37-komplett.zip` replaces v36)
 - **Why** (owner, 23 Oct: "the 1st has 100 % wins, the 2nd lost one fight — too much"): the backup of 19 Oct shows the
   top two at 124–8 and 125–6, each with one bond-10 dog (151–5, 227–5), most fights over before round 10. A simulation of

@@ -299,6 +299,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
   Board `advent.days[].prize` (plan) / `.won` {name, score, token, status, key, place}, `grandPrizes`, `grandWon`; client doors show the
   prize image (`dashImgUrl` → `/public/dogimg`, future ones blurred), `todayCard`, `.agrand`; prize cards also in the Dash tab.
   Website `dashPrizes` + `claimPrize` (modal, polls `/public/dash/claim?uuid=`). `treasuryFree` = issuer pieces no prize used yet.
+- **Dash art (v38)**: painted plates `public/art/dash-<skin>-<sky|far|mid>.png` (`tools/dash/plates.mjs`; `dashArt`, `dashBack` with fallback `dashBackOld`, `dashTile` parallax .06/.2), houses pre-drawn per house `dashHouseArt` → `h.art` (live: `dashWindow`, lights, smoke, arrow in `dashFront`), sprites as pixel maps `dashPx` (`SPR_SLEIGH`, `SPR_ROCKET`, `SPR_GIFT`, `SPR_CANE`, `SPR_BONE`, `SPR_STAR`, `SPR_CROW`, `SPR_OWL`, `SPR_ROCK`). Visual only, never in the `//@dash` sim.
 - **Standalone Dash (22 Oct)**: `node tools/dash/standalone.mjs <out.html>` builds an offline one-file Scrappy Dash (the page's CSS, `DATA` demo dogs, `S`, the `//@dash` sim and the Dash UI cut by markers + stubs; own hangar `menu()` with skin switch, best score in `localStorage`). No server, no rankings.
 - **Bond travels with the NFT (fix 12 Oct)**: blob `bonds` {nftId: {lvl, xp, w, l, path, by, at}} — `bondRecord` from `savePut`
   (only dogs the saver holds and is the newest holder of, by holdings `updated`; a new holder's lower save doesn't overwrite

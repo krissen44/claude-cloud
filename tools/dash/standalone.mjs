@@ -16,6 +16,10 @@ const signIn = "'<p class=\"mini2\">Sign in to put your runs on the daily rankin
 const ui = cut("/* ============================ Scrappy Dash", "/* ============================ Bark Arena TV")
   .replace(signIn, "'<p class=\"mini2\">Offline version · rankings and prizes: game.scrappyxrp.fun</p>'");
 if (!ui.includes("Offline version")) throw new Error("sign-in line not found");
+// the painted Dash plates, inlined so the single file works offline
+const artDir = new URL("../../public/art/", import.meta.url);
+const inline = Object.fromEntries(fs.readdirSync(artDir).filter(f => /^dash-.*\.png$/.test(f))
+  .map(f => [f.replace(/\.png$/, ""), "data:image/png;base64," + fs.readFileSync(new URL(f, artDir)).toString("base64")]));
 const out = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -60,6 +64,7 @@ const SAVE = (() => {
   return {get data(){ return d; }, today, save(){ lsSet('dash_solo', d); }, bondXp(){ return []; }, dog(){ return {lvl: 1, xp: 0, w: 0, l: 0}; }};
 })();
 ${sim}
+const DASH_ART_INLINE = ${JSON.stringify(inline)};
 ${ui}
 // ---- the standalone hangar (instead of the game's Dash tab) ----
 let SOLO_SKIN = lsGet('dash_skin') || (Date.now() < DASH_ROCKET_FROM ? 'sleigh' : 'rocket');
