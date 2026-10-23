@@ -91,5 +91,13 @@ menu();
 </script>
 </body></html>
 `;
-fs.writeFileSync(process.argv[2] || "scrappy-dash.html", out);
-console.log("wrote", process.argv[2] || "scrappy-dash.html", out.length, "bytes");
+// --artifact: no document skeleton (the host wraps the page), the dark look set from script, a 16 px side gutter
+const art = process.argv.includes("--artifact");
+const page = !art ? out : out
+  .replace(/^<!doctype html>\s*<html[^>]*><head><meta charset="utf-8">\s*<meta name="viewport"[^>]*>\s*/i, "")
+  .replace("<title>Scrappy Dash</title>", '<title>Scrappy Dash</title>\n<meta name="claude:viewport-fit-sides" content="cover">')
+  .replace("</style>\n</head>\n<body class=\"home\">", ":root{color-scheme:dark}\nhtml,body{background:#0e1726}\n.solo{padding-left:max(16px,env(safe-area-inset-left,0px))!important;padding-right:max(16px,env(safe-area-inset-right,0px))!important}\n</style>\n<script>document.body.classList.add('home')</script>")
+  .replace(/<\/body><\/html>\s*$/, "");
+const file = process.argv.slice(2).find(a => !a.startsWith("--")) || "scrappy-dash.html";
+fs.writeFileSync(file, page);
+console.log("wrote", file, page.length, "bytes");
