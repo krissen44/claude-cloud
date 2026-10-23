@@ -21,6 +21,13 @@ Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit 
   uses the verified streak (`fair.cur`) and tells the page the heat (`/fight/start` → `heat`), so they never disagree.
 - **Replays** keep the rules they were fought with (`rules`, `E.heat`); fights recorded before play with the old rules
   on TV/Shorts (`repRules`).
+- **Cleaner dog pictures** (owner's screenshot 23 Oct: a dog with Matrix Rain on the gold-ray background kept yellow
+  wedges): the cut-out flood from the border can't reach background pieces that streaks or a grid cut off, and the body
+  outline kept a 1–3 px fringe of background. New palette sweep in `cutout()`: every pixel outside the body's core
+  (`silCore` = outline shrunk by 3 px) with exactly a colour of the removed background — and not a colour the body core
+  uses — goes too. Check `tools/test/cutout.mjs` (demo dogs on solid / gold rays / rays + rain / bone pattern / night
+  sky): background left over 1,383 → 0 (solid), 1,788 → 124 (rays), 3,171 → 934 (rays + rain, mostly the rain itself),
+  4,256 → 0 (bones); no dog pixels lost. Old cut-outs in the browser cache (kennel, rival pool) are dropped once (`ba_cutv`).
 - Website guide: recharge + guard halves, hot streak.
 - Tests: `tools/test/v37.mjs` (recharge, half damage, referee heat, page + referee agree, old replays) + the suite.
 
