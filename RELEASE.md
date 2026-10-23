@@ -28,7 +28,9 @@ Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit 
   uses — goes too. Check `tools/test/cutout.mjs` (demo dogs on solid / gold rays / rays + rain / bone pattern / night
   sky): background left over 1,383 → 0 (solid), 1,788 → 124 (rays), 3,171 → 934 (rays + rain, mostly the rain itself),
   4,256 → 0 (bones); no dog pixels lost. Old cut-outs in the browser cache (kennel, rival pool) are dropped once (`ba_cutv`).
-- Website guide: recharge + guard halves, hot streak.
+- **Bell decisions explained** (owner, 23 Oct: "how did 10/18 beat 11/21?"): the HUD shows health as `10/18 · 56%`, and a
+  fight that goes the distance says on the result card "🔔 Decided at the bell on health left: 56 % vs 52 %" (`hpText`, `bellLine`).
+- Website guide: recharge + guard halves, hot streak. Bell rule spelled out (share of max health).
 - Tests: `tools/test/v37.mjs` (recharge, half damage, referee heat, page + referee agree, old replays) + the suite.
 
 ## v36 — also for Sun 25 → Mon 26 Oct: one package with v34 + v35 + v36 → `bark-arena-game-v36-komplett.zip` (replaces the v35 ZIP) + `scrappyxrp-website-v36.zip`

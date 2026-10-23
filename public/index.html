@@ -3933,6 +3933,14 @@ function hitFlash(el, ms){
   setTimeout(kill, ms + 100);
   if (w.animate) w.animate([{opacity: .95}, {opacity: .95, offset: .45}, {opacity: 0}], {duration: ms, easing: 'linear'});
 }
+// "10/18 · 56%" — at the bell the higher share of health wins, not the higher number
+const hpPct = f => Math.round(100 * Math.max(0, f.hp) / f.maxHp);
+const hpText = f => `${Math.max(0, f.hp)}/${f.maxHp} · ${hpPct(f)}%`;
+// the result card: a fight that went the distance says how it was decided
+function bellLine(){
+  if (P.hp <= 0 || E.hp <= 0) return '';
+  return `<div class="mini">🔔 Decided at the bell on health left: <b>${hpPct(P)} %</b> vs <b>${hpPct(E)} %</b></div>`;
+}
 function setBars(){
   const st = document.querySelector('.stage'); if (!st) return;
   [['l',P],['r',E]].forEach(([s,f])=>{
@@ -3941,7 +3949,7 @@ function setBars(){
     bar.classList.toggle('low', pct<=30); bar.classList.toggle('mid', pct>30 && pct<=60);
     bar.querySelector('i').style.width = pct+'%';
     bar.querySelector('u').style.width = pct+'%';
-    st.querySelector('.hud.'+s+' .hpn').textContent = f.hp+'/'+f.maxHp;
+    st.querySelector('.hud.'+s+' .hpn').textContent = hpText(f);
     st.querySelector('.hud.'+s+' .pips').textContent = '◆'.repeat(Math.min(f.energy,9));
   });
 }
@@ -4095,7 +4103,7 @@ function hud(f, s){
     <div class="nm"><span>${clubMode && f===myF() ? '<b style="color:#ffd95e">YOU · </b>' : ''}${esc(f.def.name)}</span><span class="rar">${esc(f.def.rarity).toUpperCase()}</span></div>
     <div class="bar ${pct<=30?'low':(pct<=60?'mid':'')}"><u style="width:${pct}%"></u><i style="width:${pct}%"></i></div>
     <div class="pips">${'◆'.repeat(Math.min(f.energy,9))}</div>
-    <div class="nm" style="margin-top:2px"><span class="hpn">${f.hp}/${f.maxHp}</span></div>
+    <div class="nm" style="margin-top:2px"><span class="hpn">${hpText(f)}</span></div>
   </div>`;
 }
 function flowers(){
@@ -4187,7 +4195,7 @@ function renderControls(){
   if (over && arenaRun){
     const r = arenaRun;
     c.innerHTML = `<div class="card res">
-      <div class="big">${verdict()}</div>
+      <div class="big">${verdict()}</div>${bellLine()}
       <div class="mini">🏟️ Arena · ${r.done ? (r.won===3 ? '<b>CHAMPION</b>' : 'out after '+r.won+' win'+(r.won===1?'':'s')) : 'round '+(r.round+1)+' of 3 next'}</div>
       <div style="text-align:left;margin:10px auto;max-width:420px">${arenaLines(r.lines)}</div>
       ${r.done ? `<div class="mini">+${r.xp} XP shared across your squad — full XP, because you fought it live.</div>` : ''}
@@ -4208,7 +4216,7 @@ function renderControls(){
       ? lastGain.levels.map(l => `<div class="up">BOND LEVEL ${l}${BOND.alt[l] ? ' — pick a bond path in your kennel 🧭' : BOND.perks[l] ? ' — ' + esc(BOND.perks[l].txt) : ''}</div>`).join('')
       : '';
     c.innerHTML = `<div class="card res">
-      <div class="big">${v}</div>
+      <div class="big">${v}</div>${bellLine()}
       <div class="mini">${esc(P.def.name)} · <span class="lvl">BOND ${g.lvl}</span> &nbsp;${isRanked ? '+'+(lastGain?lastGain.xp:0)+' XP' : 'casual — no XP'}</div>
       <div class="xp"><i style="width:${pct}%"></i></div>
       <div class="mini">${g.lvl>=BOND.maxLevel ? 'Bond maxed' : g.xp+' / '+need+' to the next level'} · ${g.w}W ${g.l}L${SAVE.data.streak>1?' · '+SAVE.data.streak+' win streak 🔥':''}</div>
