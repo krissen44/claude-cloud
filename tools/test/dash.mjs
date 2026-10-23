@@ -108,7 +108,7 @@ ok(await p.locator(".dashhero").count() === 1 && await p.locator(".adoor").count
 ok(await p.locator(".adoor.fut .alock").count() === 21 && await p.locator(".adoor.fut img.hid").count() === 3 && await p.locator(".adoor.past img:not(.hid)").count() === 2, "future doors: blurred prize behind a lock, past ones in full");
 ok(await p.locator(".adoor.today.box .gbox").count() === 1 && await p.locator(".aprize.shut").count() === 1 && await p.locator(".adoor.today img").count() === 0, "today's door is a closed gift box, the prize card waits");
 ok(await p.locator(".agrand>div").count() === 5 && await p.locator(".agrand img").count() === 0 && !(await p.locator(".agrand").innerText()).includes("#"), "overall prizes show place + rarity only");
-ok(await p.locator(".dskins button").count() === 2 && await p.locator(".dashhero.locked").count() === 0, "both looks to pick, both open");
+ok(await p.locator(".dskins button").count() === 2 && await p.locator(".dwrap.locked").count() === 0, "both looks to pick, both open");
 await p.screenshot({path: S + "/shots/dash-hangar-closed.png", fullPage: true});
 await p.click(".adoor.today.box"); await p.waitForTimeout(900);
 ok(await p.locator(".adoor.today.reveal img").count() === 1 && await p.locator(".aprize:not(.shut)").count() === 1 && await p.evaluate(() => !!lsGet("ba_adv_open:" + DASH.board.day)), "tapping the box opens it: prize revealed and remembered");

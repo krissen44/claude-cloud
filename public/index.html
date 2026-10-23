@@ -487,12 +487,21 @@ button.dashgo:active{transform:translateY(3px);box-shadow:0 1px 0 #0e1726}
 .dskins button small{font-family:inherit;font-size:7.5px;opacity:.75;letter-spacing:.3px}
 .dskins button.on{background:#1b8ce3;box-shadow:0 3px 0 #0e1726}
 .dskins button.shut:not(.on){opacity:.75}
-.dashhero.locked{min-height:300px}
-.dashhero.locked>*:not(.dlock){filter:blur(7px);pointer-events:none;user-select:none}
-.dashhero>.dlock{position:absolute;inset:0;z-index:3;display:flex;align-items:center;justify-content:center;padding:14px;background:rgba(8,12,28,.45)}
-.dlockin{max-width:330px}
+/* a locked look: the whole Dash page blurred, the lock + countdown ticker stay in view while scrolling */
+.dwrap{position:relative}
+.dwrap.locked{min-height:620px}
+.dwrap.locked>.dbody{filter:blur(9px) saturate(.8);pointer-events:none;user-select:none}
+.dwrap>.dlock{position:absolute;inset:0;z-index:5;background:rgba(8,12,28,.35);border-radius:12px}
+.dlockin{position:sticky;top:12vh;margin:40px auto 0;max-width:420px;padding:22px 16px;text-align:center;color:#fff;
+  background:rgba(14,23,38,.88);border:2px solid #1b8ce3;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.dtick{display:flex;justify-content:center;align-items:flex-start;gap:4px;margin:4px 0 16px;font-family:'Press Start 2P',monospace}
+.dtick span{display:flex;flex-direction:column;align-items:center;min-width:62px;padding:10px 4px 7px;background:#0b1634;border:2px solid #31435c;border-radius:9px}
+.dtick b{font-size:clamp(16px,5vw,24px);color:#ffd54f;text-shadow:2px 2px 0 rgba(0,0,0,.5)}
+.dtick small{font-size:7px;margin-top:7px;opacity:.7;letter-spacing:1px}
+.dtick i{font-style:normal;font-size:18px;padding-top:14px;color:#ffd54f;opacity:.7}
+@media (max-width:400px){.dtick span{min-width:52px}.dtick i{font-size:12px}}
 .dlockico{font-size:30px;margin-bottom:6px}
-.dlocktx{margin:8px 0 12px;font-size:13px}
+.dlocktx{margin:8px 0 10px;font-size:13px}
 .dcode{display:flex;gap:6px;justify-content:center}
 .dcode input{width:150px;padding:8px 10px;border-radius:8px;border:2px solid #0e1726;font-size:14px;background:#fff;color:#0e1726}
 .dcode button{padding:8px 10px;border-radius:8px;border:2px solid #0e1726;background:#ffd54f;color:#0e1726;font-weight:700;cursor:pointer}
@@ -5737,17 +5746,26 @@ function dashAdvent(A){
     : `From ${A.from} to ${A.to}: every door hides a Pixel Scrappy for the best run of that day — it unlocks on its day. The top ${A.grandPlaces} of the overall ranking (your daily bests added up) win: ${gp}. ${A.n > -14 ? `Only ${1 - A.n} day${1 - A.n === 1 ? '' : 's'} to go — practise now!` : 'Practise now!'}`;
   return `<div class="card advent"><h3 class="h3">${head}</h3><p class="mini" style="margin:0 0 10px">${txt}</p>${A.on ? todayCard : ''}<div class="adoors">${doors}</div>${grand}</div>`;
 }
-// "1 Nov" and "in 8 days" / "in 5 h" for a locked look
+// "1 Nov" for a locked look
 const dashDate = day => new Date(day + 'T12:00:00Z').toLocaleDateString('en-GB', {day: 'numeric', month: 'short', timeZone: 'UTC'});
-function dashUntil(day){
-  const ms = Date.parse(day + 'T00:00:00Z') - Date.now(), h = Math.ceil(ms / 36e5);
-  return ms <= 0 ? 'now' : h <= 48 ? `in ${h} h` : `in ${Math.ceil(ms / 864e5)} days`;
+// the countdown ticker over a locked look: days · hours · minutes · seconds, ticking every second
+function dashTickHtml(at){
+  const ms = Math.max(0, at - Date.now()), t = Math.floor(ms / 1000), p = n => String(n).padStart(2, '0');
+  return [[Math.floor(t / 86400), 'DAYS'], [p(Math.floor(t / 3600) % 24), 'HRS'], [p(Math.floor(t / 60) % 60), 'MIN'], [p(t % 60), 'SEC']]
+    .map(([v, l]) => `<span><b>${v}</b><small>${l}</small></span>`).join('<i>:</i>');
 }
+setInterval(() => {
+  const el = document.getElementById('dashTick'); if (!el || document.hidden) return;
+  const at = +el.dataset.at;
+  if (Date.now() >= at){ if (tab === 'dash' && !DASH.g){ dashLoad(); menu(); } return; }   // opening time: unlock the page
+  el.innerHTML = dashTickHtml(at);
+}, 1000);
 function dashLock(th){
-  const K = DASH_SKIN[th], day = dashOpensOf(th);
+  const K = DASH_SKIN[th], day = dashOpensOf(th), at = Date.parse(day + 'T00:00:00Z');
   return `<div class="dlock"><div class="dlockin"><div class="dlockico">🔒</div>
-      <div class="dashtitle sm">${K.icon} ${K.title}</div>
-      <p class="dlocktx">Opens <b>${dashDate(day)}</b> · ${dashUntil(day)}</p>
+      <div class="dashtitle">${K.icon} ${K.title}</div>
+      <p class="dlocktx">Opens <b>${dashDate(day)}</b> · 00:00 UTC</p>
+      <div class="dtick" id="dashTick" data-at="${at}" role="timer" aria-label="Time until ${K.title} opens">${dashTickHtml(at)}</div>
       <form class="dcode" id="dashCodeF"><input id="dashCode" type="password" placeholder="Tester code" autocomplete="off" maxlength="40" aria-label="Tester code"><button type="submit">🧪 Test</button></form>
       <p class="dcodemsg" id="dashCodeMsg">Testers: enter your code to fly it early. Test runs don't count.</p></div></div>`;
 }
@@ -5761,7 +5779,8 @@ function dashView(){
   const overall = A && (A.on || A.done), open = dashSkinOpen(th), locked = !dashCanFly(th);
   const skins = `<div class="dskins">${['rocket', 'sleigh'].map(k => `<button data-dskin="${k}" class="${th === k ? 'on' : ''}${dashSkinOpen(k) ? '' : ' shut'}">
       <span>${DASH_SKIN[k].icon} ${DASH_SKIN[k].title}</span><small>${dashSkinOpen(k) ? 'open now' : '🔒 ' + dashDate(dashOpensOf(k))}</small></button>`).join('')}</div>`;
-  return `${skins}<div class="card dashhero dash-${th}${locked ? ' locked' : ''}">
+  return `${skins}<div class="dwrap${locked ? ' locked' : ''}">${locked ? dashLock(th) : ''}<div class="dbody"${locked ? ' aria-hidden="true"' : ''}>
+    <div class="card dashhero dash-${th}">
       ${th === 'sleigh' ? '<i class="dashsnow" aria-hidden="true"></i><i class="dashmoon" aria-hidden="true"></i>' : ''}
       <div class="dashtitle">${K.icon} SCRAPPY<br>${K.title}</div>
       <p class="dashsub">Fly ${K.where}. <b>Hold</b> to climb · let go to sink · <b>quick tap</b> drops a ${K.ammo}.</p>
@@ -5769,7 +5788,6 @@ function dashView(){
       ${!open && !locked ? `<p class="dtest">🧪 TEST MODE · opens ${dashDate(dashOpensOf(th))} · runs don't count <button id="dashTestOff" class="sm">leave</button></p>` : ''}
       <button id="dashGo" class="dashgo"${locked ? ' disabled tabindex="-1"' : ''}>▶ PLAY</button>
       <p class="dashsub" style="margin-top:10px">${tm && tm.best ? `Today: <b>${tm.best.toLocaleString()}</b> · #${tm.rank}` : `Best on this device: <b>${sv.best.toLocaleString()}</b>`}${om && om.total ? ` · Advent total <b>${om.total.toLocaleString()}</b> (#${om.rank})` : ''} · Free, no tickets — play as often as you like.</p>
-      ${locked ? dashLock(th) : ''}
     </div>
     ${PRIZE.list.length || PRIZE.done ? prizeCards() : ''}
     ${dashAdvent(A)}
@@ -5780,7 +5798,8 @@ function dashView(){
     <div class="card"><h3 class="h3">PILOT</h3>
       <div class="pick tiny">${pick}</div>
       <p class="mini" style="margin:8px 0 0"><b>Scrappy bonus:</b> fly your own Pixel Scrappy and every run scores a little more, by its rarity — Common +5 %, Uncommon +6 %, Rare +7 %, Epic +8 %, Legendary/Mythic +10 %. Small on purpose: a better run still beats a rarer dog. Borrowed, starter and demo dogs fly without it.</p>
-      <p class="mini" style="margin:8px 0 0">${post ? `Each run gives your dog a little bond XP (score ÷ 150, up to ${DASH_XP_RUN} a run, ${DASH_XP_DAY} a day — ${Math.max(0, DASH_XP_DAY - sv.xp)} left today). Borrowed dogs fly for fun. Every run is replayed on the server from your taps, so the rankings are fair.` : 'Sign in with your wallet to enter the rankings and earn bond XP. The demo dogs fly for fun.'}</p></div>`;
+      <p class="mini" style="margin:8px 0 0">${post ? `Each run gives your dog a little bond XP (score ÷ 150, up to ${DASH_XP_RUN} a run, ${DASH_XP_DAY} a day — ${Math.max(0, DASH_XP_DAY - sv.xp)} left today). Borrowed dogs fly for fun. Every run is replayed on the server from your taps, so the rankings are fair.` : 'Sign in with your wallet to enter the rankings and earn bond XP. The demo dogs fly for fun.'}</p></div>
+    </div></div>`;
 }
 function dashWire(){
   app.querySelectorAll('[data-dashdog]').forEach(b => b.onclick = () => { S.click(); DASH.dog = b.dataset.dashdog; lsSet('ba_dashdog', DASH.dog); menu(); });

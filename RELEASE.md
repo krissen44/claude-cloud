@@ -10,7 +10,9 @@ Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit 
   Rocket on **1 Nov**, Sleigh on **1 Dec** — with a tester code field on top.
 - **Game**: the Dash tab is always there now (replaces the "hidden until 30 Nov" gate). Two buttons pick the look
   (`DASH.skin`, `ba_dashskin`); a look that isn't open yet shows its hangar blurred with a lock, the opening day + countdown
-  and a **tester code** field. With the right code (checked by `/api/public/dash/code`, 8 wrong tries per address and hour)
+  and a **tester code** field — owner, 23 Oct: **the whole Dash page is blurred** (hangar, calendar, boards, pilots) under a
+  lock panel that stays in view while scrolling, with a **live countdown ticker** (days · hrs · min · sec, `dashTickHtml`,
+  `#dashTick`); at zero the page unlocks by itself. With the right code (checked by `/api/public/dash/code`, 8 wrong tries per address and hour)
   the page shows "🧪 TEST MODE" and you can fly it; the server replays test runs but **never books them** (no ranking, no
   bond XP). Team wallets may test without a code. Both looks share one board (same game, same rules).
 - **Advent doors**: future doors = the prize Scrappy blurred behind a 🔒 (rarity shown); today's door = a wrapped gift

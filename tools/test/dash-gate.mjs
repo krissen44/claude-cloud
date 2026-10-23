@@ -44,19 +44,21 @@ await p.goto(U + "/dash"); await p.waitForFunction(() => OWNED && OWNED.length &
 ok(await p.evaluate(() => tab) === "dash" && await p.locator('.tabs [data-t="dash"]').count() === 1, "the Dash tab is there, /dash opens it");
 ok(await p.locator(".dskins button").count() === 2 && await p.locator(".dskins button.shut").count() === (before ? 2 : 1), "two looks to pick, locked ones marked");
 await p.click('[data-dskin="sleigh"]');
-ok(await p.locator(".dashhero.locked .dlock").isVisible() && await p.locator("#dashGo").isDisabled() && (await p.locator(".dlock").innerText()).includes("1 Dec"), "sleigh: blurred with a lock, opens 1 Dec, no play");
+ok(await p.locator(".dwrap.locked .dlock").isVisible() && await p.locator(".dwrap.locked .dbody .adoors").count() === 1 && await p.locator("#dashGo").isDisabled() && (await p.locator(".dlock").innerText()).includes("1 Dec"), "sleigh: the whole page blurred with a lock, opens 1 Dec, no play");
+{ const a = await p.locator("#dashTick").innerText(); await p.waitForTimeout(1300); const b2 = await p.locator("#dashTick").innerText();
+  ok(a !== b2 && /DAYS/.test(a), "the countdown ticks: " + a.replace(/\s+/g, " ") + " → " + b2.replace(/\s+/g, " ")); }
 await p.screenshot({path: S + "/shots/dash-locked-sleigh.png", fullPage: true});
 await p.fill("#dashCode", "wrong"); await p.click(".dcode button"); await p.waitForTimeout(500);
 ok((await p.locator("#dashCodeMsg").innerText()).includes("Wrong"), "wrong code → message");
 await p.fill("#dashCode", CODE); await p.click(".dcode button"); await p.waitForTimeout(600);
-ok(await p.locator(".dashhero.locked").count() === 0 && await p.locator(".dtest").isVisible() && await p.locator("#dashGo").isEnabled(), "right code → test mode, PLAY enabled");
+ok(await p.locator(".dwrap.locked").count() === 0 && await p.locator(".dtest").isVisible() && await p.locator("#dashGo").isEnabled(), "right code → test mode, PLAY enabled");
 await p.screenshot({path: S + "/shots/dash-testmode.png", fullPage: true});
 await p.click("#dashGo"); await p.waitForFunction(() => DASH.g && DASH.g.runId && DASH.g.test, null, {timeout: 10000});
 ok(true, "a test run starts with a server seed");
 await p.evaluate(() => dashQuit()); await p.click("#dashTestOff"); await p.waitForTimeout(300);
-ok(await p.locator(".dashhero.locked").count() === 1, "leaving test mode locks it again");
+ok(await p.locator(".dwrap.locked").count() === 1, "leaving test mode locks it again");
 await p.click('[data-dskin="rocket"]');
-ok(before ? (await p.locator(".dlock").innerText()).includes("1 Nov") : await p.locator(".dashhero.locked").count() === 0, "rocket: locked until 1 Nov");
+ok(before ? (await p.locator(".dlock").innerText()).includes("1 Nov") : await p.locator(".dwrap.locked").count() === 0, "rocket: locked until 1 Nov");
 await p.setViewportSize({width: 390, height: 844}); await p.screenshot({path: S + "/shots/dash-locked-rocket-phone.png", fullPage: true});
 const w = await br.newPage(); await w.route(u => !u.href.startsWith("file:"), r => r.abort());
 await w.goto("file://" + new URL("../../website/barkarena/index.html", import.meta.url).pathname); await w.waitForTimeout(500);
