@@ -996,12 +996,34 @@ async function bossPublic(env, account) {
    Advent Dash: DASH_ADVENT (default 2026-12-01) + 24 days — a prize for the best run of each day, and the overall
    ranking (the daily bests added up) after the 24th. Finished days/the season are frozen into results
    `dash-<day>` / `dash-grand-<from>` and sent like the weekly prizes (Xaman offer from the treasury). */
-const DASH_ROCKET_FROM = Date.parse("2026-12-27T00:00:00Z");
 const DASH_RATE = 260, DASH_SLACK = 500;            // fallback check without the replay engine (Cloudflare path)
 const DASH_RUN_TTL = 2 * 3600;                      // a run id is good for 2 hours
 const DASH_RUNS = new Map();                        // run ids on Node (in memory); the Cloudflare path uses KV
 const dashKV = env => env.KV && !env.STORE ? env.KV : null;
-const dashTheme = env => ["sleigh", "rocket"].includes(env.DASH_THEME) ? env.DASH_THEME : (Date.now() < DASH_ROCKET_FROM ? "sleigh" : "rocket");
+/* Two looks of the same game, each with its own opening day (owner, 23 Oct): Rocket Dash from 1 Nov 2026
+   (env DASH_OPEN_ROCKET), Sleigh Dash from the Advent start (DASH_OPEN_SLEIGH, default DASH_ADVENT = 1 Dec).
+   Both share one board — the simulation is the same. Before a skin opens, a tester with DASH_TEST_CODE (or a team
+   wallet) can fly it: the run is replayed but never booked. */
+const dashDay = (v, d) => /^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : d;
+const dashOpens = env => ({rocket: dashDay(env.DASH_OPEN_ROCKET, "2026-11-01"), sleigh: dashDay(env.DASH_OPEN_SLEIGH, dashAdvent(env).from)});
+const dashIsOpen = (env, skin) => Date.now() >= Date.parse(dashOpens(env)[skin] + "T00:00:00Z");
+// the look a new visitor sees first: DASH_THEME if set, else the newest skin that is open (sleigh in December)
+const dashTheme = env => ["sleigh", "rocket"].includes(env.DASH_THEME) ? env.DASH_THEME : dashIsOpen(env, "sleigh") ? "sleigh" : "rocket";
+function dashCodeOk(env, code) {
+  const want = String(env.DASH_TEST_CODE || ""), got = String(code || "");
+  if (want.length < 4 || got.length !== want.length) return false;
+  let d = 0; for (let i = 0; i < want.length; i++) d |= want.charCodeAt(i) ^ got.charCodeAt(i);
+  return d === 0;
+}
+// a tester's code check from the page (open, no wallet needed); 8 wrong tries per address and hour
+async function dashCode(env, req, b) {
+  const ip = (req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "?").split(",")[0].trim();
+  const k = "dashcode:" + ip, n = env.KV ? +((await env.KV.get(k)) || 0) : 0;
+  if (n >= 8) return json({ok: false, error: "slow_down"}, 429);
+  if (dashCodeOk(env, b.code)) return json({ok: true, opens: dashOpens(env)});
+  if (env.KV) await env.KV.put(k, String(n + 1), {expirationTtl: 3600});
+  return json({ok: false, error: "bad_code"}, 403);
+}
 const dayAdd = (d, k) => new Date(Date.parse(d + "T12:00:00Z") + k * 864e5).toISOString().slice(0, 10);
 function dashAdvent(env) {
   const from = /^\d{4}-\d{2}-\d{2}$/.test(env.DASH_ADVENT || "") ? env.DASH_ADVENT : "2026-12-01";
@@ -1043,14 +1065,17 @@ const dashDog = d => {
   const token = Number.isInteger(d.token) && d.token > 0 && d.token <= 5000 ? d.token : null;
   return name || token ? {name, token} : null;
 };
-// Dash opens on 30 Nov 2026 (env DASH_OPEN = another day); before that only team wallets can play (testing)
-const dashOpenAt = env => Date.parse((env.DASH_OPEN || "2026-11-30") + "T00:00:00Z");
 async function dashStart(env, account, b) {
-  if (Date.now() < dashOpenAt(env) && !isTeam(env, account)) return json({error: "not_open", opens: new Date(dashOpenAt(env)).toISOString().slice(0, 10)}, 403);
+  const skin = ["sleigh", "rocket"].includes(b.skin) ? b.skin : dashTheme(env);
+  let test = false;
+  if (!dashIsOpen(env, skin)) {
+    if (!dashCodeOk(env, b.code) && !isTeam(env, account)) return json({error: "not_open", skin, opens: dashOpens(env)[skin]}, 403);
+    test = true;   // before the opening: replayed, never booked
+  }
   const id = rid(), seed = crypto.getRandomValues(new Uint32Array(1))[0];
   const {bonus, rarity} = await dashBonusOf(env, account, b.dogId);
-  await dashRunPut(env, id, {a: account, at: Date.now(), dog: dashDog(b.dog), seed, bonus});
-  return json({id, seed, bonus, rarity: rarity || null, theme: dashTheme(env)});
+  await dashRunPut(env, id, {a: account, at: Date.now(), dog: dashDog(b.dog), seed, bonus, skin, ...(test ? {test: true} : {})});
+  return json({id, seed, bonus, rarity: rarity || null, theme: skin, ...(test ? {test: true} : {})});
 }
 // the player's inputs: [Δtick, code, …] (code 1 press, 0 release, 2 drop) → absolute [tick, code, …]
 function dashInputs(d) {
@@ -1092,6 +1117,7 @@ async function dashEnd(env, account, b) {
     if (!(ms >= 1000) || ms > elapsed + 3000) return json({error: "bad_time"}, 400);
     if (!(score >= 0) || score > DASH_RATE * ms / 1000 + DASH_SLACK) return json({error: "bad_score"}, 400);
   }
+  if (run.test) return json({ok: true, test: true, score, raw: Math.floor(+b.score || 0), bonus: run.bonus || 0});
   const day = new Date(run.at).toISOString().slice(0, 10), A = dashAdvent(env);
   const d = await dashBook(env, "dashday:" + day, account, score, run.dog);
   await dashBook(env, "dash:" + weekOf(new Date(run.at)), account, score, run.dog);
@@ -1120,14 +1146,15 @@ const dashRows = (env, names, account, list, k, n) => list.slice(0, n).map(([a, 
 async function dashBoard(env, account) {
   const st = storeOf(env), names = await st.profiles(), day = today(), yday = dayAdd(day, -1), A = dashAdvent(env);
   const m = (await st.blobGet("dashday:" + day)) || {}, y = (await st.blobGet("dashday:" + yday)) || {}, w = (await st.blobGet("dash:" + weekOf())) || {};
-  const out = {theme: dashTheme(env), day,
+  const out = {theme: dashTheme(env), opens: dashOpens(env), day,
     today: {top: dashRows(env, names, account, dashSort(m, "best"), "best", 10), players: Object.keys(m).length},
     yesterday: {day: yday, top: dashRows(env, names, account, dashSort(y, "best"), "best", 3)},
     week: {top: dashRows(env, names, account, dashSort(w, "best"), "best", 10)}};
   if (account) out.today.mine = m[account] ? {best: m[account].best, runs: m[account].runs, rank: dashRank(m, account)} : {best: 0, runs: 0, rank: null};
   // the Advent calendar and, once it runs, the overall ranking
   const adv = {...A, days: []}, plan = await dashPlan(env);
-  adv.grandPrizes = A.grand.map((want, i) => { const pl = plan["grand-" + (i + 1)]; return {place: i + 1, rarity: want, ...(pl ? {token: pl.token} : {})}; });
+  // the overall prizes show only what can be won (place + rarity) — the Scrappy itself stays a surprise
+  adv.grandPrizes = A.grand.map((want, i) => ({place: i + 1, rarity: want}));
   if (A.done) {
     const rec = await st.resultGet("dash-grand-" + A.from);
     if (rec) adv.grandWon = rec.winners.map(w => { const x = rec.prizes[w.place]; return {place: w.place, name: w.name, score: w.score, want: w.want,
@@ -2538,6 +2565,10 @@ export default {
       }
       if (p === "/public/dash/claim") {
         const r = await dashClaimStatus(env, url.searchParams.get("uuid")); r.headers.set("access-control-allow-origin", "*"); return r;
+      }
+      if (p === "/public/dash/code" && req.method === "POST") {   // the page's tester field (text/plain, no wallet)
+        let b = {}; try { b = JSON.parse(await req.text()); } catch {}
+        return withCors(await dashCode(env, req, b), cors);
       }
       if (p === "/public/dash") {
         const r = json(await dashBoard(env, null));   // names only, never wallets

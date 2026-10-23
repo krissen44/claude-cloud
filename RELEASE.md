@@ -4,6 +4,27 @@ Changes collect here during the week and go live together when the new week star
 Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit flash, new /clip) — no Dash yet (no
 `dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
 
+## v39 — Dash: Rocket from 1 Nov, Sleigh from 1 Dec, tester code, Advent doors to open (same package → `bark-arena-game-v39-komplett.zip` + `scrappyxrp-website-v39.zip`)
+- **Why** (owner, 23 Oct): every door should hold its Scrappy, blurred until its day and then opened like a box; the
+  overall places only say what can be won; Rocket Dash and Sleigh Dash both selectable, both blurred until they open —
+  Rocket on **1 Nov**, Sleigh on **1 Dec** — with a tester code field on top.
+- **Game**: the Dash tab is always there now (replaces the "hidden until 30 Nov" gate). Two buttons pick the look
+  (`DASH.skin`, `ba_dashskin`); a look that isn't open yet shows its hangar blurred with a lock, the opening day + countdown
+  and a **tester code** field. With the right code (checked by `/api/public/dash/code`, 8 wrong tries per address and hour)
+  the page shows "🧪 TEST MODE" and you can fly it; the server replays test runs but **never books them** (no ranking, no
+  bond XP). Team wallets may test without a code. Both looks share one board (same game, same rules).
+- **Advent doors**: future doors = the prize Scrappy blurred behind a 🔒 (rarity shown); today's door = a wrapped gift
+  box — tap it, the lid flies off and the Scrappy pops out (remembered per device, `ba_adv_open:<day>`); past doors show
+  the Scrappy and the day's winner. Today's prize card appears after opening. **Overall prizes show place + rarity only**
+  (the server no longer sends the planned token; admin still sees the plan).
+- **Server**: `dashOpens` (env `DASH_OPEN_ROCKET` default 2026-11-01, `DASH_OPEN_SLEIGH` default = `DASH_ADVENT`),
+  `/dash/start` takes `skin` + `code`, `DASH_TEST_CODE` (new env), board returns `opens`; env `DASH_OPEN` is gone.
+  `server.js` passes the client address to the API for the code rate limit.
+- **Website**: the Dash section shows from 1 Nov as "Scrappy Rocket Dash" (Sleigh + Advent "from 1 December"), future
+  doors blurred with a lock, overall prizes rarity only.
+- **Hostinger env (new)**: `DASH_TEST_CODE=<a code of your choice, at least 4 characters>` — hand it only to testers.
+- Tests: `tools/test/dash-gate.mjs` (rewritten), `tools/test/dash.mjs` (doors, box, rarity-only), dash-prize, v35, v36, ui-shots.
+
 ## v38.1 — Glitch hit for the energy thieves (same package)
 - **Why**: after the v37 balance the three energy-drain traits (Matrix Glasses 55 dogs, Coder Glasses 150, Matrix Rain
   138 — the largest ability group) won only 16–19 % in simulation, worse than no ability (28 %).
@@ -11,7 +32,7 @@ Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit 
   only, so old replays are unchanged); the AI casts them more readily. Simulation at bond 10: 36–39 % (heals 31–39 %,
   Lightning 55 %, lasers 62–75 %). Trait texts and the website guide say so.
 
-## v38 — Scrappy Dash in new clothes (same package; Dash stays hidden until 30 Nov)
+## v38 — Scrappy Dash in new clothes (same package; opening days: see v39)
 - **Why**: owner, 23 Oct: the Dash pixel graphics look old-fashioned and lack detail (flat rectangles, no shading).
 - **Painted background plates** (`public/art/dash-<sleigh|rocket>-<sky|far|mid>.png`, 480 px wide, far/mid tile
   sideways, parallax .06 / .2): sleigh = dithered night sky with aurora, stars and a shaded moon · jagged snowy alpine
@@ -137,7 +158,7 @@ Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit 
 - **Fix: the day/week recap was see-through on the dark menu** (the owner's `body.home .card` is transparent): the recap is now a solid card over a dimmed, blurred page.
 - Clip speed retuned for the faster fights (`WAIT_K` 1.05 / 1) so Shorts stay 10–14 s.
 - Tests: everything re-run (see the commit); `tools/test/ui-shots.mjs` = screenshots of all menu tabs (desktop + phone).
-- **Dash goes up but stays hidden until 30 Nov 2026 (owner, 21 Oct):** no Dash tab, `/dash` opens the kennel
+- *(Replaced by v39: Rocket 1 Nov, Sleigh 1 Dec, tester code.)* **Dash goes up but stays hidden until 30 Nov 2026 (owner, 21 Oct):** no Dash tab, `/dash` opens the kennel
   (`DASH_OPEN_FROM`, `dashOpen()`); `?dash=sleigh` shows it for a preview; the server refuses runs before the opening
   except for team wallets (`dashOpenAt`, env `DASH_OPEN=YYYY-MM-DD` moves the date); the website hides its Dash section and
   link until then. 30 Nov = one warm-up day before the Advent calendar starts on 1 Dec. Test `tools/test/dash-gate.mjs`.

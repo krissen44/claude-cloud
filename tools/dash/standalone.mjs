@@ -56,6 +56,7 @@ const PRIZE = {list: [], done: false};
 const prizeCards = () => '', loadPrizes = () => {}, chatSync = () => {}, api = () => Promise.reject(new Error('offline'));
 const tokenOf = f => f && (f.token || +f.id) || null;
 let tab = 'dash';
+const dashSkinOpen = () => true, dashCanFly = () => true, dashOpensOf = () => '';   // offline: both looks open, nothing is gated
 const ROSTER = () => DATA.fighters;
 const bondOrder = R => R.slice();
 const SAVE = (() => {
@@ -67,7 +68,7 @@ ${sim}
 const DASH_ART_INLINE = ${JSON.stringify(inline)};
 ${ui}
 // ---- the standalone hangar (instead of the game's Dash tab) ----
-let SOLO_SKIN = lsGet('dash_skin') || (Date.now() < DASH_ROCKET_FROM ? 'sleigh' : 'rocket');
+let SOLO_SKIN = lsGet('dash_skin') || 'rocket';
 dashTheme = () => DASH_SKIN[SOLO_SKIN] ? SOLO_SKIN : 'sleigh';
 function menu(){
   const th = dashTheme(), K = DASH_SKIN[th], me = dashPickDog(), sv = dashSave();

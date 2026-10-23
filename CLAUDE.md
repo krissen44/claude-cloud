@@ -14,7 +14,7 @@ ZIP with only changed files ("Nicht unterstütztes Framework oder ungültige Pro
 | `server.js`, `worker.js`, `public/index.html`, `package.json` | **Bark Arena**, the Pixel Scrappy NFT fighting game | Hostinger Node.js app → `https://game.scrappyxrp.fun` |
 | `website/` | Pieces of the **scrappyxrp.fun** site (static files) | Hostinger `public_html/` |
 
-Git branches used so far: `claude/dreamy-pasteur-du9fm3` (up to v29), `claude/upbeat-hypatia-cht3ou` (v30+), `claude/kind-fermi-88buj2` (v33 Dash) — repo `krissen44/claude-cloud`.
+Git branches used so far: `claude/dreamy-pasteur-du9fm3` (up to v29), `claude/upbeat-hypatia-cht3ou` (v30+), `claude/kind-fermi-88buj2` (v33 Dash … v39) — repo `krissen44/claude-cloud`.
 
 **Release rule (owner's decision):** changes are **not uploaded one by one**. They collect during the week and go live
 together at the **week roll (Monday 00:00 UTC)**. Record every change in `RELEASE.md` (what, why, upload steps) and
@@ -64,7 +64,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 
 ### Environment variables (Hostinger)
 `ISSUER=rGAVUGyhdbxQs1G7nwCCFU4w8P4HfgFKD6`, `TAXON=369` (empty/`*` = any taxon), `XUMM_API_KEY`, `XUMM_API_SECRET`,
-`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK_FIGHTS` (#fights) / `_STATS` (#arena-stats) / `_CLUB` (#search-arena-fight), fallback `DISCORD_WEBHOOK`, `DISCORD_CLIPS` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `DASH_THEME` (v33, sleigh|rocket), `DASH_OPEN` (opening day, default 2026-11-30), `DASH_ADVENT` (start day, default 2026-12-01), `DASH_DAY_PRIZE` (text) / `DASH_DAY_PLACES` (1), `DASH_GRAND_PRIZES` (rarity per overall place, default `Epic,Rare,Rare,Uncommon,Uncommon`), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
+`RETURN_URL=https://game.scrappyxrp.fun/`, `ADMIN_KEY` (admin dashboard; unset = admin off), optional `TEAM` (extra team wallets, comma-separated; the issuer always counts as team), `DISCORD_WEBHOOK_FIGHTS` (#fights) / `_STATS` (#arena-stats) / `_CLUB` (#search-arena-fight), fallback `DISCORD_WEBHOOK`, `DISCORD_CLIPS` (v32), `FAIRPLAY=off` / `FAIR_SINCE` (v32), `DASH_THEME` (v33, default look sleigh|rocket), `DASH_OPEN_ROCKET` (v39, default 2026-11-01) / `DASH_OPEN_SLEIGH` (default = `DASH_ADVENT`), `DASH_TEST_CODE` (v39, testers fly a locked look; runs not booked), `DASH_ADVENT` (start day, default 2026-12-01), `DASH_DAY_PRIZE` (text) / `DASH_DAY_PLACES` (1), `DASH_GRAND_PRIZES` (rarity per overall place, default `Epic,Rare,Rare,Uncommon,Uncommon`), `ACCESS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `IPFS_GATEWAY`,
 `META_HOSTS`, `ORIGIN`, `PORT`.
 
 ### API (`/api/...`)
@@ -105,8 +105,9 @@ hand over one combined package for the week start; don't tell the owner to uploa
 | `/ach` (GET; POST `{ids}`), `/ref` (GET; POST `{name}`) | ✔ | Achievements (server-only: podium, recruiter, bossfall) / invites |
 | `/admin/fair[?week=]` | `?key=ADMIN_KEY` | Claimed vs verified week per player, flags |
 | `/admin/clips` (GET list), `/admin/clips/upload?name=` (PUT), `/admin/clips/file?name=[&download]`, `/admin/clips/posted` / `delete` (POST) | `?key=ADMIN_KEY` | Shorts clips — **handled in `server.js`** (Node only, files in `DATA_DIR/clips`, kept 30 days) |
-| `/dash/start` (POST `{dog}` → `{id, seed}`), `/dash/end` (POST `{id, score, ticks, w, inp}`), `/dash/board` (optional auth), `/public/dash` (–) | ✔ | Scrappy Dash (v33): the server replays the run from seed + inputs (`env.DASH`) and books its score; best per day `dashday:<day>` + week `dash:<week>`; board = `today`, `yesterday`, `week`, `advent` (24 days, winners, `overall`) |
+| `/dash/start` (POST `{dog, skin, code?}` → `{id, seed, test?}`), `/dash/end` (POST `{id, score, ticks, w, inp}`), `/dash/board` (optional auth), `/public/dash` (–) | ✔ | Scrappy Dash (v33): the server replays the run from seed + inputs (`env.DASH`) and books its score; best per day `dashday:<day>` + week `dash:<week>`; board = `today`, `yesterday`, `week`, `opens`, `advent` (24 days, winners, `overall`; `grandPrizes` rarity only) |
 | `/admin/dash` (+ treasury check `have`/`needGrand`/`needDays`, `plan`), `/admin/dash/prize` (POST `{key, place, nftId}`), `/admin/dash/plan` (POST `{auto:true}` or `{plan:{key:nftId}}`) | `?key=ADMIN_KEY` | Advent Dash: frozen days (`dash-<day>`) / season (`dash-grand-<from>`) with winners → Xaman offer from the treasury; prize plan blob `dashplan:<from>` (`dash-<day>`, `grand-<n>`) shown in the calendars |
+| `/public/dash/code` (POST `{code}`) | – | Tester code check (v39), 8 wrong tries per address/hour |
 | `/public/dash/claim` (POST text/plain `{key, place}`; GET `?uuid=`) | – | Website claim of an Advent prize: Xaman NFTokenAcceptOffer request for the winner's wallet (only they can sign) / its status (only accept payloads of `dash-` prizes) |
 | `/admin/export[?download=1]`, `/admin/csv` | `?key=ADMIN_KEY` | Everything as JSON backup (summary, per-player rows, raw store + saves) / players as CSV. Dashboard page: **`/admin`** |
 
@@ -275,13 +276,12 @@ hand over one combined package for the week start; don't tell the owner to uploa
   `worker.scheduled` runs `tick` every 5 minutes from `server.js`. Fights: `discordHighlight` (from `replayKeep`: upset /
   arena final / Club, link `/clip?id=`, KV throttle 30 min + 8/day) and `discordClip` in `server.js` (clip of the day as
   a video attachment when the factory's `.json` lands, `DISCORD_CLIPS`/day, state `DATA_DIR/clips/.discord.json`).
-- **Scrappy Dash (v33)**: **hidden until 30 Nov 2026** (`DASH_OPEN_FROM`/`dashOpen()` in the page, `?dash=` previews; worker `dashOpenAt`, env `DASH_OPEN`, team wallets may play before; website `#dash` `hidden` until then). Tab `dash` (also path `/dash`), one-tap endless runner in a canvas (`DASH`, `dashView`, `dashPlay`,
+- **Scrappy Dash (v33, gates v39)**: tab always shown; two looks picked by the player (`DASH.skin`, `ba_dashskin`, `.dskins`): **Rocket opens 1 Nov 2026, Sleigh 1 Dec** (`DASH_OPENS`, `dashOpensOf`, `dashSkinOpen`; worker `dashOpens`/`dashIsOpen`). A locked look = blurred hero + `dashLock` (countdown, tester code → `/public/dash/code`, stored `ba_dash_code`, `dashTester`/`dashCanFly`); test runs `G.test` → server `run.test`: replayed, never booked, no bond XP; team wallets test without code. One shared board for both looks. Website `#dash` from 1 Nov (Rocket text until December). Tab `dash` (also path `/dash`), one-tap endless runner in a canvas (`DASH`, `dashView`, `dashPlay`,
   `dashStep`, `dashDraw`, `dashOver`; logical 480×300, 340×300 on phones). Hold = climb, tap < 180 ms = drop (`dashDrop`;
   the tap that starts a run never drops, `startPress`). Gifts keep the sleigh's speed (fall straight down on screen) into
   glowing chimneys: 25 × combo (≤ 5); a wasted gift breaks the combo. Speed `150 + 4.2·t` (max 420). No safe lane at the top: `s.hi` (time above y 70) → more crows aimed at the sleigh's height + sky foes `f.sky` (snow owl / comet, `K.hawk`, ❗ warning at the edge) — balance check `node tools/test/dash-camp.mjs`. Free, no tickets;
   weekly board on the server; bond XP score/150 (≤ 15/run, ≤ 40/day, `SAVE.data.dash`, own dogs only). `menu()` returns
-  early while a run is on screen (`DASH.g`). Skins `DASH_SKIN.sleigh|rocket`: rocket from `DASH_ROCKET_FROM` (27 Dec 2026,
-  page + worker), env `DASH_THEME` overrides, `?dash=` previews. Sleigh dressing: `dashDeco` (per house: lights `DASH_BULBS`
+  early while a run is on screen (`DASH.g`). Skins `DASH_SKIN.sleigh|rocket` (player's pick; default = sleigh once open, env `DASH_THEME` overrides the default, `?dash=` picks). Sleigh dressing: `dashDeco` (per house: lights `DASH_BULBS`
   + blink mode, icicles, garland, smoke, window roles lit/dark/candle/tree/person/star/wreath), `dashWindow`, aurora,
   shooting stars (`G.shoot`), moon halo — visuals only, never in collision boxes. Milestones: `dashScoreMs` (`DASH_MS_LIST`), every 10th coin,
   every 5th delivery, first ×5 → `dashCelebrate` (glitter `fx` kind `glit`, banner queue `G.bq`, `G.glow` trail, `G.flash`,
@@ -292,7 +292,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
   `/dash/start` (`dashFetchRun`, next one prefetched on the result card). Close calls +15, HUD target from today's board
   (`dashTargets`, "PASSED …" banner). **Advent Dash**: 24 days from `DASH_ADVENT`, daily winner(s) + overall = daily bests
   summed (`dashOverall`), team skipped; frozen 30 min after a day (`dashResult`), prizes via `/admin` like weekly ones
-  (`myPrizes` adds `label`). Client `dashAdvent` (calendar), boards today/yesterday/overall or week.
+  (`myPrizes` adds `label`). Client `dashAdvent` (calendar: future doors blurred + 🔒, today a gift box `data-advopen` → `ba_adv_open:<day>`, `DASH.justOpened` reveal; overall prizes rarity only), boards today/yesterday/overall or week.
   **Scrappy bonus**: own dog only (holdings, checked at `/dash/start` → `run.bonus`), by rarity `DASH_BONUS` Common 5 … Legendary/
   Mythic 10 %; booked = `floor(raw × (100 + bonus) / 100)` (`dashBoosted`; page `dashFinal`, HUD/targets/milestones use it,
   `/dash/end` gets the raw score to compare with the replay). Overall prizes per place `A.grand` → winners `want`, admin pre-pick.
@@ -347,6 +347,7 @@ v34–v36 (one package for Sun 25 → Mon 26 Oct): owner's new look + compact ke
 bond 20 + tougher rivals + arena of the week + weekly badges, picture check, share card, welcome/comeback, boss alerts,
 revenge, pack chat, trait album, Hall of Fame.
 v37 (same package, `bark-arena-game-v37-komplett.zip`): abilities recharge 2 rounds + a guard halves beam damage, hot streak.
+v38/v38.1/v39 (same package, `bark-arena-game-v39-komplett.zip` + `scrappyxrp-website-v39.zip`): painted Dash art, glitch hit for drain traits, Dash looks Rocket 1 Nov / Sleigh 1 Dec with tester code, Advent doors to open.
 
 ### Where things stand
 - **Live:** game **v32** (uploaded early by the owner on 9 Oct, incl. v31.3 + lending market + Discord channels); the stats

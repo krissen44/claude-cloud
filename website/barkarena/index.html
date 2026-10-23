@@ -130,7 +130,9 @@ section{margin-top:56px}
 .adv>div.today{border-color:#e53935;box-shadow:0 0 0 3px rgb(255 213 79 / 55%)}
 .adv>div.past{background:rgb(46 125 50 / 7%)}
 .adv img{width:44px;height:44px;display:block;margin:2px auto;image-rendering:pixelated}
-.adv img.hid{filter:blur(4px) saturate(.6);opacity:.75}
+.adv img.hid{filter:blur(5px) saturate(.5) brightness(.85);opacity:.8}
+.adv .lockd{position:relative;display:block}.adv .lockd i{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:14px}
+.grand .gift{display:block;font-size:24px;line-height:1.3}
 .adv small{display:block;font-size:9.5px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rar{font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
 .r-common{color:#78909c}.r-uncommon{color:#2e7d32}.r-rare{color:#1565c0}.r-epic{color:#8e24aa}.r-legendary{color:#ef6c00}.r-mythic{color:#d81b60}
@@ -534,9 +536,9 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
    accepted by the winner's wallet, so the button just asks the game server for the Xaman request (or shows how to do it in Joey). */
 var GAME = "https://game.scrappyxrp.fun/api";
 function dashPrizes(A, esc){
-  var img = function(t, hid){ return '<img src="/pixelscrappy/nfts/' + t + '.png" alt="Pixel Scrappy #' + t + '" loading="lazy"' + (hid ? ' class="hid"' : '') + ' onerror="this.onerror=null;this.src=\'/pixelscrappy/scrappy-5000/01_bilder/' + t + '.png\'">'; };
+  var img = function(t, hid){ return '<img src="/pixelscrappy/nfts/' + t + '.png" alt="' + (hid ? '' : 'Pixel Scrappy #' + t) + '" loading="lazy"' + (hid ? ' class="hid"' : '') + ' onerror="this.onerror=null;this.src=\'/pixelscrappy/scrappy-5000/01_bilder/' + t + '.png\'">'; };
   var rar = function(r){ return r ? '<span class="rar r-' + esc(r.toLowerCase()) + '">' + esc(r) + '</span>' : ''; };
-  if (!A.days.some(function(d){ return d.prize; }) && !(A.grandPrizes || []).some(function(g){ return g.token; })) return;
+  if (!A.days.some(function(d){ return d.prize; }) && !(A.grandPrizes || []).length) return;
   document.getElementById("dashPrizeCard").hidden = false;
   var td = A.days.filter(function(d){ return d.state === "today"; })[0];
   document.getElementById("dashToday").innerHTML = td && td.prize ? '<div class="today-prize">' + img(td.prize.token) + '<div><b>🎁 Today\'s prize (day ' + td.n + '): Pixel Scrappy #' + td.prize.token + '</b><br>' + rar(td.prize.rarity) +
@@ -544,11 +546,12 @@ function dashPrizes(A, esc){
     : '<p class="meta" style="margin:0">' + (A.done ? "The Advent calendar is done — thanks for flying!" : "Starts " + esc(A.from) + " — here's what you can win:") + '</p>';
   document.getElementById("dashCal").innerHTML = A.days.map(function(d){
     var p = d.prize, w = d.won;
-    return '<div class="' + d.state + '" title="' + esc(d.day) + '"><b>' + d.n + '</b>' + (p ? img(p.token, d.state === "future") + rar(p.rarity) : '') +
+    return '<div class="' + d.state + '" title="' + esc(d.day) + '"><b>' + d.n + '</b>' + (p ? (d.state === "future" ? '<span class="lockd">' + img(p.token, true) + '<i>🔒</i></span>' : img(p.token)) + rar(p.rarity) : '') +
       (w ? '<small>' + (w.status === "claimed" ? "✅ " : "🏆 ") + esc(w.name) + '</small>' : d.state === "today" ? '<small>today</small>' : '') + '</div>'; }).join("");
   var G = A.grandPrizes || [];
   document.getElementById("dashGrand").innerHTML = G.length ? '<h3 style="margin:16px 0 4px;font-size:15px">🏆 Overall ranking — top ' + G.length + ' win</h3><div class="grand">' + G.map(function(g){
-    return '<div>' + (g.token ? img(g.token) : '') + '<b>' + (["🥇","🥈","🥉"][g.place - 1] || g.place + "th") + '</b><br>' + rar(g.rarity) + (g.token ? '<br><span class="meta">#' + g.token + '</span>' : '') + '</div>'; }).join("") + '</div>' : '';
+    // only what can be won — which Scrappy it is stays a surprise until the end
+    return '<div><span class="gift">🎁</span><b>' + (["🥇","🥈","🥉"][g.place - 1] || g.place + "th") + '</b><br>' + rar(g.rarity) + '<br><span class="meta">Pixel Scrappy</span></div>'; }).join("") + '</div>' : '';
   // winners with prizes waiting: claim right here
   var wins = A.days.filter(function(d){ return d.won; }).map(function(d){ return {label: "Day " + d.n, w: d.won}; }).reverse()
     .concat((A.grandWon || []).map(function(w){ return {label: "Overall " + (["🥇","🥈","🥉"][w.place - 1] || w.place + "th"), w: w}; }));
@@ -578,18 +581,21 @@ function claimPrize(key, place, token){
       }, 3000);
     }).catch(function(){ body.innerHTML = '<p class="meta">The game server isn\'t reachable right now.</p>' + joey; });
 }
-(function(){   // Scrappy Dash: sleigh until Christmas, then the rocket to the moon — the server says which
-  // hidden until the opening on 30 Nov 2026 (?dash=1 shows it for a preview)
-  if (Date.now() < Date.parse("2026-11-30T00:00:00Z") && !/[?&]dash=/.test(location.search)) return;
+(function(){   // Scrappy Dash: Rocket Dash opens 1 Nov 2026, Sleigh Dash + the Advent calendar 1 Dec — the server says which look leads
+  // hidden until Rocket Dash opens (?dash=1 shows it for a preview)
+  if (Date.now() < Date.parse("2026-11-01T00:00:00Z") && !/[?&]dash=/.test(location.search)) return;
   document.getElementById("dash").hidden = false; document.getElementById("dashToc").hidden = false;
+  var rocket = function(){
+      document.getElementById("dashH").textContent = "🚀 Scrappy Rocket Dash";
+      document.getElementById("dashToc").textContent = "🚀 Dash";
+      document.getElementById("dashLead").innerHTML = "Your Scrappy flies a rocket to the moon. One button: <b>hold</b> to climb, let go to sink, a <b>quick tap</b> drops a bone. Hit the glowing moon-base hatches for a combo up to ×5, grab bones and $SCRAP coins, dodge antenna towers and asteroids (comets hunt anyone hiding at the top) — it gets faster every second. Runs last 30–90 seconds, no tickets, play as often as you like." +
+        (Date.now() < Date.parse("2026-12-01T00:00:00Z") ? " <b>Sleigh Dash</b> and the Advent calendar follow on 1 December." : " The best run of the day counts.");
+  };
+  if (Date.now() < Date.parse("2026-12-01T00:00:00Z")) rocket();
   fetch("https://game.scrappyxrp.fun/api/public/dash", {cache: "no-store"}).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
     if (!d) return;
     var esc = function(t){ return String(t).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };
-    if (d.theme === "rocket"){
-      document.getElementById("dashH").textContent = "🚀 Scrappy Rocket Dash";
-      document.getElementById("dashToc").textContent = "🚀 Dash";
-      document.getElementById("dashLead").innerHTML = "Your Scrappy flies a rocket to the moon. One button: <b>hold</b> to climb, let go to sink, a <b>quick tap</b> drops a bone. Hit the glowing moon-base hatches for a combo up to ×5, grab bones and $SCRAP coins, dodge antenna towers and asteroids (comets hunt anyone hiding at the top) — it gets faster every second. Runs last 30–90 seconds, no tickets, play as often as you like. The best run of the week counts.";
-    }
+    if (d.theme === "rocket"){ rocket(); }
     var list = function(rows, empty){ rows = (rows || []).slice(0, 5); return rows.length ? '<ol>' + rows.map(function(r, i){
       return '<li><span class="rk">' + (["🥇","🥈","🥉"][i] || (i + 1) + ".") + '</span><span>' + esc(r.name) + (r.team ? ' <small class="team">TEAM</small>' : '') + '</span><b>' + Number(r.score).toLocaleString() + '</b></li>'; }).join("") + '</ol>'
       : '<p class="empty">' + empty + '</p>'; };

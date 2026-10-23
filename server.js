@@ -181,7 +181,7 @@ const env = {
   DISCORD_WEBHOOK_CLUB: process.env.DISCORD_WEBHOOK_CLUB || "",
   FAIRPLAY: process.env.FAIRPLAY || "", FAIR_SINCE: process.env.FAIR_SINCE || "",
   // Scrappy Dash: skin override, Advent start day, prizes and how many places win
-  DASH_THEME: process.env.DASH_THEME || "", DASH_OPEN: process.env.DASH_OPEN || "", DASH_ADVENT: process.env.DASH_ADVENT || "",
+  DASH_THEME: process.env.DASH_THEME || "", DASH_OPEN_ROCKET: process.env.DASH_OPEN_ROCKET || "", DASH_OPEN_SLEIGH: process.env.DASH_OPEN_SLEIGH || "", DASH_TEST_CODE: process.env.DASH_TEST_CODE || "", DASH_ADVENT: process.env.DASH_ADVENT || "",
   DASH_DAY_PRIZE: process.env.DASH_DAY_PRIZE || "", DASH_DAY_PLACES: process.env.DASH_DAY_PLACES || "",
   DASH_GRAND_PRIZES: process.env.DASH_GRAND_PRIZES || "",   // rarity per overall place, default Epic,Rare,Rare,Uncommon,Uncommon
   STORE, KV, FILES,
@@ -691,6 +691,7 @@ http.createServer(async (req, res) => {
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
       const headers = {};
       for (const h of ["authorization", "content-type", "origin"]) if (req.headers[h]) headers[h] = req.headers[h];
+      headers["x-forwarded-for"] = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "");   // rate limits per address
       const body = ["GET", "HEAD", "OPTIONS"].includes(req.method) ? undefined : await readBody(req);
       const r = await worker.fetch(new Request("https://local" + (url.pathname.slice(4) || "/") + url.search,
         { method: req.method, headers, body }), env);

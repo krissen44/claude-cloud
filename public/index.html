@@ -456,6 +456,50 @@ button.dashgo:active{transform:translateY(3px);box-shadow:0 1px 0 #0e1726}
 .adoor.today b{color:#e53935}
 @keyframes doorGlow{50%{box-shadow:0 0 0 3px rgba(255,213,79,.55),0 0 14px rgba(255,213,79,.6)}}
 @media (max-width:560px){.adoors{grid-template-columns:repeat(6,1fr)}}
+/* v39: locked doors, today's gift box, rarity-only overall prizes */
+.adoor .aimg{position:relative;display:block;width:34px;height:34px;margin:2px auto 0}
+.adoor .aimg img{margin:0}
+.adoor .alock{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.5))}
+.adoor.fut{opacity:.92;border:2px dashed rgba(140,160,190,.4)}
+.agrand>div>b{display:block;font-size:15px;line-height:1.3}
+.adoor img.hid{filter:blur(4px) saturate(.5) brightness(.85);opacity:.8}
+.adoor.box{cursor:pointer;background:rgba(229,57,53,.1)}
+.adoor.box small{color:#e53935;font-weight:700}
+.gbox{position:relative;display:block;width:26px;height:20px;margin:11px auto 2px;background:#e53935;border-radius:3px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.2)}
+.gbox:before{content:'';position:absolute;left:10px;top:0;bottom:0;width:6px;background:#ffd54f}
+.gbox .lid{position:absolute;left:-3px;right:-3px;top:-7px;height:8px;background:#ef5350;border-radius:3px;box-shadow:0 2px 0 rgba(0,0,0,.15);font-style:normal}
+.gbox .lid:before{content:'';position:absolute;left:13px;top:0;bottom:0;width:6px;background:#ffd54f}
+.gbox .lid:after{content:'';position:absolute;left:8px;top:-7px;width:16px;height:8px;border:3px solid #ffd54f;border-bottom:0;border-radius:9px 9px 0 0;box-sizing:border-box}
+.adoor.box .gbox{animation:boxWiggle 2.4s ease-in-out infinite}
+@keyframes boxWiggle{0%,78%,100%{transform:none}82%{transform:rotate(-7deg)}86%{transform:rotate(7deg)}90%{transform:rotate(-5deg)}94%{transform:rotate(3deg)}}
+.adoor.opening .gbox{animation:boxShake .3s linear 2}
+.adoor.opening .lid{animation:lidOff .55s .1s ease-in forwards}
+@keyframes boxShake{25%{transform:translateX(-2px) rotate(-4deg)}75%{transform:translateX(2px) rotate(4deg)}}
+@keyframes lidOff{to{transform:translate(10px,-30px) rotate(40deg);opacity:0}}
+.adoor.reveal img{animation:revealPop .8s cubic-bezier(.2,1.6,.4,1)}
+@keyframes revealPop{from{transform:scale(.2) rotate(-14deg);opacity:0}to{transform:none;opacity:1}}
+.aprize.shut .gbox{margin:6px 10px 0;flex:none;transform:scale(1.6)}
+.agrand .gmini{display:block;font-size:20px;line-height:1.3}
+/* the two looks of the Dash, and a locked one */
+.dskins{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 10px}
+.dskins button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 6px;border:2px solid #0e1726;border-radius:10px;
+  background:#1a2138;color:#fff;font-family:'Press Start 2P',monospace;font-size:clamp(8px,2.4vw,10px);cursor:pointer}
+.dskins button small{font-family:inherit;font-size:7.5px;opacity:.75;letter-spacing:.3px}
+.dskins button.on{background:#1b8ce3;box-shadow:0 3px 0 #0e1726}
+.dskins button.shut:not(.on){opacity:.75}
+.dashhero.locked{min-height:300px}
+.dashhero.locked>*:not(.dlock){filter:blur(7px);pointer-events:none;user-select:none}
+.dashhero>.dlock{position:absolute;inset:0;z-index:3;display:flex;align-items:center;justify-content:center;padding:14px;background:rgba(8,12,28,.45)}
+.dlockin{max-width:330px}
+.dlockico{font-size:30px;margin-bottom:6px}
+.dlocktx{margin:8px 0 12px;font-size:13px}
+.dcode{display:flex;gap:6px;justify-content:center}
+.dcode input{width:150px;padding:8px 10px;border-radius:8px;border:2px solid #0e1726;font-size:14px;background:#fff;color:#0e1726}
+.dcode button{padding:8px 10px;border-radius:8px;border:2px solid #0e1726;background:#ffd54f;color:#0e1726;font-weight:700;cursor:pointer}
+.dcodemsg{margin:8px 0 0;font-size:11px;opacity:.85}
+.dtest{display:inline-block;margin:0 0 12px;padding:5px 10px;border-radius:8px;background:rgba(255,213,79,.18);border:1px dashed #ffd54f;font-size:11px}
+.dtest button{margin-left:6px;padding:2px 8px;font-size:10px}
+@media (prefers-reduced-motion:reduce){.adoor.box .gbox,.adoor.opening .gbox,.adoor.opening .lid,.adoor.reveal img{animation:none}}
 @media (prefers-reduced-motion:reduce){.adoor.today{animation:none}}
 .dashrow button.sm{color:#fff;border-color:rgba(255,255,255,.4);margin-top:14px}
 .tabs button{font-size:10.5px;padding:9px 3px}
@@ -4400,15 +4444,19 @@ function recSend(v){
   r.close = Math.abs(P.hp / P.maxHp - E.hp / E.maxHp) < .15;
   api('/replay', {method:'POST', body: r}).catch(() => {});
 }
-/* Scrappy Dash opens on 30 Nov 2026 (owner's decision): before that the tab and /dash are hidden; ?dash=sleigh|rocket
-   shows it for a preview (the server lets only team wallets play before the opening, env DASH_OPEN). */
-const DASH_OPEN_FROM = Date.parse('2026-11-30T00:00:00Z');
-const dashOpen = () => Date.now() >= DASH_OPEN_FROM || /[?&]dash=/.test(location.search);
-let tab = SC.linkId ? 'club' : /^\/dash\/?$/.test(location.pathname) && dashOpen() ? 'dash' : 'kennel';   // a ?duel= invite link opens the Club, /dash the Dash
+/* Scrappy Dash (owner, 23 Oct): the tab is always there with two looks to pick — Rocket Dash opens 1 Nov 2026,
+   Sleigh Dash 1 Dec (the board's `opens` has the server's days). A locked look is shown blurred with a tester
+   code field; with a valid code (server env DASH_TEST_CODE) runs are replayed but never booked. */
+const DASH_OPENS = {rocket: '2026-11-01', sleigh: '2026-12-01'};
+const dashOpensOf = k => (typeof DASH !== 'undefined' && DASH.board && DASH.board.opens && DASH.board.opens[k]) || DASH_OPENS[k];
+const dashSkinOpen = k => Date.now() >= Date.parse(dashOpensOf(k) + 'T00:00:00Z');
+const dashTester = () => !!lsGet('ba_dash_code');
+const dashCanFly = k => dashSkinOpen(k) || dashTester();
+let tab = SC.linkId ? 'club' : /^\/dash\/?$/.test(location.pathname) ? 'dash' : 'kennel';   // a ?duel= invite link opens the Club, /dash the Dash
 
 function nav(){
   return `<div class="card" style="padding:8px"><div class="tabs">
-    ${[['kennel','Kennel'],['arena','Arena'],...(dashOpen() ? [['dash','Dash']] : []),['club','Club'],['ladder','Ladder'],['packs','Packs']]
+    ${[['kennel','Kennel'],['arena','Arena'],['dash','Dash'],['club','Club'],['ladder','Ladder'],['packs','Packs']]
       .map(([k,t])=>`<button data-t="${k}" class="${tab===k?'on':''}">${t}</button>`).join('')}
   </div></div>`;
 }
@@ -5365,7 +5413,6 @@ setInterval(() => { if (CHAT.on && !document.hidden && (CHAT.open || Date.now() 
 
 function menu(){
   if (DASH.g) return;                              // a Dash run owns the screen until it is left
-  if (tab === 'dash' && !dashOpen()) tab = 'kennel';
   document.body.classList.add('home');
   SAVE.checkDay();
   chatSync(true);
@@ -5607,17 +5654,16 @@ function dashReplay(seed, W, PX, inp, maxTicks){
    A one-tap endless runner: your Scrappy flies a sleigh over the roofs at night — hold to climb, let go to
    sink, a quick tap drops a gift. Gifts that land in a glowing chimney score and build a combo (x5); a tall
    chimney, a roof or a crow ends the run. The world speeds up the whole time, so a run lasts 30–90 seconds.
-   After Christmas (DASH_ROCKET_FROM, the server may override with DASH_THEME) the same game is "Rocket Dash":
+   The same game as "Rocket Dash" (the player picks the look, DASH.skin):
    a rocket to the moon, bones into the moon-base hatches, $SCRAP coins (only a picture — nothing is paid out).
    Signed-in runs go to the weekly Dash board (/api/dash/*); the dog earns a little bond XP (DASH_XP_DAY). */
-const DASH_ROCKET_FROM = Date.parse('2026-12-27T00:00:00Z');
 let DASH_W = 480, DASH_PX = 110; const DASH_H = 300;      // logical canvas (narrower on phones), the dog's screen x
 const DASH_XP_DAY = 40, DASH_XP_RUN = 15;                // bond XP: per run (score / 150) and per day
 // own Pixel Scrappy → a small score bonus by rarity (the server decides; this is only for showing it)
 const DASH_BONUS = {Common: 5, Uncommon: 6, Rare: 7, Epic: 8, Legendary: 10, Mythic: 10};
 const dashBonusFor = f => !f || f.borrowed || !OWNED || WALLET.demo || !OWNED.includes(f) ? 0 : (DASH_BONUS[f.rarity] || DASH_BONUS.Common);
 const dashFinal = G => Math.floor(G.score * (100 + (G.bonus || 0)) / 100);
-const DASH = {board: null, loading: false, dog: lsGet('ba_dashdog'), g: null};
+const DASH = {board: null, loading: false, dog: lsGet('ba_dashdog'), g: null, skin: lsGet('ba_dashskin')};
 const DASH_SKIN = {
   sleigh: {title: 'SLEIGH DASH', icon: '🛷', ammo: 'gift', ammos: 'gifts', coin: 'candy cane', coins: 'candy canes',
     cheer: 'HO HO HO!', target: 'glowing chimneys', obst: 'tall chimneys', foe: 'crows', hawk: 'SNOW OWL', where: 'over the snowy roofs',
@@ -5629,8 +5675,9 @@ const DASH_SKIN = {
     roof: '#7e8796', stack: '#6c7787', glow: '#5cff9a'}
 };
 function dashTheme(){
-  try { const q = new URLSearchParams(location.search).get('dash'); if (DASH_SKIN[q]) return q; } catch(e){}
-  return (DASH.board && DASH_SKIN[DASH.board.theme] && DASH.board.theme) || (Date.now() < DASH_ROCKET_FROM ? 'sleigh' : 'rocket');
+  try { const q = new URLSearchParams(location.search).get('dash'); if (DASH_SKIN[q] && !DASH.qskin){ DASH.qskin = true; DASH.skin = q; } } catch(e){}
+  if (DASH_SKIN[DASH.skin]) return DASH.skin;
+  return (DASH.board && DASH_SKIN[DASH.board.theme] && DASH.board.theme) || (dashSkinOpen('sleigh') ? 'sleigh' : 'rocket');
 }
 function dashSave(){
   const d = SAVE.data;
@@ -5659,27 +5706,50 @@ function dashBoardRows(rows, prizes){
 // "🥇 Epic · 🥈 Rare · 🥉 Rare · 4th Uncommon · 5th Uncommon" — one Pixel Scrappy per overall place
 const dashGrandText = A => (A.grand || []).map((g, i) => `${['🥇', '🥈', '🥉'][i] || (i + 1) + 'th'} <b>${esc(g)}</b>`).join(' · ') + ' Pixel Scrappy';
 const dashImgUrl = t => CONFIG.WORKER_URL.replace(/\/$/, '') + '/public/dogimg?t=' + t;
-// the Advent calendar: 24 doors, today's glowing, past ones show the day's winner, a star where you played
+// the Advent calendar: 24 doors. Every door holds its prize Scrappy: blurred behind a lock until its day, on the day
+// a wrapped box the player taps open (remembered per device), afterwards in full with the day's winner.
+const dashDoorOpen = day => !!lsGet('ba_adv_open:' + day);
+const dashMedal = n => ['🥇', '🥈', '🥉'][n - 1] || n + 'th';
 function dashAdvent(A){
   if (!A) return '';
-  // each door shows its prize: future ones as a silhouette with the rarity, today's and past ones in full
   const doors = A.days.map(d => {
-    const cls = d.state === 'today' ? 'today' : d.state === 'past' ? 'past' : '';
-    const pz = d.prize ? `<img src="${dashImgUrl(d.prize.token)}" alt="" loading="lazy" class="${d.state === 'future' ? 'hid' : ''}"><em class="r-${esc((d.prize.rarity || '').toLowerCase())}">${esc(d.prize.rarity || '')}</em>` : '';
+    const rar = d.prize ? `<em class="r-${esc((d.prize.rarity || '').toLowerCase())}">${esc(d.prize.rarity || '')}</em>` : '';
+    const img = d.prize ? `<img src="${dashImgUrl(d.prize.token)}" alt="" loading="lazy"${d.state === 'future' ? ' class="hid"' : ''}>` : '';
+    const star = d.mine ? '<i>⭐</i>' : '';
+    if (d.state === 'future') return `<div class="adoor fut" title="${esc(d.day)} · opens on its day"><b>${d.n}</b><span class="aimg">${img}<span class="alock">🔒</span></span>${rar}</div>`;
+    if (d.state === 'today' && d.prize && !dashDoorOpen(d.day))
+      return `<div class="adoor today box" role="button" tabindex="0" data-advopen="${esc(d.day)}" title="Tap to open today's door"><b>${d.n}</b><span class="gbox"><i class="lid"></i></span><small>tap to open</small></div>`;
     const who = d.won ? `<small>${d.won.status === 'claimed' ? '✅' : '🏆'} ${esc(d.won.name)}</small>` : d.winner ? `<small>${esc(d.winner.name)}</small>` : d.state === 'today' ? '<small>today</small>' : '';
-    return `<div class="adoor ${cls}" title="${esc(d.day)}${d.prize ? ' · Pixel Scrappy #' + d.prize.token : ''}"><b>${d.n}</b>${d.mine ? '<i>⭐</i>' : ''}${pz}${who}</div>`;
+    const cls = d.state === 'today' ? 'today' + (DASH.justOpened === d.day ? ' reveal' : '') : 'past';
+    return `<div class="adoor ${cls}" title="${esc(d.day)}${d.prize ? ' · Pixel Scrappy #' + d.prize.token : ''}"><b>${d.n}</b>${star}${img}${rar}${who}</div>`;
   }).join('');
   const td = A.days.find(d => d.state === 'today'), tp = td && td.prize;
-  const todayCard = tp ? `<div class="aprize"><img src="${dashImgUrl(tp.token)}" alt=""><div><b>🎁 Today's prize: Pixel Scrappy #${tp.token}</b>
-      <span class="r-${esc((tp.rarity || '').toLowerCase())}">${esc(tp.rarity || '')}</span><br><span class="mini">The best run of today (UTC) takes it home.</span></div></div>` : '';
-  const grand = (A.grandPrizes || []).some(g => g.token) ? `<p class="mini" style="margin:12px 0 6px"><b>🎄 Overall prizes after Christmas Eve</b></p><div class="agrand">${A.grandPrizes.map(g =>
-      `<div>${g.token ? `<img src="${dashImgUrl(g.token)}" alt="" loading="lazy">` : ''}<b>${['🥇', '🥈', '🥉'][g.place - 1] || g.place + 'th'}</b><em class="r-${esc(g.rarity.toLowerCase())}">${esc(g.rarity)}</em>${g.token ? `<small>#${g.token}</small>` : ''}</div>`).join('')}</div>` : '';
+  const todayCard = !tp ? '' : dashDoorOpen(td.day) ? `<div class="aprize"><img src="${dashImgUrl(tp.token)}" alt=""><div><b>🎁 Today's prize: Pixel Scrappy #${tp.token}</b>
+      <span class="r-${esc((tp.rarity || '').toLowerCase())}">${esc(tp.rarity || '')}</span><br><span class="mini">The best run of today (UTC) takes it home.</span></div></div>`
+    : `<div class="aprize shut"><span class="gbox"><i class="lid"></i></span><div><b>🎁 Door ${td.n} is waiting!</b><br><span class="mini">Tap today's box in the calendar to see which Scrappy the best run of today wins.</span></div></div>`;
+  // the overall prizes: only what can be won (place + rarity), the Scrappys stay a surprise
+  const grand = (A.grandPrizes || []).length ? `<p class="mini" style="margin:12px 0 6px"><b>🎄 Overall prizes after Christmas Eve</b></p><div class="agrand">${A.grandPrizes.map(g =>
+      `<div><span class="gmini">🎁</span><b>${dashMedal(g.place)}</b><em class="r-${esc(g.rarity.toLowerCase())}">${esc(g.rarity)}</em><small>Pixel Scrappy</small></div>`).join('')}</div>` : '';
   const head = A.on ? `🎄 ADVENT DASH · DAY ${A.n} OF 24` : A.done ? '🎄 ADVENT DASH · FINISHED' : `🎄 ADVENT DASH · STARTS ${A.from.slice(8)}.${A.from.slice(5, 7)}.`;
   const gp = dashGrandText(A);
   const txt = A.on ? `Today's best run wins <b>${esc(A.dayPrize)}</b>${A.dayPlaces > 1 ? ` (top ${A.dayPlaces})` : ''}. The overall ranking adds up your best run of every day — after Christmas Eve the top ${A.grandPlaces} win: ${gp}. Play every day!`
     : A.done ? 'The calendar is done — thanks for flying! The winners are below.'
-    : `From ${A.from} to ${A.to}: a prize every single day for the best run of the day (<b>${esc(A.dayPrize)}</b>), and the top ${A.grandPlaces} of the overall ranking (your daily bests added up) win: ${gp}. ${A.n > -14 ? `Only ${1 - A.n} day${1 - A.n === 1 ? '' : 's'} to go — practise now!` : 'Practise now!'}`;
+    : `From ${A.from} to ${A.to}: every door hides a Pixel Scrappy for the best run of that day — it unlocks on its day. The top ${A.grandPlaces} of the overall ranking (your daily bests added up) win: ${gp}. ${A.n > -14 ? `Only ${1 - A.n} day${1 - A.n === 1 ? '' : 's'} to go — practise now!` : 'Practise now!'}`;
   return `<div class="card advent"><h3 class="h3">${head}</h3><p class="mini" style="margin:0 0 10px">${txt}</p>${A.on ? todayCard : ''}<div class="adoors">${doors}</div>${grand}</div>`;
+}
+// "1 Nov" and "in 8 days" / "in 5 h" for a locked look
+const dashDate = day => new Date(day + 'T12:00:00Z').toLocaleDateString('en-GB', {day: 'numeric', month: 'short', timeZone: 'UTC'});
+function dashUntil(day){
+  const ms = Date.parse(day + 'T00:00:00Z') - Date.now(), h = Math.ceil(ms / 36e5);
+  return ms <= 0 ? 'now' : h <= 48 ? `in ${h} h` : `in ${Math.ceil(ms / 864e5)} days`;
+}
+function dashLock(th){
+  const K = DASH_SKIN[th], day = dashOpensOf(th);
+  return `<div class="dlock"><div class="dlockin"><div class="dlockico">🔒</div>
+      <div class="dashtitle sm">${K.icon} ${K.title}</div>
+      <p class="dlocktx">Opens <b>${dashDate(day)}</b> · ${dashUntil(day)}</p>
+      <form class="dcode" id="dashCodeF"><input id="dashCode" type="password" placeholder="Tester code" autocomplete="off" maxlength="40" aria-label="Tester code"><button type="submit">🧪 Test</button></form>
+      <p class="dcodemsg" id="dashCodeMsg">Testers: enter your code to fly it early. Test runs don't count.</p></div></div>`;
 }
 function dashView(){
   const th = dashTheme(), K = DASH_SKIN[th], me = dashPickDog(), sv = dashSave(), B = DASH.board;
@@ -5688,14 +5758,18 @@ function dashView(){
       <span><b>${esc(f.name)}</b><br><span class="lvl">BOND ${SAVE.dog(f.id).lvl}</span>${f.borrowed ? '<br>borrowed · no bonus' : dashBonusFor(f) ? `<br><b style="color:#2e7d32">+${dashBonusFor(f)} % points</b>` : ''}</span></button>`).join('');
   const post = dashCanPost();
   const board = (title, rows, empty, foot, prizes) => `<div class="card"><h3 class="h3">${title}</h3>${LIVE() ? (B ? (rows && rows.length ? dashBoardRows(rows, prizes) : `<p class="mini" style="margin:0">${empty}</p>`) : '<p class="mini" style="margin:0">Loading…</p>') : '<p class="mini" style="margin:0">The rankings need the game server.</p>'}${foot || ''}</div>`;
-  const overall = A && (A.on || A.done);
-  return `<div class="card dashhero dash-${th}">
+  const overall = A && (A.on || A.done), open = dashSkinOpen(th), locked = !dashCanFly(th);
+  const skins = `<div class="dskins">${['rocket', 'sleigh'].map(k => `<button data-dskin="${k}" class="${th === k ? 'on' : ''}${dashSkinOpen(k) ? '' : ' shut'}">
+      <span>${DASH_SKIN[k].icon} ${DASH_SKIN[k].title}</span><small>${dashSkinOpen(k) ? 'open now' : '🔒 ' + dashDate(dashOpensOf(k))}</small></button>`).join('')}</div>`;
+  return `${skins}<div class="card dashhero dash-${th}${locked ? ' locked' : ''}">
       ${th === 'sleigh' ? '<i class="dashsnow" aria-hidden="true"></i><i class="dashmoon" aria-hidden="true"></i>' : ''}
       <div class="dashtitle">${K.icon} SCRAPPY<br>${K.title}</div>
       <p class="dashsub">Fly ${K.where}. <b>Hold</b> to climb · let go to sink · <b>quick tap</b> drops a ${K.ammo}.</p>
       <p class="dashsub">Hit the ${K.target} for a combo (up to ×5), grab ${K.ammos} and ${K.coins}, dodge ${K.obst} and ${K.foe} — skim past them for a close-call bonus. Hiding at the top? ${K.hawk[0] + K.hawk.slice(1).toLowerCase()}s hunt there. It gets faster every second.</p>
-      <button id="dashGo" class="dashgo">▶ PLAY</button>
+      ${!open && !locked ? `<p class="dtest">🧪 TEST MODE · opens ${dashDate(dashOpensOf(th))} · runs don't count <button id="dashTestOff" class="sm">leave</button></p>` : ''}
+      <button id="dashGo" class="dashgo"${locked ? ' disabled tabindex="-1"' : ''}>▶ PLAY</button>
       <p class="dashsub" style="margin-top:10px">${tm && tm.best ? `Today: <b>${tm.best.toLocaleString()}</b> · #${tm.rank}` : `Best on this device: <b>${sv.best.toLocaleString()}</b>`}${om && om.total ? ` · Advent total <b>${om.total.toLocaleString()}</b> (#${om.rank})` : ''} · Free, no tickets — play as often as you like.</p>
+      ${locked ? dashLock(th) : ''}
     </div>
     ${PRIZE.list.length || PRIZE.done ? prizeCards() : ''}
     ${dashAdvent(A)}
@@ -5711,7 +5785,29 @@ function dashView(){
 function dashWire(){
   app.querySelectorAll('[data-dashdog]').forEach(b => b.onclick = () => { S.click(); DASH.dog = b.dataset.dashdog; lsSet('ba_dashdog', DASH.dog); menu(); });
   const go = document.getElementById('dashGo');
-  if (go) go.onclick = () => { S.unlock(); S.click(); dashPlay(dashPickDog()); };
+  if (go) go.onclick = () => { if (!dashCanFly(dashTheme())) return; S.unlock(); S.click(); dashPlay(dashPickDog()); };
+  app.querySelectorAll('[data-dskin]').forEach(b => b.onclick = () => { S.click(); DASH.skin = b.dataset.dskin; lsSet('ba_dashskin', DASH.skin); menu(); });
+  app.querySelectorAll('[data-advopen]').forEach(b => b.onclick = b.onkeydown = e => {
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+    if (b.classList.contains('opening')) return;
+    S.unlock(); S.dashJingle(true); b.classList.add('opening');
+    setTimeout(() => { lsSet('ba_adv_open:' + b.dataset.advopen, 1); DASH.justOpened = b.dataset.advopen; menu(); }, RM ? 50 : 650);
+  });
+  const off = document.getElementById('dashTestOff');
+  if (off) off.onclick = () => { S.click(); lsSet('ba_dash_code', ''); menu(); };
+  const f = document.getElementById('dashCodeF');
+  if (f) f.onsubmit = async e => {
+    e.preventDefault();
+    const code = document.getElementById('dashCode').value.trim(), msg = document.getElementById('dashCodeMsg');
+    if (!code) return;
+    if (!LIVE()){ msg.textContent = 'The code check needs the game server.'; return; }
+    msg.textContent = 'Checking…';
+    try {
+      const r = await api('/public/dash/code', {method: 'POST', body: {code}}), j = await r.json().catch(() => ({}));
+      if (j.ok){ lsSet('ba_dash_code', code); S.click(); menu(); return; }
+      msg.textContent = j.error === 'slow_down' ? 'Too many tries — wait an hour.' : 'Wrong code.';
+    } catch(err){ msg.textContent = 'The server was not reachable.'; }
+  };
 }
 
 /* ---- the run ---- */
@@ -5729,7 +5825,7 @@ function dashPlay(dog){
     <p class="mini" style="text-align:center;margin:8px 0 0">Hold = climb · quick tap = drop · keys: Space/↑ hold, ↓ drop, Esc quit</p>
     <div style="text-align:center"><button id="dashQuit" class="sm">✕ Back to the hangar</button></div>`;
   const cv = document.getElementById('dashCv');
-  const G = DASH.g = {th, K: DASH_SKIN[th], dog, img: dashImg(dog.img), cv, ctx: cv.getContext('2d'), state: 'ready', raf: 0,
+  const G = DASH.g = {th, K: DASH_SKIN[th], test: !dashSkinOpen(th), dog, img: dashImg(dog.img), cv, ctx: cv.getContext('2d'), state: 'ready', raf: 0,
     stars: Array.from({length: 46}, () => ({x: Math.random() * DASH_W, y: Math.random() * DASH_H * .7, s: Math.random() < .2 ? 2 : 1, p: Math.random() * 6})),
     flakes: Array.from({length: 40}, () => ({x: Math.random() * DASH_W, y: Math.random() * DASH_H, v: drand(18, 42), w: drand(0, 6)}))};
   dashReset(G);
@@ -5890,7 +5986,8 @@ function dashPress(G, on){
 // a run id + seed from the server: fetched for the ready screen, and the next one while the result card shows
 function dashFetchRun(G, next){
   if (!dashCanPost()) return;
-  api('/dash/start', {method: 'POST', body: {dogId: G.dog.borrowed ? null : G.dog.id, dog: {name: G.dog.name, token: tokenOf(G.dog) || null}}})
+  api('/dash/start', {method: 'POST', body: {dogId: G.dog.borrowed ? null : G.dog.id, dog: {name: G.dog.name, token: tokenOf(G.dog) || null},
+    skin: G.th, ...(G.test ? {code: lsGet('ba_dash_code') || ''} : {})}})
     .then(r => r.ok ? r.json() : null).then(j => {
       if (!j || DASH.g !== G || !(j.seed >= 0)) return;
       if (next) G.next = {id: j.id, seed: j.seed, bonus: j.bonus || 0};
@@ -5980,7 +6077,7 @@ function dashOver(G){
   const before = Math.max(sv.best, (DASH.board && DASH.board.today && DASH.board.today.mine && DASH.board.today.mine.best) || 0);
   G.pb = score > before; sv.best = Math.max(sv.best, score); sv.runs++;
   // bond XP for an own dog, signed in only
-  if (dashCanPost() && !G.dog.borrowed && OWNED && OWNED.some(f => f.id === G.dog.id)){
+  if (dashCanPost() && !G.test && !G.dog.borrowed && OWNED && OWNED.some(f => f.id === G.dog.id)){
     G.xp = Math.max(0, Math.min(DASH_XP_RUN, Math.floor(score / 150), DASH_XP_DAY - sv.xp));
     if (G.xp){ sv.xp += G.xp; G.ups = SAVE.bondXp(G.dog.id, G.xp); }
   }
@@ -6007,7 +6104,8 @@ function dashOverlay(G){
     return;
   }
   const P = G.posted, sv = dashSave(), score = dashFinal(G), best = Math.max(sv.best, P && P.best || 0);
-  const post = !dashCanPost() ? '<p class="mini2">Sign in to put your runs on the daily ranking.</p>'
+  const post = G.test ? `<p class="mini2">🧪 Test run${P && P.test ? ' — the server replayed it and got the same score' : ''}. ${K.title} opens ${dashDate(dashOpensOf(G.th))}; until then nothing counts.</p>`
+    : !dashCanPost() ? '<p class="mini2">Sign in to put your runs on the daily ranking.</p>'
     : !G.runId ? '<p class="mini2">The server was not reachable — this run counts for fun only.</p>'
     : !P ? '<p class="mini2">The server checks your run…</p>'
     : P.error ? `<p class="mini2">The server did not take this run${P.error === 'desync' ? ' (it played out differently there — a hiccup, not your fault)' : ''}.</p>`
