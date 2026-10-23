@@ -512,8 +512,10 @@ const today = () => new Date().toISOString().slice(0, 10);
 const DEFENSE_XP = {win: 18, loss: 6}, DEFENSE_CAP = 120;            // bond XP per defence, per dog per day
 // bond levels run 1…20 since v35 (were 1…10); every server-side clamp uses this
 const BOND_MAX = 20;
-// the rival's bond band for a dog at bond l — the same rule as rivalBand in public/index.html
-const rivalBand = l => [l >= 6 ? l : Math.max(1, l - 1), Math.min(BOND_MAX, l >= 10 ? l + 2 : l + 1)];
+// the rival's bond band for a dog at bond l — the same rule as rivalBand in public/index.html; cur = current win streak
+// (v37 hot streak: every 5 wins in a row allows one more bond level, max +3)
+const heatOf = cur => Math.min(3, Math.floor((cur || 0) / 5));
+const rivalBand = (l, cur) => [l >= 6 ? l : Math.max(1, l - 1), Math.min(BOND_MAX, (l >= 10 ? l + 2 : l + 1) + heatOf(cur))];
 /* Arena rivals: every dog of every player who played this week (a ladder row, a kennel visit or a squad this week),
    not only today's squads — so the arena is full of real players' dogs and nobody has to meet a wild one. The list
    alternates owners (shuffled round-robin), so a tournament meets different people. Team wallets stay out (the issuer
@@ -616,7 +618,7 @@ function clubResolve(env, d, auto, from) {
 function clubFinish(env, d, winner, why) {
   d.status = "done"; d.ended = Date.now(); d.result = {winner, why};
   const st = storeOf(env);
-  if (d.rounds.length >= 3) replayKeep(env, {kind: "club", by: d.a.acct, vs: d.b.acct,
+  if (d.rounds.length >= 3) replayKeep(env, {kind: "club", rules: 2, by: d.a.acct, vs: d.b.acct,
     P: {def: slimDef(d.a.def), lvl: d.a.lvl, who: d.a.name, path: d.a.path || null}, E: {def: slimDef(d.b.def), lvl: d.b.lvl, who: d.b.name, path: d.b.path || null},
     rounds: d.rounds.map(r => ({a: r.a, b: r.b, seed: r.seed})), result: winner === "a" ? "W" : winner === "b" ? "L" : "D"}).catch(() => {});
   if (winner) { st.clubAdd(d[winner].acct, "w"); st.clubAdd(d[winner === "a" ? "b" : "a"].acct, "l"); }
@@ -730,7 +732,8 @@ async function defOfUri(env, id, uri) { return env.ENGINE.defFromMeta({nft_id: i
 /* The rival, rebuilt on the server: another player's dog (arena, their real bond), a Legendary or a collection dog. */
 async function rivalOf(env, account, o, lvl, kind, stage) {
   o = o || {};
-  const [lo, hi] = rivalBand(lvl);
+  const cur = kind === "ranked" ? ((await fairLoad(env, weekOf()))[account] || {}).cur || 0 : 0;   // hot streak (verified fights)
+  const [lo, hi] = rivalBand(lvl, cur);
   const st = storeOf(env), near = x => Math.max(lo, Math.min(hi, x | 0 || lvl));
   if (o.rid) {
     for (const [owner, h] of Object.entries(await st.allHoldings())) {
@@ -783,12 +786,15 @@ async function fightStart(env, account, b) {
   const bonus = ["fang", "hide", "spirit"].includes(b.bonus) && kind === "ranked" ? b.bonus : null;
   const pathA = cleanPath(b.path);
   const state = env.ENGINE.start(def, lvl, opp.def, opp.lvl, {bonusA: bonus, pathA, pathB: opp.path});
+  // v37 hot streak: a ranked rival gets +2 health per heat level (every 5 verified wins in a row, max 3) — same as the page's heatUp
+  const heat = kind === "ranked" ? heatOf(((await fairLoad(env, weekOf()))[account] || {}).cur) : 0;
+  if (heat) { state.E.maxHp += 2 * heat; state.E.hp += 2 * heat; state.E.heat = heat; }
   const fid = rid(), wk = weekOf();
   FIGHTS.set(fid, {fid, account, kind, wk, state, at: Date.now(), rounds: 0, run: String(b.run || "").slice(0, 24) || null,
-    stage: Math.max(0, Math.min(2, b.stage | 0)), rarer: RARITY_LIST.indexOf(opp.def.rarity) > RARITY_LIST.indexOf(def.rarity), starter: !!dog.starter});
+    stage: Math.max(0, Math.min(2, b.stage | 0)), rarer: RARITY_LIST.indexOf(opp.def.rarity) > RARITY_LIST.indexOf(def.rarity), starter: !!dog.starter, heat});
   const f = await fairLoad(env, wk), me = await fairRow(env, f, account, wk);
   me.started++; await fairSave(env, wk, f);
-  return json({fid, hp: {P: state.P.maxHp, E: state.E.maxHp}, lvl: {P: lvl, E: opp.lvl}});
+  return json({fid, hp: {P: state.P.maxHp, E: state.E.maxHp}, lvl: {P: lvl, E: opp.lvl}, heat});
 }
 async function fightRound(env, account, b) {
   const F = FIGHTS.get(String(b.fid || ""));
@@ -809,7 +815,7 @@ async function fightDone(env, F, verdict, dealt) {
   me.fights++; me.rounds += F.rounds; me.throws += F.throws || 0;
   me.cur = win ? me.cur + 1 : 0; me.streak = Math.max(me.streak, me.cur);
   if (F.kind === "ranked") {
-    me.xp += win ? 30 + (F.rarer ? 10 : 0) : 12 + (F.rarer ? 10 : 0);
+    me.xp += win ? 30 + (F.rarer ? 10 : 0) + 5 * (F.heat || 0) : 12 + (F.rarer ? 10 : 0);
     win ? me.wins++ : me.losses++;
   } else {
     // arena: a knockout of three; the run's XP is booked when it ends, its wins and losses per fight
@@ -1563,10 +1569,10 @@ async function replayPost(env, account, b) {
   const names = await storeOf(env).profiles(), w = String(b.E.who || "");
   const vs = w ? Object.keys(names).find(a => names[a].name === w) || null : null;
   const lvl = x => Math.max(1, Math.min(BOND_MAX, x | 0 || 1));
-  const id = await replayKeep(env, {kind: b.kind, stage: b.kind === "arena" ? Math.max(0, Math.min(2, b.stage | 0)) : null,
+  const id = await replayKeep(env, {kind: b.kind, rules: b.rules === 2 ? 2 : 1, stage: b.kind === "arena" ? Math.max(0, Math.min(2, b.stage | 0)) : null,
     by: account, vs: vs && vs !== account ? vs : null, close: !!b.close,
     P: {def: slimDef(b.P.def || {}), lvl: lvl(b.P.lvl), bonus: ["fang", "hide", "spirit"].includes(b.P.bonus) ? b.P.bonus : null, path: cleanPath(b.P.path)},
-    E: {def: slimDef(b.E.def || {}), lvl: lvl(b.E.lvl), who: null, path: cleanPath(b.E.path)},
+    E: {def: slimDef(b.E.def || {}), lvl: lvl(b.E.lvl), who: null, path: cleanPath(b.E.path), heat: Math.max(0, Math.min(3, b.E.heat | 0))},
     rounds: b.rounds.map(r => r.seed != null ? {a: r.a, b: r.b, seed: r.seed} : {a: r.a, b: r.b, r: r.r}), result: ["W", "L", "D"].includes(b.result) ? b.result : null});
   return json({ok: true, kept: !!id});
 }

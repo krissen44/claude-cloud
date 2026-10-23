@@ -311,6 +311,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 - **Revenge (v36)**: result screen after a ranked loss `#revenge` → same `E.def`, level clamped to `rivalBand`, 1 ticket.
 - **Pack chat (v36)**: `/chat?ch=pack` / POST `{text, ch:'pack'}` → blob `chat:pack:<id>` (`packChatLoad`, `myPack`), shared mute/rate limit; `/admin/chat` returns `packs`, del takes `ch`. Client `CHAT.ch`, `CHAT.P`, tabs `.chtabs`, seen per pack `ba_chat_pseen:<id>`.
 - **Trait album (v36)**: `albumAdd(id)` from `award` (ranked/arena; all traits of the dog, not Legendaries) → `d.album {traitId: day}`, `d.albumDone {layer: day}` +2 tickets per full layer (`ALBUM_LAYERS`, `ALBUM_REWARD`); `albumCard` fold; ach `album50/albumset/albumall`.
+- **Rules v2 (v37, competition)**: engine `RULES` (2; replays without `rules` → 1 via `repRules`): active abilities recharge 2 rounds after a cast (`abReady`, `abSpend`, `f.cd`, `AB_CD`; `moveOf` turns a not-ready ability into a guard; button `abWait`), a guard halves "through a guard" damage (Lightning, lasers). Reason: through-guard damage abilities won 83–93 % in simulation, everything else 10–42 % (see RELEASE.md v37). **Hot streak** `heatOf(cur)` = ⌊streak/5⌋ (max 3): `rivalBand(l, cur)` +heat, rarer/Legendary draws in `pickOpponent`, rival `heatUp` +2 HP per step (`HEAT_HP`), +5 XP per step on a ranked win; server: `rivalOf` + `fightStart` from `fair.cur`, returns `heat`, `F.heat` in `fightDone`; replays store `E.heat`. Test `tools/test/v37.mjs`.
 - **Hall of Fame (v36)**: `/api/public/fame` (`publicFame`, 26 weeks, frozen ones only) → website `#fame`.
 - **Recaps**: daily recap when tickets are 0 and all 3 tournaments used; weekly results on the first visit of a new
   week (only for players active in the week that just ended).
@@ -339,9 +340,10 @@ v31.3 (package for Mon 12 Oct) Joey Wallet first + "⭐ Recommended" in game/web
 
 v33 (package for Mon 19 Oct) Scrappy Sleigh/Rocket Dash mini game + weekly Dash board.
 
-v34–v36 (one package for Sun 25 → Mon 26 Oct, `bark-arena-game-v36-komplett.zip`): owner's new look + compact kennel,
+v34–v36 (one package for Sun 25 → Mon 26 Oct): owner's new look + compact kennel,
 bond 20 + tougher rivals + arena of the week + weekly badges, picture check, share card, welcome/comeback, boss alerts,
 revenge, pack chat, trait album, Hall of Fame.
+v37 (same package, `bark-arena-game-v37-komplett.zip`): abilities recharge 2 rounds + a guard halves beam damage, hot streak.
 
 ### Where things stand
 - **Live:** game **v32** (uploaded early by the owner on 9 Oct, incl. v31.3 + lending market + Discord channels); the stats

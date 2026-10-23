@@ -4,6 +4,26 @@ Changes collect here during the week and go live together when the new week star
 Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit flash, new /clip) — no Dash yet (no
 `dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
 
+## v37 — fairer competition, also for Sun 25 → Mon 26 Oct (same package, `bark-arena-game-v37-komplett.zip` replaces v36)
+- **Why** (owner, 23 Oct: "the 1st has 100 % wins, the 2nd lost one fight — too much"): the backup of 19 Oct shows the
+  top two at 124–8 and 125–6, each with one bond-10 dog (151–5, 227–5), most fights over before round 10. A simulation of
+  every active ability at bond 10 (`kitsim`, 1,500 fights each, same player model) found the cause: abilities that do
+  damage **through a guard** win 83 % (Lightning — a Rare trait on 127 dogs) to 92–93 % (the three lasers), every other
+  ability 10–42 %. Guaranteed damage that nothing answers takes the rock-paper-scissors out of the fight (taunt, cast,
+  taunt, cast…).
+- **Rules v2** (engine, so page + referee + Club alike): an active ability **recharges for two rounds** after a cast
+  (button shows "⏳ 2", `abReady`, `abSpend`, `f.cd`), and a **guard halves** damage that goes through a guard (Lightning,
+  lasers; Legendary specials unchanged). The AI now guards when the player's beam is loaded. Same model after the change:
+  Lightning 83 → 56 %, lasers 92 → 62–78 %, heals 35–42 %, no ability 28 %. Trait texts say "a guard halves it".
+- **Hot streak**: every 5 ranked wins in a row = one heat step (max 3): the rival's bond may go one higher, rarer
+  collection dogs and more Legendaries are drawn, and the rival gets **+2 health per step**; each win against a hot
+  rival pays **+5 XP per step**. A loss resets it. Shown in the kennel streak chip and on the result card. The referee
+  uses the verified streak (`fair.cur`) and tells the page the heat (`/fight/start` → `heat`), so they never disagree.
+- **Replays** keep the rules they were fought with (`rules`, `E.heat`); fights recorded before play with the old rules
+  on TV/Shorts (`repRules`).
+- Website guide: recharge + guard halves, hot streak.
+- Tests: `tools/test/v37.mjs` (recharge, half damage, referee heat, page + referee agree, old replays) + the suite.
+
 ## v36 — also for Sun 25 → Mon 26 Oct: one package with v34 + v35 + v36 → `bark-arena-game-v36-komplett.zip` (replaces the v35 ZIP) + `scrappyxrp-website-v36.zip`
 - **Share card (owner: "a game card like a PnL trading card")**: a 1200×675 picture drawn in the page (`cardDraw`,
   canvas, pixel font): big green **+XP**, win rate, "▲ n % vs last week", record, rank, best streak, trainer level, the
