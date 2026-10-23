@@ -4,6 +4,13 @@ Changes collect here during the week and go live together when the new week star
 Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit flash, new /clip) — no Dash yet (no
 `dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
 
+## v38.1 — Glitch hit for the energy thieves (same package)
+- **Why**: after the v37 balance the three energy-drain traits (Matrix Glasses 55 dogs, Coder Glasses 150, Matrix Rain
+  138 — the largest ability group) won only 16–19 % in simulation, worse than no ability (28 %).
+- Now they also land a **glitch hit of 2–4 damage that no guard stops** (`glitch: [2, 4]` in the trait data, rules v2
+  only, so old replays are unchanged); the AI casts them more readily. Simulation at bond 10: 36–39 % (heals 31–39 %,
+  Lightning 55 %, lasers 62–75 %). Trait texts and the website guide say so.
+
 ## v38 — Scrappy Dash in new clothes (same package; Dash stays hidden until 30 Nov)
 - **Why**: owner, 23 Oct: the Dash pixel graphics look old-fashioned and lack detail (flat rectangles, no shading).
 - **Painted background plates** (`public/art/dash-<sleigh|rocket>-<sky|far|mid>.png`, 480 px wide, far/mid tile
