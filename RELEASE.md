@@ -14,7 +14,10 @@ Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit 
   lock panel that stays in view while scrolling, with a **live countdown ticker** (days · hrs · min · sec, `dashTickHtml`,
   `#dashTick`); at zero the page unlocks by itself. With the right code (checked by `/api/public/dash/code`, 8 wrong tries per address and hour)
   the page shows "🧪 TEST MODE" and you can fly it; the server replays test runs but **never books them** (no ranking, no
-  bond XP). Team wallets may test without a code. Both looks share one board (same game, same rules).
+  bond XP). Team wallets may test without a code.
+- **Rocket Dash = ranking only** (owner, 23 Oct): own boards (`rdashday:<day>`, `rdash:<week>`), no calendar, no prizes,
+  no prize cards in its view; the Advent calendar and its prizes count **Sleigh runs only** (`dashday:`/`dash:`). Board and
+  website take `?skin=rocket|sleigh` (website: Rocket board until December, then Sleigh with the calendar).
 - **Advent doors**: future doors = the prize Scrappy blurred behind a 🔒 (rarity shown); today's door = a wrapped gift
   box — tap it, the lid flies off and the Scrappy pops out (remembered per device, `ba_adv_open:<day>`); past doors show
   the Scrappy and the day's winner. Today's prize card appears after opening. **Overall prizes show place + rarity only**

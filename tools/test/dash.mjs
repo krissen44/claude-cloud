@@ -163,13 +163,16 @@ await p.click("#dashBack");
 // phone width (340 field) + rocket skin: the replay matches there too
 const q = await page({width: 390, height: 844}, "/dash?dash=rocket", B);
 await q.screenshot({path: S + "/shots/dash-rocket-hangar.png", fullPage: true});
+ok(await q.locator(".adoor").count() === 0 && await q.locator(".agrand").count() === 0 && await q.evaluate(() => DASH.board.skin === "rocket" && !DASH.board.advent && !DASH.board.today.top.length), "rocket: own board, no calendar, no prizes");
 await startRun(q);
 await q.waitForTimeout(9000);
 await q.screenshot({path: S + "/shots/dash-rocket.png"});
 await crash(q);
 await q.waitForFunction(() => DASH.g && DASH.g.state === "over" && DASH.g.posted, null, {timeout: 20000});
 post = await q.evaluate(() => DASH.g.posted);
-ok(q.evaluate && post.ok, "phone-width run replayed too: " + JSON.stringify(post));
+ok(post.ok && post.total == null, "phone-width rocket run replayed and booked, no Advent total: " + JSON.stringify(post));
+{ const sl = await call(null, "/public/dash?skin=sleigh"), rk = await call(null, "/public/dash?skin=rocket");
+  ok(rk.today.top.length === 1 && !rk.advent && sl.advent && !sl.today.top.some(r => r.score === post.score), "the rocket run is on the rocket board only (sleigh board unchanged: " + sl.today.top.length + " rows)"); }
 ok(await q.evaluate(() => DASH.g.th === "rocket" && DASH_W === 340), "rocket skin, 340 field");
 ok(q.errs.length === 0, "no page errors (phone) " + q.errs.join(" | "));
 await br.close();

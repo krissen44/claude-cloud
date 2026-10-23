@@ -592,10 +592,12 @@ function claimPrize(key, place, token){
         (Date.now() < Date.parse("2026-12-01T00:00:00Z") ? " <b>Sleigh Dash</b> and the Advent calendar follow on 1 December." : " The best run of the day counts.");
   };
   if (Date.now() < Date.parse("2026-12-01T00:00:00Z")) rocket();
-  fetch("https://game.scrappyxrp.fun/api/public/dash", {cache: "no-store"}).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
+  // before December the Rocket board (ranking only, no calendar); from 1 Dec the Sleigh board with the Advent calendar
+  var dashSkin = Date.now() < Date.parse("2026-12-01T00:00:00Z") ? "rocket" : "sleigh";
+  fetch("https://game.scrappyxrp.fun/api/public/dash?skin=" + dashSkin, {cache: "no-store"}).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
     if (!d) return;
     var esc = function(t){ return String(t).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };
-    if (d.theme === "rocket"){ rocket(); }
+    if (d.skin === "rocket" || (!d.skin && d.theme === "rocket")){ rocket(); }
     var list = function(rows, empty){ rows = (rows || []).slice(0, 5); return rows.length ? '<ol>' + rows.map(function(r, i){
       return '<li><span class="rk">' + (["🥇","🥈","🥉"][i] || (i + 1) + ".") + '</span><span>' + esc(r.name) + (r.team ? ' <small class="team">TEAM</small>' : '') + '</span><b>' + Number(r.score).toLocaleString() + '</b></li>'; }).join("") + '</ol>'
       : '<p class="empty">' + empty + '</p>'; };

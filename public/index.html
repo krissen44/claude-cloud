@@ -5698,10 +5698,11 @@ const dashCanPost = () => LIVE() && !WALLET.demo && !!WALLET.token;
 async function dashLoad(){
   if (!LIVE() || DASH.loading) return;
   DASH.loading = true;
-  try { const r = await api('/dash/board'); if (r.ok) DASH.board = await r.json(); } catch(e){}
+  const sk = dashTheme();   // Rocket and Sleigh have their own boards (Rocket: ranking only, no calendar)
+  try { const r = await api('/dash/board?skin=' + sk); if (r.ok) DASH.board = await r.json(); } catch(e){}
   if (!PRIZE.list.length) loadPrizes();   // an Advent prize can be claimed right here
   DASH.loading = false;
-  if (tab === 'dash' && !DASH.g) menu();
+  if (tab === 'dash' && !DASH.g){ if (dashTheme() !== sk) return dashLoad(); menu(); }   // the look changed while loading
 }
 function dashPickDog(){
   const R = ROSTER(), saved = R.find(f => f.id === DASH.dog);
@@ -5770,8 +5771,8 @@ function dashLock(th){
       <p class="dcodemsg" id="dashCodeMsg">Testers: enter your code to fly it early. Test runs don't count.</p></div></div>`;
 }
 function dashView(){
-  const th = dashTheme(), K = DASH_SKIN[th], me = dashPickDog(), sv = dashSave(), B = DASH.board;
-  const A = B && B.advent, tm = B && B.today && B.today.mine, om = A && A.overall && A.overall.mine;
+  const th = dashTheme(), K = DASH_SKIN[th], me = dashPickDog(), sv = dashSave(), B = DASH.board && (DASH.board.skin || 'sleigh') === th ? DASH.board : null;
+  const A = th === 'sleigh' && B && B.advent, tm = B && B.today && B.today.mine, om = A && A.overall && A.overall.mine;
   const pick = ROSTER().map(f => `<button data-dashdog="${esc(f.id)}" class="${me && me.id === f.id ? 'insq' : ''}"><img src="${f.img}" alt="">
       <span><b>${esc(f.name)}</b><br><span class="lvl">BOND ${SAVE.dog(f.id).lvl}</span>${f.borrowed ? '<br>borrowed · no bonus' : dashBonusFor(f) ? `<br><b style="color:#2e7d32">+${dashBonusFor(f)} % points</b>` : ''}</span></button>`).join('');
   const post = dashCanPost();
@@ -5789,12 +5790,12 @@ function dashView(){
       <button id="dashGo" class="dashgo"${locked ? ' disabled tabindex="-1"' : ''}>▶ PLAY</button>
       <p class="dashsub" style="margin-top:10px">${tm && tm.best ? `Today: <b>${tm.best.toLocaleString()}</b> · #${tm.rank}` : `Best on this device: <b>${sv.best.toLocaleString()}</b>`}${om && om.total ? ` · Advent total <b>${om.total.toLocaleString()}</b> (#${om.rank})` : ''} · Free, no tickets — play as often as you like.</p>
     </div>
-    ${PRIZE.list.length || PRIZE.done ? prizeCards() : ''}
+    ${th === 'sleigh' && (PRIZE.list.length || PRIZE.done) ? prizeCards() : ''}
     ${dashAdvent(A)}
     ${board("🏆 TODAY'S RANKING", B && B.today && B.today.top, 'No runs yet today — the first one takes the top spot.',
       `${B && B.yesterday && B.yesterday.top.length ? `<p class="mini" style="margin:10px 0 4px"><b>Yesterday (${esc(B.yesterday.day)})</b></p>${dashBoardRows(B.yesterday.top)}` : ''}<p class="mini" style="margin:8px 0 0">Your best run of the day counts. A new day starts at 00:00 UTC.</p>`)}
     ${overall ? board('🎄 ADVENT OVERALL — TOP ' + A.grandPlaces + ' WIN', A.overall.top, 'Nobody on the overall ranking yet.', `<p class="mini" style="margin:8px 0 0">Your best run of each Advent day, added up${om && om.days ? ` — you've played ${om.days} of ${Math.min(24, A.n)} days` : ''}. Prizes: ${dashGrandText(A)}.</p>`, A.grand)
-      : board("📅 THIS WEEK", B && B.week && B.week.top, 'No runs yet this week.', '<p class="mini" style="margin:8px 0 0">Best run of the week. Resets Monday 00:00 UTC.</p>')}
+      : board("📅 THIS WEEK", B && B.week && B.week.top, 'No runs yet this week.', `<p class="mini" style="margin:8px 0 0">Best run of the week. Resets Monday 00:00 UTC.${th === 'rocket' ? ' Rocket Dash is for glory only — rankings, no prizes. The Advent calendar with prizes is Sleigh Dash (from ' + dashDate(dashOpensOf('sleigh')) + ').' : ''}</p>`)}
     <div class="card"><h3 class="h3">PILOT</h3>
       <div class="pick tiny">${pick}</div>
       <p class="mini" style="margin:8px 0 0"><b>Scrappy bonus:</b> fly your own Pixel Scrappy and every run scores a little more, by its rarity — Common +5 %, Uncommon +6 %, Rare +7 %, Epic +8 %, Legendary/Mythic +10 %. Small on purpose: a better run still beats a rarer dog. Borrowed, starter and demo dogs fly without it.</p>
@@ -5805,7 +5806,7 @@ function dashWire(){
   app.querySelectorAll('[data-dashdog]').forEach(b => b.onclick = () => { S.click(); DASH.dog = b.dataset.dashdog; lsSet('ba_dashdog', DASH.dog); menu(); });
   const go = document.getElementById('dashGo');
   if (go) go.onclick = () => { if (!dashCanFly(dashTheme())) return; S.unlock(); S.click(); dashPlay(dashPickDog()); };
-  app.querySelectorAll('[data-dskin]').forEach(b => b.onclick = () => { S.click(); DASH.skin = b.dataset.dskin; lsSet('ba_dashskin', DASH.skin); menu(); });
+  app.querySelectorAll('[data-dskin]').forEach(b => b.onclick = () => { S.click(); DASH.skin = b.dataset.dskin; lsSet('ba_dashskin', DASH.skin); menu(); dashLoad(); });
   app.querySelectorAll('[data-advopen]').forEach(b => b.onclick = b.onkeydown = e => {
     if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
     if (b.classList.contains('opening')) return;

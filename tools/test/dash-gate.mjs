@@ -34,7 +34,7 @@ ok(r.status === 200 && r.j.test === true && r.j.theme === "sleigh", "a player wi
   const e = await call(B, "/dash/end", {id: r.j.id, score: sim.score, ticks: sim.ticks, w: 480, inp: []});
   const bd = await call(B, "/dash/board");
   ok(e.j.ok && e.j.test && e.j.score === sim.score && !bd.j.today.top.length && bd.j.opens.rocket === "2026-11-01" && bd.j.opens.sleigh === "2026-12-01", "the test run is replayed but not booked; board says the opening days " + JSON.stringify(e.j)); }
-{ const bd = await call(null, "/public/dash");
+{ const bd = await call(null, "/public/dash?skin=sleigh");
   ok(bd.j.advent.grandPrizes.length === 5 && bd.j.advent.grandPrizes.every(g => !g.token && g.rarity), "overall prizes: rarity only"); }
 const br = await chromium.launch({executablePath: process.env.CHROMIUM || undefined});
 const p = await br.newPage({viewport: {width: 1000, height: 900}}); const errs = []; p.on("pageerror", e => errs.push(e.message));
@@ -44,6 +44,7 @@ await p.goto(U + "/dash"); await p.waitForFunction(() => OWNED && OWNED.length &
 ok(await p.evaluate(() => tab) === "dash" && await p.locator('.tabs [data-t="dash"]').count() === 1, "the Dash tab is there, /dash opens it");
 ok(await p.locator(".dskins button").count() === 2 && await p.locator(".dskins button.shut").count() === (before ? 2 : 1), "two looks to pick, locked ones marked");
 await p.click('[data-dskin="sleigh"]');
+await p.waitForFunction(() => DASH.board && DASH.board.skin === "sleigh" && document.querySelector(".adoors"), null, {timeout: 10000});
 ok(await p.locator(".dwrap.locked .dlock").isVisible() && await p.locator(".dwrap.locked .dbody .adoors").count() === 1 && await p.locator("#dashGo").isDisabled() && (await p.locator(".dlock").innerText()).includes("1 Dec"), "sleigh: the whole page blurred with a lock, opens 1 Dec, no play");
 { const a = await p.locator("#dashTick").innerText(); await p.waitForTimeout(1300); const b2 = await p.locator("#dashTick").innerText();
   ok(a !== b2 && /DAYS/.test(a), "the countdown ticks: " + a.replace(/\s+/g, " ") + " → " + b2.replace(/\s+/g, " ")); }

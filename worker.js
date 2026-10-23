@@ -1119,10 +1119,11 @@ async function dashEnd(env, account, b) {
   }
   if (run.test) return json({ok: true, test: true, score, raw: Math.floor(+b.score || 0), bonus: run.bonus || 0});
   const day = new Date(run.at).toISOString().slice(0, 10), A = dashAdvent(env);
-  const d = await dashBook(env, "dashday:" + day, account, score, run.dog);
-  await dashBook(env, "dash:" + weekOf(new Date(run.at)), account, score, run.dog);
+  const K = dashBoardKeys(run.skin);
+  const d = await dashBook(env, K.day + day, account, score, run.dog);
+  await dashBook(env, K.week + weekOf(new Date(run.at)), account, score, run.dog);
   const out = {ok: true, score, raw: Math.floor(+b.score || 0), bonus: run.bonus || 0, ...d};
-  if (day >= A.from && day <= A.to) { const o = await dashOverall(env, A), me = o[account]; out.total = me.total; out.totalRank = dashRankBy(o, account, "total"); }
+  if (run.skin !== "rocket" && day >= A.from && day <= A.to) { const o = await dashOverall(env, A), me = o[account]; out.total = me.total; out.totalRank = dashRankBy(o, account, "total"); }
   return json(out);
 }
 const dashRank = (m, a) => !m[a] ? null : 1 + Object.values(m).filter(r => r.best > m[a].best || (r.best === m[a].best && r.at < m[a].at)).length;
@@ -1143,14 +1144,19 @@ async function dashOverall(env, A) {
 const dashSort = (m, k) => Object.entries(m).filter(([, r]) => r[k] > 0).sort((x, y) => y[1][k] - x[1][k] || (x[1].at || 0) - (y[1].at || 0));
 const dashRows = (env, names, account, list, k, n) => list.slice(0, n).map(([a, r]) => ({name: displayName(names, a), score: r[k], ...(r.dog ? {dog: r.dog} : {}),
   ...(r.days ? {days: r.days} : {}), ...(isTeam(env, a) ? {team: true} : {}), ...(a === account ? {you: true} : {})}));
-async function dashBoard(env, account) {
+/* Rocket Dash is ranking only (owner, 23 Oct): its runs go to their own boards (`rdashday:` / `rdash:`), no calendar,
+   no prizes. Sleigh Dash keeps `dashday:` / `dash:`, which the Advent calendar and its prizes are built on. */
+const dashBoardKeys = skin => skin === "rocket" ? {day: "rdashday:", week: "rdash:"} : {day: "dashday:", week: "dash:"};
+async function dashBoard(env, account, skinQ) {
+  const skin = ["sleigh", "rocket"].includes(skinQ) ? skinQ : dashTheme(env), K = dashBoardKeys(skin);
   const st = storeOf(env), names = await st.profiles(), day = today(), yday = dayAdd(day, -1), A = dashAdvent(env);
-  const m = (await st.blobGet("dashday:" + day)) || {}, y = (await st.blobGet("dashday:" + yday)) || {}, w = (await st.blobGet("dash:" + weekOf())) || {};
-  const out = {theme: dashTheme(env), opens: dashOpens(env), day,
+  const m = (await st.blobGet(K.day + day)) || {}, y = (await st.blobGet(K.day + yday)) || {}, w = (await st.blobGet(K.week + weekOf())) || {};
+  const out = {theme: dashTheme(env), skin, opens: dashOpens(env), day,
     today: {top: dashRows(env, names, account, dashSort(m, "best"), "best", 10), players: Object.keys(m).length},
     yesterday: {day: yday, top: dashRows(env, names, account, dashSort(y, "best"), "best", 3)},
     week: {top: dashRows(env, names, account, dashSort(w, "best"), "best", 10)}};
   if (account) out.today.mine = m[account] ? {best: m[account].best, runs: m[account].runs, rank: dashRank(m, account)} : {best: 0, runs: 0, rank: null};
+  if (skin === "rocket") return out;
   // the Advent calendar and, once it runs, the overall ranking
   const adv = {...A, days: []}, plan = await dashPlan(env);
   // the overall prizes show only what can be won (place + rarity) — the Scrappy itself stays a surprise
@@ -2571,7 +2577,7 @@ export default {
         return withCors(await dashCode(env, req, b), cors);
       }
       if (p === "/public/dash") {
-        const r = json(await dashBoard(env, null));   // names only, never wallets
+        const r = json(await dashBoard(env, null, url.searchParams.get("skin")));   // names only, never wallets
         r.headers.set("access-control-allow-origin", "*"); r.headers.set("cache-control", "public, max-age=60");
         return r;
       }
@@ -2584,7 +2590,7 @@ export default {
 
       const account = await readSession(env, (req.headers.get("authorization") || "").replace(/^Bearer /, ""));
       if (p === "/ladder") return withCors(await ladder(env, account, url.searchParams.get("week")), cors);
-      if (p === "/dash/board") return withCors(json(await dashBoard(env, account)), cors);
+      if (p === "/dash/board") return withCors(json(await dashBoard(env, account, url.searchParams.get("skin"))), cors);
       if (!account) return withCors(json({error:"unauthorized"}, 401), cors);
 
       if (p === "/me/kennel") return withCors(await kennel(env, account, url.searchParams.has("fresh")), cors);
