@@ -27,7 +27,8 @@ Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit 
   `server.js` passes the client address to the API for the code rate limit.
 - **Website**: the Dash section shows from 1 Nov as "Scrappy Rocket Dash" (Sleigh + Advent "from 1 December"), future
   doors blurred with a lock, overall prizes rarity only.
-- **Hostinger env (new)**: `DASH_TEST_CODE=<a code of your choice, at least 4 characters>` — hand it only to testers.
+- **Tester code**: `scrappy589` (owner, 23 Oct) is built into the server (`worker.js`, never in the page). Env
+  `DASH_TEST_CODE` replaces it, `DASH_TEST_CODE=off` switches testing off. Preview shots: `node tools/test/dash-preview.mjs <dir>`.
 - Tests: `tools/test/dash-gate.mjs` (rewritten), `tools/test/dash.mjs` (doors, box, rarity-only), dash-prize, v35, v36, ui-shots.
 
 ## v38.1 — Glitch hit for the energy thieves (same package)

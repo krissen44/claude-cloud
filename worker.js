@@ -1010,7 +1010,8 @@ const dashIsOpen = (env, skin) => Date.now() >= Date.parse(dashOpens(env)[skin] 
 // the look a new visitor sees first: DASH_THEME if set, else the newest skin that is open (sleigh in December)
 const dashTheme = env => ["sleigh", "rocket"].includes(env.DASH_THEME) ? env.DASH_THEME : dashIsOpen(env, "sleigh") ? "sleigh" : "rocket";
 function dashCodeOk(env, code) {
-  const want = String(env.DASH_TEST_CODE || ""), got = String(code || "");
+  // the owner's tester code (23 Oct); env DASH_TEST_CODE replaces it, DASH_TEST_CODE=off switches testing off
+  const want = env.DASH_TEST_CODE === "off" ? "" : String(env.DASH_TEST_CODE || "scrappy589"), got = String(code || "");
   if (want.length < 4 || got.length !== want.length) return false;
   let d = 0; for (let i = 0; i < want.length; i++) d |= want.charCodeAt(i) ^ got.charCodeAt(i);
   return d === 0;
