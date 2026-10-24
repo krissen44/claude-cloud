@@ -2881,6 +2881,10 @@ async function walletPoll(){
    the server for a one-time nonce, let Joey sign a "Sign in with XRPL" message
    (or, for a Ledger account, an unsubmittable challenge payment) and hand that
    to the server, which checks it and returns the same session as Xaman. */
+const JOEY_EXT_URL = 'https://chromewebstore.google.com/detail/joey-wallet/aaacpkbbmpjpiogijdlpgfkejgpanjfk';
+// the error line under the wallet chooser; a missing Joey extension gets the Chrome Web Store link
+const walletErr = () => !WALLET.error ? '' : `<p class="mini" style="margin:8px 0 0;color:var(--hpLow)">${esc(WALLET.error)}</p>` +
+  (/extension not found/.test(WALLET.error) ? `<p style="margin:8px 0 0"><a class="btn" href="${JOEY_EXT_URL}" target="_blank" rel="noopener">🧩 Get Joey for Chrome</a></p>` : '');
 function joeyProvider(){ return window.joey || (window.xrpl && window.xrpl.joey) || null; }
 async function waitForJoeyProvider(ms){
   const t0 = Date.now();
@@ -2895,7 +2899,7 @@ async function joeyConnect(){
   const step = t => { if (WALLET.login && WALLET.login.state === 'joey'){ WALLET.login.step = t; menu(); return true; } return false; };
   try {
     const p = await waitForJoeyProvider(2500);
-    if (!p) throw Object.assign(new Error('Joey Wallet extension not found in this browser. Install it from joeywallet.xyz — or pick Xaman.'), {shown:true});
+    if (!p) throw Object.assign(new Error('Joey Wallet extension not found in this browser. Install it from the Chrome Web Store, reload this page — or pick the Joey app or Xaman.'), {shown:true});
     if (!step('Approve the connection in Joey…')) return;
     await joeyCall(p, 'connect', {name:'Bark Arena', icon:'https://scrappyxrp.fun/favicon-192.png'});
     const r = await api('/auth/joey/start', {method:'POST'}); const st = await r.json();
@@ -3392,11 +3396,11 @@ function walletCard(){
       <p class="mini" style="margin:0 0 10px"><b>Connect your wallet.</b> We recommend <b>Joey Wallet</b>. Signing in only proves which wallet is yours — no transaction, no fee.</p>
       <div class="acts" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
         <button class="act rec" id="pickJoeyM"><b>🦘 Joey app <span class="tag">⭐ Recommended</span></b><small>Scan a QR code with the Joey mobile app, or open it on this phone.</small></button>
-        <button class="act rec" id="pickJoey"><b>🧩 Joey extension</b><small>Joey Wallet browser extension on this computer.</small></button>
+        <button class="act rec" id="pickJoey"><b>🧩 Joey extension</b><small>Joey Wallet browser extension on this computer (Chrome, Brave, Edge).</small></button>
         <button class="act" id="pickXaman"><b>📱 Xaman</b><small>Scan a QR code, or open the Xaman app on this phone.</small></button>
       </div>
       <div class="row" style="justify-content:flex-start;margin-top:10px"><button id="pickCancel" class="sm">Cancel</button></div>
-      ${WALLET.error ? `<p class="mini" style="margin:8px 0 0;color:var(--hpLow)">${esc(WALLET.error)}</p>` : ''}</div>`;
+      ${walletErr()}</div>`;
   if (WALLET.token && !WALLET.demo && WALLET.editName) return `<div class="card">
       <p class="mini" style="margin:0 0 8px"><b>Your name in Bark Arena.</b> Shown on the leaderboard, and to rivals who meet your Scrappys in the arena ("#123 from <i>name</i>"). 3–16 letters, numbers, space, _ . -</p>
       <div class="row" style="justify-content:flex-start"><input id="nameIn" maxlength="16" value="${esc(WALLET.name || '')}" placeholder="e.g. BarkBoss" style="flex:1;min-width:140px;padding:9px 12px;border-radius:10px;border:2px solid var(--panelB);font:inherit;background:var(--panel);color:var(--ink)">
@@ -3406,12 +3410,12 @@ function walletCard(){
       <div><b style="font-size:12px">🔗 ${WALLET.name ? esc(WALLET.name) + ' · ' : ''}${esc(WALLET.account.slice(0,6) + '…' + WALLET.account.slice(-4))}</b> <button id="nameEdit" class="sm" style="padding:3px 8px">✏️ ${WALLET.name ? 'Name' : 'Set a name'}</button>
         <div class="mini">${WALLET.loading ? esc(WALLET.progress) : (OWNED ? (n => n + ' Pixel Scrappy' + (n===1?'':'s') + ' in this wallet')(OWNED.filter(f => !f.borrowed).length) + (OWNED.some(f => f.borrowed) ? ' · 🤝 1 borrowed' : '') : '')}</div></div>
       <div class="row"><button id="reload">↻ Refresh</button><button id="signout">Sign out</button></div></div>
-      ${WALLET.error ? `<p class="mini" style="margin:8px 0 0;color:var(--hpLow)">${esc(WALLET.error)}</p>` : ''}</div>`;
+      ${walletErr()}</div>`;
   return `<div class="card"><div class="wal">
       <div><b style="font-size:12px">${WALLET.demo ? 'Demo mode' : 'Welcome to Bark Arena'}</b>
         <div class="mini">${WALLET.demo ? 'Playing with demo dogs. Nothing counts for the ladder.' : 'Connect Joey Wallet (or Xaman) to fight with the Pixel Scrappys you hold.'}</div></div>
       <div class="row"><button id="connectLive">Connect wallet</button>${WALLET.demo ? '' : '<button id="demo">Try the demo</button>'}</div></div>
-      ${WALLET.error ? `<p class="mini" style="margin:8px 0 0;color:var(--hpLow)">${esc(WALLET.error)}</p>` : ''}</div>`;
+      ${walletErr()}</div>`;
 }
 function walletWire(){
   const q = id => document.getElementById(id);

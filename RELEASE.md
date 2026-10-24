@@ -4,6 +4,16 @@ Changes collect here during the week and go live together when the new week star
 Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (bond fix, hit flash, new /clip) — no Dash yet (no
 `dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
 
+## v39.1 — Joey Wallet extension is live in the Chrome Web Store (same package)
+- Checked against the official SDK `@joeywallet/wallet-sdk` 0.5.0 (7 Oct) and the XRPL CAIP-122 spec: our sign-in uses
+  the same surface (`window.joey` / `window.xrpl.joey`, `connect({name, icon})`, `signIn({statement, nonce})`), handles
+  both result shapes (CAIP-122 message, and `signedTx` for Ledger accounts) and verifies the signature exactly as the spec
+  says (ripple-keypairs over the message bytes). The store itself is blocked from the build machine, so the extension
+  was simulated with real keys: `tools/test/joey-ext.mjs` (secp256k1, Ed25519, Ledger, late injection, rejection, no
+  extension, replay + foreign domain refused) — all pass.
+- **New**: "extension not found" now shows a **🧩 Get Joey for Chrome** button (Chrome Web Store); the chooser says
+  "Chrome, Brave, Edge"; the website's how-to + FAQ link the store page.
+
 ## v39 — Dash: Rocket from 1 Nov, Sleigh from 1 Dec, tester code, Advent doors to open (same package → `bark-arena-game-v39-komplett.zip` + `scrappyxrp-website-v39.zip`)
 - **Why** (owner, 23 Oct): every door should hold its Scrappy, blurred until its day and then opened like a box; the
   overall places only say what can be won; Rocket Dash and Sleigh Dash both selectable, both blurred until they open —

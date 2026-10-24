@@ -35,7 +35,7 @@ hand over one combined package for the week start; don't tell the owner to uploa
 
 ### Architecture
 - **Wallets** (owner's wish: **Joey Wallet is named first and marked recommended everywhere** — game, website, videos): "Connect wallet" in the game opens a chooser: **Joey app** ⭐ Recommended (WalletConnect v2,
-  QR on desktop / `wc:` link on phones), **Joey extension** or **Xaman** (QR / deeplink) (provider `window.joey`, npm `@joeywallet/wallet-sdk`,
+  QR on desktop / `wc:` link on phones), **Joey extension** or **Xaman** (QR / deeplink) (provider `window.joey`, npm `@joeywallet/wallet-sdk` — extension live in the Chrome Web Store since 24 Oct, `JOEY_EXT_URL`, install button `walletErr`; test `tools/test/joey-ext.mjs`,
   `signIn` → CAIP-122). WalletConnect project ID (Reown, not secret, domain-allowlisted to game.scrappyxrp.fun):
   `CONFIG.WC_PROJECT_ID` in `public/index.html`. `public/wc.js` = esbuild bundle of `@walletconnect/sign-client` +
   `qrcode` (recipe in `tools/wc/`), loaded only on demand. Joey app has no WC sign-in method, so it signs
