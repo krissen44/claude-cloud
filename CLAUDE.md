@@ -350,7 +350,7 @@ v37 (same package, `bark-arena-game-v37-komplett.zip`): abilities recharge 2 rou
 v38/v38.1/v39 (same package, `bark-arena-game-v39-komplett.zip` + `scrappyxrp-website-v39.zip`): painted Dash art, glitch hit for drain traits, Dash looks Rocket 1 Nov / Sleigh 1 Dec with tester code, Advent doors to open.
 
 ### Where things stand
-- **Live:** game **v32** (uploaded early by the owner on 9 Oct, incl. v31.3 + lending market + Discord channels); the stats
+- **Live (owner, 24 Oct):** game **v34 komplett** (+ v34.1 Joey hotfix handed over 24 Oct). Earlier: v32 (uploaded early by the owner on 9 Oct, incl. v31.3 + lending market + Discord channels); the stats
   cap (`FAIR_SINCE`) only starts with the week of 2026-10-19, the referee already books verified fights. Shorts factory daily on GitHub Actions.
   **v32.1** handed over on 9 Oct as `bark-arena-game-v32.1-komplett.zip` + `scrappyxrp-website-v32.1.zip` (barkarena
   page) — not yet confirmed live by the owner.

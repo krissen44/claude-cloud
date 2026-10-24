@@ -1,14 +1,16 @@
 # Next release — upload at the week roll (Monday 00:00 UTC)
 
 Changes collect here during the week and go live together when the new week starts.
-Live (21 Oct, from the owner's backup of 19 Oct): game **v32.5** (24 Oct: v32.6 Joey hotfix handed over) (bond fix, hit flash, new /clip) — no Dash yet (no
+Live (owner, 24 Oct): game **v34 komplett** (24 Oct: v34.1 Joey hotfix handed over) (bond fix, hit flash, new /clip) — no Dash yet (no
 `dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
 
-## v32.6 — Joey extension hotfix, handed over early (24 Oct, owner's request — exception to the Monday rule)
-- `bark-arena-game-v32.6-joey-komplett.zip` = the live v32.5 package with only `public/index.html` changed: the
-  "Get Joey for Chrome" button (Chrome Web Store) when the extension is missing, the new error text and "Chrome, Brave,
-  Edge" in the chooser. The Joey sign-in code itself was already identical to the tested one. Checked with
-  `tools/test/joey-ext.mjs` against this exact package — all pass. The Monday package (v39) contains the same change.
+## v34.1 — Joey extension hotfix, handed over early (24 Oct, owner's request — exception to the Monday rule)
+- The owner's last upload was **v34 komplett** (not v32.5 as noted before). `bark-arena-game-v34.1-joey-komplett.zip` =
+  the v34 package with only `public/index.html` changed: the "Get Joey for Chrome" button (Chrome Web Store) when the
+  extension is missing, the new error text and "Chrome, Brave, Edge" in the chooser. The Joey sign-in code itself was
+  already identical to the tested one. Checked with `tools/test/joey-ext.mjs` against this exact package — all pass.
+  (A first v32.6 package built on v32.5 was withdrawn — it would have rolled v34 back.) The Monday package (v39)
+  contains the same change.
 - Upload: whole ZIP via Node.js → "Neue Dateien hochladen", restart. No env changes. Website unchanged until Monday.
 
 ## v39.1 — Joey Wallet extension is live in the Chrome Web Store (same package)
