@@ -7061,6 +7061,10 @@ async function clipBoot(){
   CLIP.state = 'playing';
   const st = document.querySelector('.stage');
   const climax = async () => { st.classList.add('clipzoom'); simulating = true; clipRound(rep, rep.rounds[last]); simulating = false; await play(); };
+  // Mythic/Legendary fighters wait hidden ('inbound') for their drop-in entrance; a clip starts in the middle of the
+  // fight, so show them right away (the Legendary format still plays the entrance later). Without this one dog stayed
+  // invisible in every Short with a Mythic or Legendary in it (owner, 24 Oct).
+  document.querySelectorAll('.fighter.inbound').forEach(f => f.classList.remove('inbound'));
   // 1) cold open: the decisive round, then a short freeze on the result
   await climax();
   st.classList.add('clipfreeze'); await wait(650);

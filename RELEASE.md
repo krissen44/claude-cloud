@@ -1,7 +1,7 @@
 # Next release — upload at the week roll (Monday 00:00 UTC)
 
 Changes collect here during the week and go live together when the new week starts.
-Live (owner, 24 Oct): game **v34 komplett** (24 Oct: v34.1 Joey hotfix handed over) (bond fix, hit flash, new /clip) — no Dash yet (no
+Live (owner, 24 Oct): game **v34 komplett** (24 Oct: v34.2 = Joey + Shorts fix handed over) (bond fix, hit flash, new /clip) — no Dash yet (no
 `dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
 
 ## v39.2 — Dash easier to get going (same package)
@@ -18,6 +18,17 @@ Live (owner, 24 Oct): game **v34 komplett** (24 Oct: v34.1 Joey hotfix handed ov
   points, worst run 408 → 1,987; camping at the top still scores far less (`dash-camp.mjs`). Server replays match 30/30.
   The game text and the website mention the stomp. Both looks share the rules; no live Dash data exists yet, so no
   board is affected.
+
+## v34.2 — Shorts fix, handed over early (24 Oct, owner: "one opponent is always invisible in the videos")
+- **Cause**: Mythic/Legendary fighters are hidden (`.fighter.inbound`) until their drop-in entrance (`introFx`). `/clip`
+  starts mid-fight (cold open) and only played the entrance in the Legendary format — after the climax — so every Short
+  with a Mythic or Legendary showed only one dog.
+- **Fix**: the clip shows both dogs before the cold open (removes `inbound`); the Legendary format still plays the
+  entrance. The Shorts factory also forces both dogs visible while recording (works even against an older live build).
+  `tools/test/clipcold.mjs` now checks "both dogs visible from the first frame" for every format.
+- `bark-arena-game-v34.2-komplett.zip` = live v34 + the v34.1 Joey change + this fix (`public/index.html`,
+  `public/kit/factory.mjs`). Replaces v34.1. The Monday package (v39) contains both.
+- Upload: whole ZIP via Node.js → "Neue Dateien hochladen", restart.
 
 ## v34.1 — Joey extension hotfix, handed over early (24 Oct, owner's request — exception to the Monday rule)
 - The owner's last upload was **v34 komplett** (not v32.5 as noted before). `bark-arena-game-v34.1-joey-komplett.zip` =

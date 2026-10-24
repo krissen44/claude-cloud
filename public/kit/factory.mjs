@@ -165,6 +165,9 @@ async function record(query, dir, music){
     pg.on("pageerror", e => log("page:", e.message));
     await pg.goto(`${GAME}/clip?${query}`, {waitUntil: "load", timeout: 60000});
     await pg.waitForFunction(() => typeof CLIP === "object" && CLIP.state === "ready", null, {timeout: 120000});
+    // Mythic/Legendary fighters wait hidden ('inbound') for an entrance that a cold-open clip never plays: on game builds
+    // before the fix (v34.2) one dog stayed invisible in every such Short (owner, 24 Oct). Keep both dogs visible.
+    await pg.addStyleTag({content: ".fighter.inbound > .rig, .fighter.inbound > .shd, .fighter.inbound > .lglo, .fighter.inbound > .mglo { visibility: visible !important }"});
     const info = await pg.evaluate(() => ({hook: CLIP.hook, hookId: CLIP.hookId || null, fmt: CLIP.fmt || "", stats: CLIP.stats, rep: {kind: CLIP.rep.kind, stage: CLIP.rep.stage,
       P: {who: CLIP.rep.P.who || null, lvl: CLIP.rep.P.lvl, def: {name: CLIP.rep.P.def.name, rarity: CLIP.rep.P.def.rarity, token: CLIP.rep.P.def.token}},
       E: {who: CLIP.rep.E.who || null, lvl: CLIP.rep.E.lvl, def: {name: CLIP.rep.E.def.name, rarity: CLIP.rep.E.def.rarity, token: CLIP.rep.E.def.token}}}}));

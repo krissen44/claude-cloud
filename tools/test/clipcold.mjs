@@ -20,6 +20,7 @@ for (const [q, name] of runs){
   const t0 = Date.now();
   await p.evaluate(() => CLIP.go());
   await p.waitForTimeout(700); if (name === "exhibition") await p.screenshot({path: S + "/shots/clip-open.png"});
+  ok(await p.evaluate(() => [...document.querySelectorAll(".fighter img")].filter(i => getComputedStyle(i).visibility === "visible").length) === 2, `${name}: both dogs are visible from the first frame`);
   await p.waitForSelector(".cliprw", {timeout: 15000}); if (name === "exhibition") await p.screenshot({path: S + "/shots/clip-rewind.png"});
   await p.waitForFunction(() => CLIP.state === "done", null, {timeout: 60000, polling: 100});
   const sec = (Date.now() - t0) / 1000; lens.push(sec);
