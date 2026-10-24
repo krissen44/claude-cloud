@@ -5576,7 +5576,10 @@ function menu(){
 //@dash — the Scrappy Dash simulation. Deterministic on purpose: fixed 1/60 s ticks, dice from a seeded generator,
 // only + − × ÷ and floor (no Math.sin/random), so the server (fight-engine.js → loadDash) replays a run from its seed
 // and the player's inputs and gets exactly the same score. No DOM, no sound, no visuals in here — the page hooks in
-// through `ev(type, …)` (house, coin, ammo, star, deliver, waste, empty, drop, shieldhit, close, crash).
+// through `ev(type, …)` (house, coin, ammo, star, deliver, waste, empty, drop, shieldhit, close, stomp, crash).
+// v39.2 (owner, 24 Oct: "stuck below 1500 — chimneys too high, birds everywhere"): tall chimneys end at y ≥ 115 and come
+// a little less often, a shield star every 12–18 s (was 20–30), landing on a foe from above stomps it (+20, bounce),
+// foes come a little less often and only a real hit counts (box ±17 × ±11 instead of ±20 × ±14).
 const DASH_TICK = 1 / 60, DASH_FH = 300, DASH_DROP_TICKS = 13, DASH_MAX_TICKS = 60 * 60 * 15;
 function dashRng(seed){
   let a = seed >>> 0;
@@ -5587,7 +5590,7 @@ const dashTri = p => { const q = p % 4; return q < 2 ? q - 1 : 3 - q; };     // 
 function dashInit(s, seed, W, PX, ev){
   Object.assign(s, {seed: seed >>> 0, W, PX, rnd: dashRng(seed), ev: ev || null, tick: 0, t: 0, dist: 0, v: 150, y: 120, vy: 0,
     hold: false, ammo: 3, score: 0, combo: 0, delivered: 0, coinsN: 0, close: 0, shield: false, blink: 0,
-    houses: [], gifts: [], items: [], foes: [], nextX: 0, distPts: 0, nextCoin: 1.2, nextAmmo: 3.5, nextFoe: 6, nextStar: 22,
+    houses: [], gifts: [], items: [], foes: [], nextX: 0, distPts: 0, nextCoin: 1.2, nextAmmo: 3.5, nextFoe: 6, nextStar: 12,
     lastDrop: -99, over: false, hi: 0, nextSky: 4});
   while (s.nextX < W + 200) dashHouseNew(s, true);
   return s;
@@ -5596,8 +5599,8 @@ const dashR = (s, a, b) => a + s.rnd() * (b - a);
 function dashHouseNew(s, calm){
   const t = s.t, w = Math.round(dashR(s, 64, 120)), gap = s.rnd() < .18 ? dashR(s, 40, 80) : dashR(s, 4, 22);
   const top = DASH_FH - Math.round(dashR(s, 40, Math.min(130, 90 + t)));
-  const tall = !calm && s.rnd() < Math.min(.46, .08 + t * .006);
-  const ch = tall ? Math.round(dashR(s, Math.min(70, top - 110), Math.max(70, top - 95))) : Math.round(dashR(s, 12, 22));
+  const tall = !calm && s.rnd() < Math.min(.38, .08 + t * .005);
+  const ch = tall ? Math.round(dashR(s, Math.min(55, top - 128), Math.max(55, top - 115))) : Math.round(dashR(s, 12, 22));
   const h = {x: s.nextX + gap, w, top, cx: Math.round(dashR(s, 14, w - 32)), cw: 18, ch, tall,
     wants: !tall && s.rnd() < (calm ? .5 : .32), done: false, gap: 99, passed: false};
   s.houses.push(h);
@@ -5611,7 +5614,7 @@ function dashSimDrop(s){
   s.gifts.push({x: s.PX + 4, y: s.y + 8, vy: Math.max(-40, s.vy * .3)});
   if (s.ev) s.ev('drop');
 }
-// points: distance / 10 + 25 × combo per delivery (combo up to ×5) + 5 per pickup + 15 per close call
+// points: distance / 10 + 25 × combo per delivery (combo up to ×5) + 5 per pickup + 15 per close call + 20 per stomp
 function dashSimStep(s, hold, drop){
   const dt = DASH_TICK, ev = s.ev || (() => {}), PX = s.PX, W = s.W, H = DASH_FH;
   s.tick++; s.t = s.tick * DASH_TICK; s.hold = !!hold;
@@ -5637,10 +5640,10 @@ function dashSimStep(s, hold, drop){
     for (let i = 0; i < n; i++){ const u = i / (n - 1); s.items.push({k: 'coin', x: W + 20 + i * 22, y: y0 - (arc ? 96 * u * (1 - u) : 0)}); }
   }
   if ((s.nextAmmo -= dt) <= 0){ s.nextAmmo = dashR(s, 3.5, 5); s.items.push({k: 'ammo', x: W + 20, y: dashR(s, 40, 135), p: s.rnd() * 6}); }
-  if ((s.nextStar -= dt) <= 0){ s.nextStar = dashR(s, 20, 30); if (!s.shield) s.items.push({k: 'star', x: W + 20, y: dashR(s, 40, 120), p: 0}); }
+  if ((s.nextStar -= dt) <= 0){ s.nextStar = dashR(s, 12, 18); if (!s.shield) s.items.push({k: 'star', x: W + 20, y: dashR(s, 40, 120), p: 0}); }
   if (s.t > 7 && (s.nextFoe -= dt) <= 0){
-    s.nextFoe = Math.max(1.3, dashR(s, 2.6, 4.6) - s.t * .03) / (1 + s.hi * .12);
-    const aim = s.rnd() < .25 + s.hi * .08, ay = Math.max(22, Math.min(150, s.y + dashR(s, -8, 8)));
+    s.nextFoe = Math.max(1.5, dashR(s, 3, 5) - s.t * .03) / (1 + s.hi * .12);
+    const aim = s.rnd() < .2 + s.hi * .08, ay = Math.max(22, Math.min(150, s.y + dashR(s, -8, 8)));
     s.foes.push({x: W + 20, y0: aim ? ay : dashR(s, 34, 150), y: 0, p: s.rnd() * 6, v: dashR(s, 30, 75), r: s.rnd() * 6, gap: 99, passed: false});
   }
   // sky hawk: a fast foe along the very top, only for a sleigh that has been up there for a while
@@ -5671,8 +5674,12 @@ function dashSimStep(s, hold, drop){
     if (h.tall && !h.passed && h.x + h.cx < PX + 18 && h.x + h.cx + h.cw > PX - 18) h.gap = Math.min(h.gap, (h.top - h.ch) - (s.y + 8));
   }
   for (const f of s.foes){
-    if (Math.abs(f.x - PX) < 20 && Math.abs(f.y - s.y) < 14) crash = crash || f;
-    if (!f.passed && Math.abs(f.x - PX) < 22) f.gap = Math.min(f.gap, Math.abs(f.y - s.y) - 14);
+    // falling onto a foe from above stomps it: it is gone, the sleigh bounces up, no damage
+    const fy = f.y - s.y;
+    if (s.vy > 20 && fy >= 6 && fy < 22 && Math.abs(f.x - PX) < 24){
+      f.x = -99; f.passed = true; s.vy = -260; s.score += 20; s.stomps = (s.stomps || 0) + 1; ev('stomp', PX, f.y, 20, f); continue; }
+    if (Math.abs(f.x - PX) < 17 && Math.abs(fy) < 11) crash = crash || f;     // a forgiving box: only a real hit counts
+    if (!f.passed && Math.abs(f.x - PX) < 22) f.gap = Math.min(f.gap, Math.abs(f.y - s.y) - 11);
   }
   // gifts fall straight down on screen (they keep the sleigh's speed) into the chimney passing below
   for (const g of s.gifts){
@@ -5898,7 +5905,7 @@ function dashView(){
       ${th === 'sleigh' ? dashXmasHero(me) : ''}
       <div class="dashtitle">${K.icon} SCRAPPY<br>${K.title}</div>
       <p class="dashsub">Fly ${K.where}. <b>Hold</b> to climb · let go to sink · <b>quick tap</b> drops a ${K.ammo}.</p>
-      <p class="dashsub">Hit the ${K.target} for a combo (up to ×5), grab ${K.ammos} and ${K.coins}, dodge ${K.obst} and ${K.foe} — skim past them for a close-call bonus. Hiding at the top? ${K.hawk[0] + K.hawk.slice(1).toLowerCase()}s hunt there. It gets faster every second.</p>
+      <p class="dashsub">Hit the ${K.target} for a combo (up to ×5), grab ${K.ammos} and ${K.coins}, dodge ${K.obst} — skim past for a close-call bonus — and <b>land on ${K.foe} from above</b> to stomp them (+20). ⭐ Stars give you a shield. Hiding at the top? ${K.hawk[0] + K.hawk.slice(1).toLowerCase()}s hunt there. It gets faster every second.</p>
       ${!open && !locked ? `<p class="dtest">🧪 TEST MODE · opens ${dashDate(dashOpensOf(th))} · runs don't count <button id="dashTestOff" class="sm">leave</button></p>` : ''}
       <button id="dashGo" class="dashgo"${locked ? ' disabled tabindex="-1"' : ''}>▶ PLAY</button>
       <p class="dashsub" style="margin-top:10px">${tm && tm.best ? `Today: <b>${tm.best.toLocaleString()}</b> · #${tm.rank}` : `Best on this device: <b>${sv.best.toLocaleString()}</b>`}${om && om.total ? ` · Advent total <b>${om.total.toLocaleString()}</b> (#${om.rank})` : ''} · Free, no tickets — play as often as you like.</p>
@@ -6025,6 +6032,12 @@ function dashOn(G, type, a, b, c){
   else if (type === 'drop') S.dashDrop();
   else if (type === 'shieldhit') S.dashCrash(false);
   else if (type === 'sky'){ if (!G.skyShown){ G.skyShown = true; G.fx.push({k: 'txt', x: G.W - 120, y: 58, t: 0, s: K.hawk + '! — the sky isn\u2019t safe', c: '#ff8a80'}); } }
+  else if (type === 'stomp'){
+    G.fx.push({k: 'txt', x: a + 6, y: b - 16, t: 0, s: '+' + c + ' STOMP!', c: '#69f0ae'});
+    for (let i = 0; i < 12; i++) G.fx.push({k: 'spark', x: a, y: b, vx: drand(-90, 90), vy: drand(-60, 120), t: 0, c: i % 3 ? (G.th === 'rocket' ? '#b0bec5' : '#2b2b36') : '#fff'});
+    dashGlint(G, a, b, 10); S.dashClose();
+    if (G.stomps % 5 === 0) dashCelebrate(G, G.stomps + ' STOMPS', G.th === 'rocket' ? 'ROCK BREAKER!' : 'BIRD BOUNCER!', 1);
+  }
   else if (type === 'close'){ G.fx.push({k: 'txt', x: a + 10, y: b - 12, t: 0, s: '+' + c + ' CLOSE!', c: '#ffd54f'}); dashGlint(G, a, G.y, 8); S.dashClose(); }
 }
 // today's board as targets to beat during the run (other players' best runs, lowest first)

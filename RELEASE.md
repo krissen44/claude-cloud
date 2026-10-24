@@ -4,6 +4,21 @@ Changes collect here during the week and go live together when the new week star
 Live (owner, 24 Oct): game **v34 komplett** (24 Oct: v34.1 Joey hotfix handed over) (bond fix, hit flash, new /clip) — no Dash yet (no
 `dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
 
+## v39.2 — Dash easier to get going (same package)
+- **Why** (owner, 24 Oct): "I often can't get past 1,500 — the chimneys are too high or I hit birds. Jumping on a bird
+  should kill it without damage, and there could be more stars." Test pilots on the real simulation agreed: about 95 of
+  100 runs ended on a foe, a simple reactive pilot reached a median of ~560 points.
+- **Stomp**: falling onto a crow / owl / asteroid / comet from above kills it, the sleigh bounces up, **+20 points**, no
+  damage ("+20 STOMP!", sparks; every 5th stomp a small celebration). Hitting one from the side or from below still crashes.
+- **Fairer foes**: the hit box is smaller (±17 × ±11 instead of ±20 × ±14 — only a real hit counts), foes come a bit
+  less often (every 3–5 s instead of 2.6–4.6 s at the start), fewer are aimed at the sleigh.
+- **Lower chimneys**: a tall chimney now ends at y ≥ 115 (was ≥ 95) and tall ones are a bit rarer (max 38 % instead of 46 %).
+- **More stars**: a shield star every 12–18 s (was 20–30 s), the first after 12 s.
+- Effect (`tools/test/dash-ai.mjs`, 30 runs, seeds 7000+): a "good player" pilot (0.5 s look-ahead) median 2,347 → 6,489
+  points, worst run 408 → 1,987; camping at the top still scores far less (`dash-camp.mjs`). Server replays match 30/30.
+  The game text and the website mention the stomp. Both looks share the rules; no live Dash data exists yet, so no
+  board is affected.
+
 ## v34.1 — Joey extension hotfix, handed over early (24 Oct, owner's request — exception to the Monday rule)
 - The owner's last upload was **v34 komplett** (not v32.5 as noted before). `bark-arena-game-v34.1-joey-komplett.zip` =
   the v34 package with only `public/index.html` changed: the "Get Joey for Chrome" button (Chrome Web Store) when the
