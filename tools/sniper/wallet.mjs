@@ -52,6 +52,21 @@ export function loadWallet(env = process.env) {
   return w;
 }
 
+// `node wallet.mjs check`: is there a working key in .env? Prints the address, exit 1 if not.
+if (process.argv[2] === 'check') {
+  const fs = await import('node:fs');
+  const env = {};
+  try {
+    for (const line of fs.readFileSync(new URL('./.env', import.meta.url), 'utf8').split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+      if (m) env[m[1]] = m[2].replace(/(^|\s+)#.*$/, '').trim().replace(/^["']|["']$/g, '');
+    }
+    const w = loadWallet(env);
+    if (!w || !env.WALLET_ADDRESS) process.exit(1);
+    console.log(w.address);
+  } catch { process.exit(1); }
+}
+
 if (process.argv[2] === 'find') {
   try {
     const r = find(process.env.SECRET || '', (process.env.ADDRESS || '').trim());

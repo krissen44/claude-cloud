@@ -23,9 +23,10 @@ node -v
 [ -d node_modules/xrpl ] || npm install --omit=dev --no-audit --no-fund
 
 say "3/6 Einstellungen (.env)"
-if [ -f .env ] && grep -qE '^(WALLET_SEED=s|WALLET_MNEMONIC=[a-z]|WALLET_SECRET_NUMBERS=[0-9])' .env; then
-  echo ".env ist schon da – bleibt wie sie ist."
+if [ -f .env ] && OK_ADDR=$(node wallet.mjs check 2>/dev/null); then
+  echo ".env ist schon da (Bot-Wallet $OK_ADDR) – bleibt wie sie ist."
 else
+  [ -f .env ] && echo "Die vorhandene .env hat keinen gültigen Schlüssel – wird neu angelegt."
   cp .env.example .env
   echo "Nur die NEUE Wallet für den Bot verwenden – nie deine Haupt-Wallet!"
   while :; do
