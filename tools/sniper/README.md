@@ -101,7 +101,8 @@ In der Server-Konsole (z. B. Hostinger „Web console“) eingeben:
 ```
 cd /root && curl -fsSL https://codeload.github.com/krissen44/claude-cloud/tar.gz/refs/heads/claude/awesome-einstein-jnon4n | tar xz --strip-components=2 --wildcards '*/tools/sniper' && cd sniper && bash setup-vps.sh
 ```
-Das Skript installiert Node.js, fragt nach dem Seed (unsichtbare Eingabe), erzeugt den Statusseiten-Key,
+Das Skript installiert Node.js, fragt nach der Adresse der Bot-Wallet und ihrem Schlüssel (12/24 Wörter,
+Family Seed oder Xaman-Zahlen, unsichtbare Eingabe; es prüft, dass der Schlüssel zur Adresse passt), erzeugt den Statusseiten-Key,
 öffnet die Firewall, testet die Verbindung zum XRPL und startet den Bot dauerhaft mit pm2. Am Ende stehen
 die Bot-Adresse und der Link zur Statusseite da.
 

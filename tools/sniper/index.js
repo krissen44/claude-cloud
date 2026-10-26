@@ -5,14 +5,16 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Client, Wallet } from 'xrpl';
+import { Client } from 'xrpl';
+import { loadWallet } from './wallet.mjs';
 import { createBot, readConfig } from './bot.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 try {
   for (const line of fs.readFileSync(path.join(here, '.env'), 'utf8').split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    // drop an inline comment ("value   # note"), then surrounding quotes
+    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/(^|\s+)#.*$/, '').trim().replace(/^["']|["']$/g, '');
   }
 } catch {}
 
@@ -20,9 +22,9 @@ const cfg = readConfig();
 const servers = (process.env.XRPL_WS || 'wss://xrplcluster.com,wss://s1.ripple.com,wss://s2.ripple.com').split(',').map((s) => s.trim()).filter(Boolean);
 
 let wallet = null;
-if (process.env.WALLET_SEED) wallet = Wallet.fromSeed(process.env.WALLET_SEED.trim());
-else if (!cfg.dryRun) {
-  console.error('WALLET_SEED fehlt in .env (oder DRY_RUN=1 setzen).');
+try { wallet = loadWallet(); } catch (e) { console.error('Wallet-Fehler: ' + e.message); process.exit(1); }
+if (!wallet && !cfg.dryRun) {
+  console.error('Kein Wallet-Schlüssel in .env (WALLET_SEED, WALLET_MNEMONIC oder WALLET_SECRET_NUMBERS) – oder DRY_RUN=1 setzen.');
   process.exit(1);
 }
 

@@ -23,22 +23,40 @@ node -v
 [ -d node_modules/xrpl ] || npm install --omit=dev --no-audit --no-fund
 
 say "3/6 Einstellungen (.env)"
-if [ -f .env ] && grep -q '^WALLET_SEED=s' .env; then
+if [ -f .env ] && grep -qE '^(WALLET_SEED=s|WALLET_MNEMONIC=[a-z]|WALLET_SECRET_NUMBERS=[0-9])' .env; then
   echo ".env ist schon da – bleibt wie sie ist."
 else
   cp .env.example .env
+  echo "Nur die NEUE Wallet für den Bot verwenden – nie deine Haupt-Wallet!"
   while :; do
-    read -rsp "Family Seed der NEUEN Bot-Wallet (beginnt mit s, wird nicht angezeigt): " SEED; echo
-    ADDR=$(SEED="$SEED" node -e "import('xrpl').then(({Wallet})=>{try{console.log(Wallet.fromSeed(process.env.SEED.trim()).address)}catch{process.exit(1)}})" 2>/dev/null) && break
-    echo "Das ist kein gültiger Seed, bitte nochmal."
+    read -rp "Adresse der Bot-Wallet (beginnt mit r): " ADDRESS
+    [[ "$ADDRESS" =~ ^r[1-9A-HJ-NP-Za-km-z]{24,34}$ ]] && break
+    echo "Das sieht nicht nach einer XRPL-Adresse aus, bitte nochmal."
   done
+  while :; do
+    echo "Jetzt den Schlüssel: 12/24 Wörter, Family Seed (s…) oder Xaman-Zahlen."
+    read -rsp "Eingabe (wird nicht angezeigt), dann Enter: " SECRET; echo
+    if FOUND=$(SECRET="$SECRET" ADDRESS="$ADDRESS" node wallet.mjs find); then break; fi
+    echo "Passt nicht zur Adresse $ADDRESS (Tippfehler? andere Wallet?). Bitte nochmal."
+  done
+  KIND=$(cut -f1 <<<"$FOUND"); WPATH=$(cut -f2 <<<"$FOUND")
+  CLEAN=$(tr -s '[:space:]' ' ' <<<"$SECRET" | sed 's/^ //; s/ $//')
+  sed -i '/^WALLET_SEED=/d; /^WALLET_ADDRESS=/d' .env
+  {
+    echo "WALLET_ADDRESS=${ADDRESS}"
+    case "$KIND" in
+      seed) echo "WALLET_SEED=${CLEAN}" ;;
+      mnemonic) echo "WALLET_MNEMONIC=${CLEAN,,}"; echo "WALLET_PATH=${WPATH}" ;;
+      numbers) echo "WALLET_SECRET_NUMBERS=${CLEAN}" ;;
+    esac
+  } >> .env
+  unset SECRET CLEAN
+  echo "✅ Schlüssel passt zu $ADDRESS"
   KEY=$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)
   IP=$(curl -fsS4 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
-  sed -i "s|^WALLET_SEED=.*|WALLET_SEED=${SEED}|; s|^STATUS_KEY=.*|STATUS_KEY=${KEY}|; s|^PUBLIC_URL=.*|PUBLIC_URL=http://${IP}:3100|" .env
-  unset SEED
+  sed -i "s|^STATUS_KEY=.*|STATUS_KEY=${KEY}|; s|^PUBLIC_URL=.*|PUBLIC_URL=http://${IP}:3100|" .env
   read -rp "Discord-Webhook für Meldungen (leer lassen = keiner): " HOOK
-  [ -n "$HOOK" ] && sed -i "s|^DISCORD_WEBHOOK=.*|DISCORD_WEBHOOK=${HOOK}|" .env
-  echo "Bot-Wallet: $ADDR"
+  if [ -n "$HOOK" ]; then sed -i "s|^DISCORD_WEBHOOK=.*|DISCORD_WEBHOOK=${HOOK}|" .env; fi
 fi
 chmod 600 .env
 
@@ -68,7 +86,7 @@ pm2 status sniper
 
 URL=$(grep '^PUBLIC_URL=' .env | cut -d= -f2-)
 KEY=$(grep '^STATUS_KEY=' .env | cut -d= -f2-)
-ADDR=$(S="$(grep '^WALLET_SEED=' .env | cut -d= -f2-)" node -e "import('xrpl').then(({Wallet})=>console.log(Wallet.fromSeed(process.env.S.trim()).address))" 2>/dev/null || true)
+ADDR=$(grep '^WALLET_ADDRESS=' .env | cut -d= -f2- | awk '{print $1}')
 cat <<EOF
 
 ========================================================
