@@ -85,6 +85,32 @@ class Sim {
       } else if (!(k in this.lines)) { this.lines[k] = 0; me.OwnerCount++; }
       return res('tesSUCCESS');
     }
+    if (tx.TransactionType === 'OfferCreate') {
+      // buy: IOC sell offer of TakerGets XRP for at least TakerPays tokens; creates the trust line itself
+      const iou = tx.TakerPays;
+      const k = this.k(iou.currency, iou.issuer);
+      const p = this.amm[k];
+      const spend = Number(tx.TakerGets) / D;
+      me.Balance = String(Number(me.Balance) - fee);
+      if (!p) return res('tesSUCCESS', { AffectedNodes: [] });
+      const out = swapOut(spend, p.xrp, p.tok, p.fee / 1000);
+      if (out < Number(iou.value)) return res('tesSUCCESS', { AffectedNodes: [] }); // nothing crossed, offer cancelled
+      p.xrp += spend; p.tok -= out;
+      const fresh = !(k in this.lines);
+      if (fresh) { this.lines[k] = 0; me.OwnerCount++; }
+      const before = this.lines[k];
+      this.lines[k] = before + out;
+      const after = String(Math.round(Number(prevBal) - spend * D - fee));
+      me.Balance = after;
+      const line = { Balance: { currency: iou.currency, value: String(this.lines[k]) }, LowLimit: { issuer: ME }, HighLimit: { issuer: iou.issuer } };
+      return res('tesSUCCESS', {
+        AffectedNodes: [
+          { ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: ME, Balance: after }, PreviousFields: { Balance: prevBal } } },
+          fresh ? { CreatedNode: { LedgerEntryType: 'RippleState', NewFields: line } }
+            : { ModifiedNode: { LedgerEntryType: 'RippleState', FinalFields: line, PreviousFields: { Balance: { currency: iou.currency, value: String(before) } } } },
+        ],
+      });
+    }
     if (tx.TransactionType === 'Payment') {
       const buy = typeof tx.Amount === 'object';
       const iou = buy ? tx.Amount : tx.SendMax;
@@ -207,7 +233,7 @@ await test('copy trade: a tracked wallet buys a token → the bot buys it too, o
   assert.ok(Math.abs(pos.cost - 2) < 1e-3, 'COPY_BUY_XRP used');
   whaleBuy();
   await settle(bot);
-  assert.equal(sim.txs.filter((t) => t.TransactionType === 'Payment').length, 1, 'bought only once');
+  assert.equal(sim.txs.filter((t) => t.TransactionType === 'OfferCreate').length, 1, 'bought only once');
   // copy rules: half at +100 %, rest on a 30 % trailing stop
   const k = `${cur}.rOld`;
   const bag = pos.amount;
@@ -340,7 +366,7 @@ await test('buy slippage: price ran away → no buy, trust line removed again', 
   const cur = sim.launch({ name: 'RUN', issuer: 'rR', poolXrp: 100, poolTok: 1e9 });
   // front-runners buy between our check and our payment
   const orig = sim.submitAndWait.bind(sim);
-  sim.submitAndWait = async (tx) => { if (tx.TransactionType === 'Payment') sim.trade(cur, 'rR', 100); return orig(tx); };
+  sim.submitAndWait = async (tx) => { if (tx.TransactionType === 'OfferCreate') sim.trade(cur, 'rR', 100); return orig(tx); };
   await settle(bot);
   assert.equal(bot.state().positions[`${cur}.rR`], undefined);
   assert.equal(sim.lines[`${cur}.rR`], undefined, 'line removed');
@@ -349,7 +375,7 @@ await test('buy slippage: price ran away → no buy, trust line removed again', 
 });
 
 await test('market cap over the limit: sale waits for OK, "sell" executes it', async () => {
-  const { sim, bot } = setup(50, { MCAP_APPROVAL: '1000' });
+  const { sim, bot } = setup(50, { MCAP_APPROVAL: '1000', AUTO_FIRST_SALE: '0' });
   await bot.start();
   const cur = sim.launch({ name: 'BIG', issuer: 'rBig', poolXrp: 100, poolTok: 1e9 });
   const k = `${cur}.rBig`;
@@ -360,10 +386,10 @@ await test('market cap over the limit: sale waits for OK, "sell" executes it', a
   assert.ok(pos.ask, 'asks');
   assert.ok(pos.mcap > 1000 && pos.mcap < 3000, 'mcap in USD ' + pos.mcap);
   assert.equal(pos.tp1Done, false, 'nothing sold yet');
-  assert.equal(sim.txs.filter((t) => t.TransactionType === 'Payment').length, 1, 'only the buy');
+  assert.equal(sim.txs.filter((t) => t.TransactionType === 'Payment').length, 0, 'no sale yet');
   assert.ok(logs.join('\n').includes('Waiting for your OK'));
   await settle(bot);
-  assert.equal(sim.txs.filter((t) => t.TransactionType === 'Payment').length, 1, 'still waiting');
+  assert.equal(sim.txs.filter((t) => t.TransactionType === 'Payment').length, 0, 'still waiting');
   assert.equal(await bot.answer(k, 'sell'), 'sold');
   const m = bot.state().positions[k];
   assert.ok(m.tp1Done && m.proceeds >= m.cost && !m.ask, 'stake back after OK');
@@ -371,7 +397,7 @@ await test('market cap over the limit: sale waits for OK, "sell" executes it', a
 });
 
 await test('"hold" makes it manual: no rule sells, a rug still does, buttons sell by hand', async () => {
-  const { sim, bot } = setup(50, { MCAP_APPROVAL: '1000' });
+  const { sim, bot } = setup(50, { MCAP_APPROVAL: '1000', AUTO_FIRST_SALE: '0' });
   await bot.start();
   const a = sim.launch({ name: 'LEGIT', issuer: 'rLeg', poolXrp: 100, poolTok: 1e9 });
   const b = sim.launch({ name: 'FAKE', issuer: 'rFak', poolXrp: 100, poolTok: 1e9 });
@@ -393,7 +419,7 @@ await test('"hold" makes it manual: no rule sells, a rug still does, buttons sel
 });
 
 await test('runner: big start + pool doubles fast → sale waits for OK; a small start does not', async () => {
-  const { sim, bot } = setup(50);
+  const { sim, bot } = setup(50, { AUTO_FIRST_SALE: '0' });
   await bot.start();
   const big = sim.launch({ name: 'RUNR', issuer: 'rRun', poolXrp: 350, poolTok: 1e9 });
   const small = sim.launch({ name: 'SMLL', issuer: 'rSml', poolXrp: 150, poolTok: 1e9 });
@@ -412,7 +438,7 @@ await test('runner: big start + pool doubles fast → sale waits for OK; a small
 });
 
 await test('no USD price available: asks to be safe; under the limit: sells by itself', async () => {
-  const { sim, bot } = setup(50, { MCAP_APPROVAL: '1000' }, false);
+  const { sim, bot } = setup(50, { MCAP_APPROVAL: '1000', AUTO_FIRST_SALE: '0' }, false);
   await bot.start();
   const cur = sim.launch({ name: 'NOUSD', issuer: 'rNu', poolXrp: 100, poolTok: 1e9 });
   await settle(bot);
@@ -427,6 +453,50 @@ await test('no USD price available: asks to be safe; under the limit: sells by i
   await settle(t2.bot);
   assert.equal(t2.bot.state().positions[`${c2}.rSm`].tp1Done, true, '$1.6k < $100k → automatic');
   bot.stop(); t2.bot.stop();
+});
+
+await test('auto first sale: stake back without asking, later sales of a big token still ask', async () => {
+  const { sim, bot } = setup(50, { MCAP_APPROVAL: '1000', TRACK_WALLETS: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh:W' });
+  await bot.start();
+  const cur = sim.launch({ name: 'AUTO', issuer: 'rAu', poolXrp: 400, poolTok: 1e9, silent: true });
+  sim.emit('transaction', {
+    validated: true,
+    tx_json: { TransactionType: 'Payment', Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh', Fee: '12' },
+    meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [
+      { ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh', Balance: '80000000' }, PreviousFields: { Balance: '100000012' } } },
+      { CreatedNode: { LedgerEntryType: 'RippleState', NewFields: { Balance: { currency: cur, value: '3000000' }, LowLimit: { issuer: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh' }, HighLimit: { issuer: 'rAu' } } } },
+    ] },
+  });
+  await settle(bot);
+  const k = `${cur}.rAu`;
+  sim.trade(cur, 'rAu', 300); // ~4x, market cap far above $1,000
+  await settle(bot);
+  const p1 = bot.state().positions[k];
+  assert.ok(p1.tp1Done && !p1.ask, 'first sale went through without asking');
+  sim.trade(cur, 'rAu', 300);
+  await settle(bot);
+  sim.trade(cur, 'rAu', -400); // trailing stop wants to sell the rest
+  await settle(bot);
+  const p2 = bot.state().positions[k];
+  assert.ok(p2 && p2.ask, 'the second sale waits for OK');
+  const st = bot.status().stats;
+  assert.equal(st.copySignals, 1); assert.equal(st.bought, 1); assert.ok(st.asks >= 1);
+  bot.stop();
+});
+
+await test('stats: launches, skips by reason, failed buys', async () => {
+  const { sim, bot } = setup();
+  await bot.start();
+  sim.launch({ name: 'OK1', issuer: 'rOk1', poolXrp: 200, poolTok: 1e9 });
+  sim.launch({ name: 'TINYS', issuer: 'rTs', poolXrp: 20, poolTok: 1e9 });
+  sim.launch({ name: 'CLAWS', issuer: 'rCs', poolXrp: 200, poolTok: 1e9, flags: 0x00100000 | 0x80000000 });
+  await settle(bot);
+  const st = bot.status().stats;
+  assert.equal(st.launches, 3);
+  assert.equal(st.bought, 1);
+  assert.equal(st.skipped['pool too small'], 1);
+  assert.equal(st.skipped.clawback, 1);
+  bot.stop();
 });
 
 await test('settings change live: pause stops buys, unpause buys again, open trades still sell', async () => {

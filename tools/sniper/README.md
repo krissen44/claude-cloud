@@ -14,7 +14,9 @@ Buys new memecoins on the XRPL right at launch and sells them by fixed rules.
    - No clawback (the issuer can't take tokens back), no freeze.
    - No transfer fee.
    - At least 20 % of all tokens sit in the pool (otherwise the dev can crash the price with the rest).
-4. **Buys for 1 XRP** (adjustable). If the price already ran more than 25 %, it doesn't buy.
+4. **Buys for 1 XRP** (adjustable) with **one** transaction: an immediate-or-cancel offer that crosses the
+   AMM and creates the trust line by itself (no separate TrustSet, so the buy lands one ledger earlier).
+   If the price already ran more than 35 %, nothing is bought.
 5. **Wallet tracking (optional):** add wallets you want to follow. When such a wallet buys a token for at
    least 5 XRP, the bot buys it too – with the same safety checks, once per token. **Copy buys sell by their
    own rules** (no moonbag):
@@ -41,10 +43,15 @@ Buys new memecoins on the XRPL right at launch and sells them by fixed rules.
    - **Runner:** if a launch starts with **at least 300 XRP** in the pool and the pool's XRP doubles within
      **60 minutes**, the bot marks it as a 🚀 runner and asks before **every** sale, whatever the market cap.
      Launch buys only (for copy buys the bot doesn't know the start).
+   - **The first sale never waits** (`AUTO_FIRST_SALE=1`): taking the stake out goes through at once, even
+     for runners and big market caps. Only the sales after that ask you.
    - **A rug is never waited for:** if the pool's XRP drops 40 %, it sells at once, without approval.
    - Market cap = all issued tokens × current pool price. The bot reads the XRP/USD price from the
      XRP/RLUSD pool on the ledger; if it can't, it asks to be safe.
 8. **Cleans up.** After a full sale it deletes the trust line, which frees the 0.2 XRP reserve.
+
+The status page also has **📊 Stats**: launches seen, skips by reason, buys and failed buys (slippage),
+approval requests – the numbers to tune the filters with.
 
 Every buy and sale is in the log, on the status page (open trades and moonbags apart) and optionally in Discord.
 

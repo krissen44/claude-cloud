@@ -3,6 +3,7 @@ import { validate, Wallet } from 'xrpl';
 const w = Wallet.generate();
 const cur = '50554D5000000000000000000000000000000000', iss = Wallet.generate().address;
 const txs = [
+  { TransactionType: 'OfferCreate', Account: w.address, Flags: 0x00020000 | 0x00080000, TakerGets: '1000000', TakerPays: { currency: cur, issuer: iss, value: '6.40378e6' } },
   { TransactionType: 'TrustSet', Account: w.address, Flags: 0x00020000, LimitAmount: { currency: cur, issuer: iss, value: '9999999999999999e80' } },
   { TransactionType: 'Payment', Account: w.address, Destination: w.address, Flags: 0x00020000, Amount: { currency: cur, issuer: iss, value: '14777955.2512345' }, SendMax: '1000000', DeliverMin: { currency: cur, issuer: iss, value: '7.38897e6' } },
   { TransactionType: 'Payment', Account: w.address, Destination: w.address, Flags: 0x00020000, Amount: '4561834', SendMax: { currency: cur, issuer: iss, value: '4925986.43497203' }, DeliverMin: '2128856' },

@@ -112,6 +112,17 @@ setInterval(async () => {
 // ---------- status page ----------
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f = (n, d = 3) => (n >= 0 ? '+' : '') + Number(n).toFixed(d);
+function statsBlock(s) {
+  if (!s) return '';
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) + '%' : '–');
+  const tries = (s.bought || 0) + (s.buyFailed || 0);
+  const skips = Object.entries(s.skipped || {}).sort((a, b) => b[1] - a[1]);
+  const total = skips.reduce((n, [, v]) => n + v, 0);
+  return `<h3>📊 Stats <small>since ${new Date(s.since).toISOString().slice(0, 16).replace('T', ' ')} UTC</small></h3>
+<div><span class="k">Launches seen <b>${s.launches || 0}</b></span><span class="k">Copy signals <b>${s.copySignals || 0}</b></span><span class="k">Bought <b>${s.bought || 0}</b></span><span class="k">Buys failed (slippage) <b>${s.buyFailed || 0}</b> <small>(${pct(s.buyFailed || 0, tries)} of tries)</small></span><span class="k">Approval requests <b>${s.asks || 0}</b></span></div>
+${skips.length ? `<div class="wrap"><table><tr><th>Skipped because</th><th>Count</th><th>Share</th></tr>${skips.map(([r, v]) => `<tr><td>${esc(r)}</td><td>${v}</td><td>${pct(v, total)}</td></tr>`).join('')}</table></div>` : ''}`;
+}
+
 function page(st) {
   const t = (d) => new Date(d).toISOString().slice(5, 16).replace('T', ' ');
   const cap = (v) => (!v && v !== 0 ? '' : isNaN(v) ? '?' : (st.mcapCurrency === 'USD' ? '$' : '') + (v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(0) + 'k' : v.toFixed(0)) + (st.mcapCurrency === 'XRP' ? ' XRP' : ''));
@@ -136,6 +147,7 @@ ${st.paused ? '<div class="card" style="border-color:#ff6b6b">⏸ <b>Buying paus
 ${asks.length ? `<h3>🙋 Waiting for your approval (${asks.length})</h3>${askCards}` : ''}
 <h3>Open trades (${live.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Value</th><th>%</th><th>MCap</th><th>Bought (UTC)</th><th></th></tr>${liveRows}</table></div>
 <h3>🌙 Moonbags – stake back, the rest rides free (${moon.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Returned</th><th>Bag worth</th><th>×</th><th>MCap</th><th></th></tr>${moonRows}</table></div>
+${statsBlock(st.stats)}
 <h3>Closed</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Proceeds</th><th>XRP</th><th>Reason</th><th>Closed (UTC)</th></tr>${hist}</table></div>`;
 }
 // ---------- login ----------

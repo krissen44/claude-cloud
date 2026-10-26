@@ -24,7 +24,7 @@ export const GROUPS = [
     ['MIN_POOL_SUPPLY_PCT', 'Min. share of all tokens in the pool (%)', 'num', '20', '', 0, 100],
     ['MAX_TRANSFER_FEE', 'Max. transfer fee (%)', 'num', '0', '', 0, 100],
     ['MAX_AMM_FEE', 'Max. AMM fee (%)', 'num', '1', '', 0, 1],
-    ['BUY_SLIPPAGE', 'Max. buy slippage (%)', 'num', '25', '', 1, 90],
+    ['BUY_SLIPPAGE', 'Max. buy slippage (%)', 'num', '35', 'higher = fewer missed buys, but worse prices', 1, 90],
   ]],
   ['🌙 Selling – launch buys', [
     ['TAKE_PROFIT', 'First sale at gain (%)', 'num', '100', '', 1, 100000],
@@ -50,6 +50,7 @@ export const GROUPS = [
     ['COPY_MAX_HOLD_H', 'Copy: max. hold (h)', 'num', '24', '0 = off', 0, 10000],
   ]],
   ['🙋 Approval', [
+    ['AUTO_FIRST_SALE', 'First sale never waits', 'bool', '1', 'Stake back / first take profit goes through without asking; later sales still ask'],
     ['MCAP_APPROVAL', 'Ask from market cap', 'num', '100000', '0 = off', 0, 1e12],
     ['MCAP_CURRENCY', 'Market cap currency', 'cur', 'USD', ''],
     ['RUNNER_START_XRP', 'Runner: start liquidity from (XRP)', 'num', '300', '0 = off', 0, 1e9],
