@@ -549,15 +549,21 @@ await test('recorder: follows bought AND skipped launches, counts pool trades, s
 });
 
 await test('launch protection phase: frozen + fee + auth while not blackholed → waits, buys when lifted', async () => {
-  const { sim, bot } = setup(50, { BLACKHOLE_WAIT_S: '30' });
+  const { sim, bot } = setup(50, { BLACKHOLE_WAIT_S: '1' }); // protection gets PROTECT_WAIT_MIN instead
   await bot.start();
   const cur = sim.launch({ name: 'SAFE', issuer: 'rSafe', poolXrp: 200, poolTok: 1e9, flags: 0x00800000 | 0x00400000 | 0x00040000, transferRate: 1200000000 });
   await settle(bot);
-  assert.equal(bot.state().positions[`${cur}.rSafe`], undefined, 'waits during the protection');
+  await wait(1500); await settle(bot);
+  assert.equal(bot.state().positions[`${cur}.rSafe`], undefined, 'still waiting after BLACKHOLE_WAIT_S');
+  assert.ok(!logs.join('\n').includes('Skip SAFE'), 'not skipped');
   assert.ok(logs.join('\n').includes('launch protection?'));
   sim.acc.rSafe.Flags = 0x00800000 | 0x00100000; delete sim.acc.rSafe.TransferRate; // lifted + blackholed
-  await wait(4500); await settle(bot);
-  assert.ok(bot.state().positions[`${cur}.rSafe`], 'bought after the protection ended');
+  const t0 = Date.now();
+  sim.emit('transaction', { validated: true, tx_json: { TransactionType: 'AccountSet', Account: 'rSafe' }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [] } });
+  await settle(bot);
+  assert.ok(bot.state().positions[`${cur}.rSafe`], 'bought right after the issuer tx');
+  assert.ok(Date.now() - t0 < 2000, 'woke up at once, not at the next 4 s poll');
+  assert.ok(logs.join('\n').includes('protection lifted'));
   const c2 = sim.launch({ name: 'AUTHX', issuer: 'rAuth', poolXrp: 200, poolTok: 1e9, flags: 0x00800000 | 0x00100000 | 0x00040000 });
   await settle(bot);
   assert.equal(bot.state().positions[`${c2}.rAuth`], undefined);

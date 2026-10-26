@@ -46,6 +46,7 @@ export function readConfig(env = process.env) {
     maxTransferFee: num('MAX_TRANSFER_FEE', 0), // percent
     requireBlackhole: bool('REQUIRE_BLACKHOLE', true),
     blackholeWaitS: num('BLACKHOLE_WAIT_S', 120),
+    protectWaitMin: num('PROTECT_WAIT_MIN', 60), // launch protection phase: wait this long for it to be lifted
     minPoolSupplyPct: num('MIN_POOL_SUPPLY_PCT', 20), // share of the supply that sits in the pool
     buySlippage: num('BUY_SLIPPAGE', 35),
     sellSlippage: num('SELL_SLIPPAGE', 30),
@@ -200,6 +201,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   let S = { positions: {}, history: [], seen: {}, day: '', buysToday: 0, realized: 0, startedAt: now() };
   try { S = { ...S, ...JSON.parse(fs.readFileSync(file, 'utf8')) }; } catch {}
   const pending = new Map(); // token key → launch waiting for checks
+  const waiters = new Map(); // issuer → wake-up functions of launches waiting on it
   let reserves = { base: 1, inc: 0.2 };
   let ticking = false;
   let stopped = false;
@@ -295,6 +297,9 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (!tx || !ev.validated || ev.meta?.TransactionResult !== 'tesSUCCESS') return;
     rec.tx(ev);
     if (cfg.track.has(tx.Account) && tx.Account !== me) onTracked(tx, ev);
+    // the issuer of a waiting launch did something (unfreeze, blackhole, fee change) → re-check now
+    const ws = waiters.get(tx.Account);
+    if (ws) { waiters.delete(tx.Account); for (const wake of ws) setTimeout(wake, 50); }
     if (tx.TransactionType !== 'AMMCreate') return;
     const xrpAmt = typeof tx.Amount === 'string' ? tx.Amount : typeof tx.Amount2 === 'string' ? tx.Amount2 : null;
     const tok = typeof tx.Amount === 'object' ? tx.Amount : typeof tx.Amount2 === 'object' ? tx.Amount2 : null;
@@ -381,13 +386,24 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
 
   // Hard problems skip at once; a missing blackhole or a pool below the minimum is waited for.
   async function evaluate(l) {
-    const holeBy = l.at + cfg.blackholeWaitS * 1000;
-    const poolBy = l.at + (l.poolWait ?? cfg.poolWaitMin) * 60000;
     let told = false;
     for (;;) {
       if (stopped) return;
       const c = await checks(l);
       const hole = c.blackholed || !cfg.requireBlackhole;
+      // a launch protection phase (frozen / approval-only / fee while not blackholed) gets the
+      // longer PROTECT_WAIT_MIN – the bot buys the moment it is lifted
+      if (c.wait.length && !l.protected) {
+        l.protected = now();
+        rec.event('protection', { k: l.k, name: l.name, what: c.wait });
+      }
+      if (l.protected && !c.wait.length && !l.liftedAt) {
+        l.liftedAt = now();
+        rec.event('protection_lifted', { k: l.k, name: l.name, afterS: Math.round((now() - l.at) / 1000) });
+        say(`🔓 ${l.name}: launch protection lifted after ${Math.round((now() - l.at) / 1000)}s`);
+      }
+      const holeBy = l.at + (l.protected ? Math.max(cfg.blackholeWaitS, cfg.protectWaitMin * 60) : cfg.blackholeWaitS) * 1000;
+      const poolBy = Math.max(l.at + (l.poolWait ?? cfg.poolWaitMin) * 60000, l.protected ? holeBy : 0);
       if (c.reasons.length) {
         pending.delete(l.k);
         stat(0, skipKind(c.reasons[0]));
@@ -398,7 +414,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
         pending.delete(l.k);
         stat(0, skipKind(c.wait[0]));
         rec.decision(l.k, 'skipped', skipKind(c.wait[0]));
-        return say(`⛔ Skip ${l.name}: still ${c.wait.join(', ')} after ${cfg.blackholeWaitS}s`);
+        return say(`⛔ Skip ${l.name}: still ${c.wait.join(', ')} after ${Math.round((holeBy - l.at) / 1000)}s`);
       }
       if (hole && !c.small && !c.wait.length) {
         pending.delete(l.k);
@@ -408,7 +424,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
         pending.delete(l.k);
         stat(0, 'not blackholed');
         rec.decision(l.k, 'skipped', 'not blackholed');
-        return say(`⛔ Skip ${l.name}: issuer not blackholed after ${cfg.blackholeWaitS}s (can mint more)`);
+        return say(`⛔ Skip ${l.name}: issuer not blackholed after ${Math.round((holeBy - l.at) / 1000)}s (can mint more)`);
       }
       if (c.small && now() >= poolBy) {
         pending.delete(l.k);
@@ -416,10 +432,16 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
         rec.decision(l.k, 'skipped', 'pool too small');
         return say(`⛔ Skip ${l.name}: ${c.small} (min ${l.minPool ?? cfg.minPoolXrp})`);
       }
-      if (c.wait.length && !told) { told = true; say(`⏳ ${l.name}: ${c.wait.join(', ')} – waiting up to ${cfg.blackholeWaitS}s (launch protection?)`); }
+      if (c.wait.length && !told) { told = true; say(`⏳ ${l.name}: ${c.wait.join(', ')} – launch protection? Waiting up to ${Math.round((holeBy - l.at) / 60000)} min, buying the moment it is lifted`); }
       if (c.small && !told) { told = true; say(`⏳ ${l.name}: ${c.small} – watching for ${l.poolWait ?? cfg.poolWaitMin} min`); }
-      // poll fast while it is fresh, then slower so many waiting launches don't flood the server
-      await new Promise((r) => setTimeout(r, now() - l.at < 120000 ? 4000 : 15000));
+      // sleep until the next poll – or until the issuer sends a transaction (unfreeze, blackhole, …)
+      const ms = now() - l.at < 120000 ? 4000 : 15000;
+      await new Promise((r) => {
+        const t = setTimeout(done, ms);
+        function done() { clearTimeout(t); waiters.get(l.issuer)?.delete(done); r(); }
+        if (!waiters.has(l.issuer)) waiters.set(l.issuer, new Set());
+        waiters.get(l.issuer).add(done);
+      });
     }
   }
 

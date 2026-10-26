@@ -21,6 +21,7 @@ export const GROUPS = [
     ['MAX_POOL_XRP', 'Max. liquidity (XRP)', 'num', '0', '0 = no limit', 0, 1e9],
     ['REQUIRE_BLACKHOLE', 'Blackholed issuers only', 'bool', '1', 'The issuer can’t mint more'],
     ['BLACKHOLE_WAIT_S', 'Wait for the blackhole (s)', 'num', '120', '', 0, 3600],
+    ['PROTECT_WAIT_MIN', 'Wait for a launch protection to end (min)', 'num', '60', 'frozen / approval-only / fee at launch – bought the moment it is lifted', 0, 1440],
     ['MIN_POOL_SUPPLY_PCT', 'Min. share of all tokens in the pool (%)', 'num', '20', '', 0, 100],
     ['MAX_TRANSFER_FEE', 'Max. transfer fee (%)', 'num', '0', '', 0, 100],
     ['MAX_AMM_FEE', 'Max. AMM fee (%)', 'num', '1', '', 0, 1],

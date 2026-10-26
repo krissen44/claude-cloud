@@ -75,8 +75,10 @@ that reached 2×/5×/10×, still above start after 1 h, died, median best multip
 ### Launch protections (anti-snipe)
 
 If an issuer that is not blackholed yet has the token frozen, requires approved trust lines or charges a
-transfer fee, the bot treats it as a launch protection phase and waits (up to `BLACKHOLE_WAIT_S`) instead of
-skipping for good. Once the issuer is blackholed those flags can't change any more, so then they are final.
+transfer fee, the bot treats it as a launch protection phase and waits up to `PROTECT_WAIT_MIN` (60 min)
+instead of skipping. It sees every ledger transaction, so the moment the issuer lifts the protection (any
+transaction from the issuer) it re-checks at once and buys in the first open ledger. It does not try to get
+around a protection. Once the issuer is blackholed those flags can't change any more, so then they are final.
 
 ## Honestly
 
