@@ -70,12 +70,12 @@ export function find(secret, address) {
 // Why a phrase didn't match – without ever printing a word.
 export function diagnose(secret) {
   const w = words(secret);
-  if (kindOf(secret) !== 'mnemonic') return `Erkannt wurden ${w.length} Wörter – erwartet sind 12 oder 24 (oder ein Seed s…).`;
+  if (kindOf(secret) !== 'mnemonic') return `Found ${w.length} words – expected 12 or 24 (or a seed s…).`;
   const unknown = w.map((x, i) => (wordlist.includes(x) ? 0 : i + 1)).filter(Boolean);
-  if (unknown.length) return `Wort Nr. ${unknown.join(', ')} gibt es nicht in der Wortliste → Tippfehler an dieser Stelle.`;
-  if (!validateMnemonic(w.join(' '), wordlist)) return 'Alle Wörter sind gültig, aber die Prüfsumme stimmt nicht → ein Wort vertauscht/verwechselt oder falsche Reihenfolge.';
+  if (unknown.length) return `Word no. ${unknown.join(', ')} is not in the word list → typo at that position.`;
+  if (!validateMnemonic(w.join(' '), wordlist)) return 'All words are valid but the checksum fails → a word mixed up or the order is wrong.';
   const def = fromSecret('mnemonic', w.join(' '));
-  return `Die Wörter sind gültig, gehören aber zu einer anderen Adresse (z. B. ${def.address}). Ist das evtl. eine andere Wallet von dir?`;
+  return `The words are valid but belong to another address (e.g. ${def.address}). Maybe another wallet of yours?`;
 }
 
 export function loadWallet(env = process.env) {

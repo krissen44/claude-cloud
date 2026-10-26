@@ -1,167 +1,153 @@
-# XRPL Launch-Sniper
+# XRPL Launch Sniper
 
-Kauft neue Memecoins auf der XRPL direkt beim Launch und verkauft nach festen Regeln.
+Buys new memecoins on the XRPL right at launch and sells them by fixed rules.
 
-## Was er macht
+## What it does
 
-1. **Erkennt jeden Launch.** FirstLedger, Horizon und die anderen Launchpads starten einen Token,
-   indem sie einen AMM-Pool XRP/Token anlegen (`AMMCreate`). Der Bot hört live im Ledger mit und
-   sieht jeden neuen Pool im selben Ledger (≈ 4 Sekunden).
-2. **Nur Pools ab 100 XRP.** Startet ein Launch kleiner, beobachtet ihn der Bot 10 Minuten lang. Wächst
-   der Pool in der Zeit über 100 XRP, kauft er. Sonst lässt er ihn liegen.
-3. **Prüft auf Rug-Anzeichen.** Gekauft wird nur, wenn alles stimmt:
-   - Der Issuer ist **blackholed** (kann keine neuen Tokens mehr erzeugen). Der Bot wartet bis zu 2 Minuten darauf.
-   - Kein Clawback (Issuer kann Tokens nicht zurückholen), kein Freeze.
-   - Keine Transfer-Gebühr.
-   - Mindestens 20 % aller Tokens liegen im Pool (sonst kann der Entwickler mit dem Rest den Kurs zerstören).
-4. **Kauft für 1 XRP** (einstellbar). Ist der Preis schon um mehr als 25 % weggelaufen, kauft er nicht.
-5. **Wallet-Tracking (optional):** In `TRACK_WALLETS` trägst du Wallets ein, denen du folgen willst.
-   Kauft so eine Wallet einen Token für mindestens 5 XRP, kauft der Bot ihn auch: mit denselben
-   Sicherheitsprüfungen, einmal pro Token. **Copy-Käufe verkauft er nach eigenen Regeln** (kein Moonbag):
-   - bei **+100 %** die Hälfte,
-   - den Rest **30 % unter dem Höchststand**,
-   - bei **−50 %** alles,
-   - fällt das XRP im Pool um **40 %** (Rug): sofort alles,
-   - nach **24 Stunden** verkauft er, was übrig ist.
-6. **Launch-Käufe verkauft er nach dem Prinzip „Einsatz raus, Rest läuft":**
-   - Bei **+100 %** verkauft er **genau so viel, dass der Einsatz zurück ist** (+5 % für Gebühren).
-     Je höher der Kurs dann steht, desto weniger muss er verkaufen und desto mehr bleibt liegen.
-   - Der Rest ist ein **Moonbag**: Er kostet nichts mehr und wird **nie verkauft**, egal wie der Kurs schwankt.
-   - Einzige Ausnahme: Ist der Pool tot (90 % des XRP sind raus), räumt der Bot den Rest weg. Dann ist die
-     Trustline-Reserve von 0,2 XRP mehr wert als der Token.
-   - **Solange der Einsatz noch nicht zurück ist**, schützt er ihn: bei −50 %, bei Rug-Alarm (40 % des
-     Pool-XRP weg) oder nach 24 Stunden verkauft er alles.
-7. **Fragt bei großen Tokens nach.** Hat ein Token eine **Market Cap ab 100.000 $**, verkauft der Bot
-   nicht selbst. Er fragt dich auf der Statusseite (und in Discord) und wartet:
-   - **✅ Verkaufen**: Er führt den Verkauf aus, den die Regel wollte, zum aktuellen Preis.
-   - **✋ Behalten (legit)**: Der Token gehört ab jetzt dir. Der Bot verkauft ihn nicht mehr von selbst.
-     Auf der Statusseite gibt es dafür die Buttons „Hälfte verkaufen", „Alles verkaufen" und „Wieder automatisch".
-   - Auf der Karte stehen Links zum Prüfen: die Website des Issuers (falls hinterlegt), XRPScan,
-     FirstLedger und eine X-Suche nach dem Token-Namen. Socials prüfen kann der Bot nicht selbst, das machst du.
-   - **Runner:** Startet ein Launch mit **mindestens 300 XRP** im Pool und verdoppelt sich das XRP im Pool
-     innerhalb von **60 Minuten**, markiert der Bot ihn als 🚀 Runner. Ab dann fragt er bei **jedem**
-     Verkauf nach, egal wie hoch die Market Cap gerade ist. Das gilt nur für Launch-Käufe, nicht für Copy-Käufe
-     (bei denen kennt der Bot den Start nicht). Einstellbar mit `RUNNER_START_XRP`, `RUNNER_GROWTH`, `RUNNER_WINDOW_MIN`.
-   - **Ein Rug wird nie abgewartet:** Fällt das XRP im Pool um 40 %, verkauft er sofort, auch ohne Genehmigung.
-   - Market Cap = alle ausgegebenen Tokens × aktueller Pool-Preis. Den Dollarkurs von XRP liest der Bot
-     aus dem XRP/RLUSD-Pool im Ledger. Kann er den Kurs nicht lesen, fragt er sicherheitshalber.
-8. **Räumt auf.** Nach einem vollständigen Verkauf löscht er die Trustline. Das gibt die 0,2 XRP Reserve wieder frei.
+1. **Spots every launch.** FirstLedger, Horizon and the other launchpads start a token by creating an
+   XRP/token AMM pool (`AMMCreate`). The bot listens to the ledger live and sees every new pool in the
+   same ledger (≈ 4 seconds).
+2. **Only pools from 100 XRP.** If a launch starts smaller, the bot watches it for 10 minutes. If the pool
+   grows past 100 XRP in that time, it buys; otherwise it lets it go.
+3. **Checks for rug signs.** It only buys when everything is fine:
+   - The issuer is **blackholed** (can't mint more tokens). The bot waits up to 2 minutes for that.
+   - No clawback (the issuer can't take tokens back), no freeze.
+   - No transfer fee.
+   - At least 20 % of all tokens sit in the pool (otherwise the dev can crash the price with the rest).
+4. **Buys for 1 XRP** (adjustable). If the price already ran more than 25 %, it doesn't buy.
+5. **Wallet tracking (optional):** add wallets you want to follow. When such a wallet buys a token for at
+   least 5 XRP, the bot buys it too – with the same safety checks, once per token. **Copy buys sell by their
+   own rules** (no moonbag):
+   - at **+100 %** half,
+   - the rest **30 % below the peak**,
+   - at **−50 %** everything,
+   - if the pool's XRP drops **40 %** (rug): everything at once,
+   - after **24 hours** whatever is left.
+6. **Launch buys sell by "stake out, the rest rides":**
+   - At **+100 %** it sells **exactly enough to get the stake back** (+5 % for fees). The higher the price
+     is by then, the less it has to sell and the more stays in the bag.
+   - The rest is a **moonbag**: it costs nothing any more and is **never sold**, however the price moves.
+   - Only exception: if the pool is dead (90 % of its XRP gone), the bot clears the rest – the 0.2 XRP trust
+     line reserve is then worth more than the token.
+   - **Until the stake is back** it protects it: at −50 %, on a rug alarm (40 % of the pool's XRP gone) or
+     after 24 hours it sells everything.
+7. **Asks you about big tokens.** If a token has a **market cap from $100,000**, the bot doesn't sell by
+   itself. It asks you on the status page (and in Discord) and waits:
+   - **✅ Sell**: it makes the sale the rule wanted, at the current price.
+   - **✋ Keep (legit)**: the token is yours from now on; the bot no longer sells it by itself. The status
+     page has the buttons "Sell half", "Sell all" and "Back to automatic" for it.
+   - The card has links to check the token: the issuer's website (if set), XRPScan, FirstLedger and an
+     X search for the token name. The bot can't judge socials – that's your part.
+   - **Runner:** if a launch starts with **at least 300 XRP** in the pool and the pool's XRP doubles within
+     **60 minutes**, the bot marks it as a 🚀 runner and asks before **every** sale, whatever the market cap.
+     Launch buys only (for copy buys the bot doesn't know the start).
+   - **A rug is never waited for:** if the pool's XRP drops 40 %, it sells at once, without approval.
+   - Market cap = all issued tokens × current pool price. The bot reads the XRP/USD price from the
+     XRP/RLUSD pool on the ledger; if it can't, it asks to be safe.
+8. **Cleans up.** After a full sale it deletes the trust line, which frees the 0.2 XRP reserve.
 
-Jeder Kauf und Verkauf steht im Log, auf der Statusseite (laufende Trades und Moonbags getrennt)
-und optional in Discord.
+Every buy and sale is in the log, on the status page (open trades and moonbags apart) and optionally in Discord.
 
-## Ehrlich gesagt
+## Honestly
 
-- **50 → 500 XRP in einem Monat ist nicht realistisch planbar.** Die meisten neuen Coins verlieren schnell
-  an Wert. Der Bot lebt davon, dass wenige Treffer mit +200 % … +1000 % die vielen kleinen Verluste
-  bezahlen. Ob das klappt, hängt vom Markt ab. Setze nur Geld ein, dessen Verlust du verkraftest.
-- Bei XRPL-Launches kaufen viele Bots im ersten Ledger. Dieser Bot ist schnell, aber nicht der schnellste.
-- Die Filter fangen viele Rugs ab, aber nicht alle (z. B. wenn der Entwickler seine Tokens über viele Wallets verteilt).
-- Nach 1–2 Wochen auf der Statusseite nachsehen, was die Gewinne/Verluste zeigen, und dann die Werte anpassen.
+- **50 → 500 XRP in a month can't be planned.** Most new coins lose value fast. The bot lives on a few hits
+  of +200 % … +1000 % paying for the many small losses. Whether that works depends on the market. Only use
+  money you can afford to lose.
+- Many bots buy XRPL launches in the first ledger. This one is fast, but not the fastest.
+- The filters catch many rugs, not all (e.g. when the dev spreads tokens over many wallets).
+- After 1–2 weeks, look at the wins/losses on the status page and tune the settings.
 
-## Geld-Rechnung bei 50 XRP
+## Money math with 50 XRP
 
 | | XRP |
 |---|---|
-| Grundreserve der Wallet (gesperrt) | 1 |
-| Mindestguthaben, wird nie verkauft (`MIN_BALANCE_XRP`) | 10 |
-| Pro offener Position: Einsatz + Trustline-Reserve | 1 + 0,2 |
-| → gleichzeitig offene Trades bei 50 XRP | ca. 30, begrenzt auf 25 (`MAX_OPEN`) |
-| Jeder Moonbag sperrt 0,2 XRP Reserve | 50 Moonbags = 10 XRP |
+| Wallet base reserve (locked) | 1 |
+| Balance never spent (`MIN_BALANCE_XRP`) | 10 |
+| Per open position: stake + trust line reserve | 1 + 0.2 |
+| → open trades at once with 50 XRP | about 30, capped at 25 (`MAX_OPEN`) |
+| Every moonbag locks 0.2 XRP reserve | 50 moonbags = 10 XRP |
 
-Moonbags zählen nicht zu `MAX_OPEN`. Ihre Reserve geht aber vom Guthaben ab. Das Mindestguthaben
-sorgt dafür, dass dabei nie mehr ausgegeben wird als erlaubt.
+Moonbags don't count towards `MAX_OPEN`, but their reserve comes off the balance. The balance floor makes
+sure the bot never spends more than allowed.
 
-## Einrichten
+## Setup on a VPS (Ubuntu) in one step
 
-**Wichtig: eine neue Wallet nur für den Bot.** Niemals die Haupt-Wallet oder die Issuer-Wallet von
-Pixel Scrappy verwenden. Der Seed steht im Klartext in `.env` auf dem Rechner, auf dem der Bot läuft.
+**Use a new wallet just for the bot** – never your main wallet or any project/issuer wallet. Its key is
+stored in plain text in `.env` on the server.
 
-1. In Xaman (oder Joey) eine **neue Wallet** anlegen und den **Family Seed** (`s…`) notieren.
-2. 50 XRP auf diese neue Wallet schicken.
-3. Node.js 18 oder neuer installieren (https://nodejs.org).
-4. ZIP entpacken, im Ordner `.env.example` nach `.env` kopieren und `WALLET_SEED=` eintragen.
-   `STATUS_KEY` auf ein eigenes Passwort ändern.
-5. Starten:
-   ```
-   npm start
-   ```
-   Im Fenster erscheint `🤖 Sniper running – wallet r…`. Ab jetzt kauft und verkauft er selbst.
-6. Statusseite im Browser: `http://localhost:3100` → Login mit dem Passwort (`STATUS_PASSWORD`, sonst `STATUS_KEY`).
-   Angemeldet bleibt man 30 Tage; nach 8 falschen Versuchen ist 15 Minuten Pause.
-   Die Buttons zum Genehmigen funktionieren nur mit gesetztem `STATUS_KEY`. Damit du vom Handy genehmigen
-   kannst, muss die Seite von außen erreichbar sein (VPS: Port 3100 öffnen, `PUBLIC_URL` eintragen).
-   Mit `DISCORD_WEBHOOK` bekommst du jede Anfrage als Nachricht mit Link.
-
-Stoppen: `Strg + C`. Offene Positionen bleiben gespeichert (`~/xrpl-sniper-data/state.json`) und
-werden beim nächsten Start weiter überwacht. Während der Bot aus ist, wird **nichts** verkauft.
-
-## Einrichtung auf einem VPS (Ubuntu) in einem Schritt
-
-In der Server-Konsole (z. B. Hostinger „Web console“) eingeben:
+In the server console (e.g. Hostinger "Web console"):
 ```
 cd /root && curl -fsSL https://codeload.github.com/krissen44/claude-cloud/tar.gz/refs/heads/claude/awesome-einstein-jnon4n | tar xz --strip-components=2 --wildcards '*/tools/sniper' && cd sniper && bash setup-vps.sh
 ```
-Das Skript installiert Node.js, fragt nach der Adresse der Bot-Wallet und ihrem Schlüssel (12/24 Wörter,
-Family Seed oder Xaman-Zahlen, unsichtbare Eingabe; es prüft, dass der Schlüssel zur Adresse passt), erzeugt den Statusseiten-Key,
-öffnet die Firewall, testet die Verbindung zum XRPL und startet den Bot dauerhaft mit pm2. Am Ende stehen
-die Bot-Adresse und der Link zur Statusseite da.
+The script installs Node.js, asks for the bot wallet's address and its key (12/24 words, family seed or Xaman
+secret numbers – hidden input; it checks that the key matches the address), generates the login password,
+opens the firewall, tests the XRPL connection and starts the bot 24/7 with pm2. At the end it shows the bot
+address and the status page. Then send the XRP to the bot wallet.
 
-### HTTPS mit eigener Domain
+### HTTPS with your own domain
 
-Die Domain braucht im DNS einen A-Eintrag `@` → IP des Servers. Dann in der Konsole:
+The domain needs a DNS A record `@` → the server's IP. Then:
 ```
-cd /root && curl -fsSL https://codeload.github.com/krissen44/claude-cloud/tar.gz/refs/heads/claude/awesome-einstein-jnon4n | tar xz --strip-components=2 --wildcards '*/tools/sniper' && cd sniper && bash setup-https.sh deine-domain.tld
+cd /root && curl -fsSL https://codeload.github.com/krissen44/claude-cloud/tar.gz/refs/heads/claude/awesome-einstein-jnon4n | tar xz --strip-components=2 --wildcards '*/tools/sniper' && cd sniper && bash setup-https.sh your-domain.tld
 ```
-Installiert Caddy (kostenloses Zertifikat, erneuert sich selbst), leitet `https://deine-domain.tld` auf die
-Statusseite, schließt Port 3100 (`BIND=127.0.0.1`) und stellt `PUBLIC_URL` für Discord um.
+Installs Caddy (free certificate, renews itself), serves the status page at `https://your-domain.tld`, closes
+port 3100 (`BIND=127.0.0.1`) and switches `PUBLIC_URL` for Discord.
 
-## Wo laufen lassen?
+### Login
 
-Es ist ganz normales Node.js, es läuft überall, wo Node läuft. Es muss aber **rund um die Uhr**
-laufen, sonst verpasst er Launches und, schlimmer, Verkäufe.
+The status page has a login page. Password = `STATUS_PASSWORD`, else `STATUS_KEY`. Set your own with
+`bash set-password.sh` (logs out every device). You stay logged in for 30 days; after 8 wrong tries an IP
+has to wait 15 minutes.
 
-- **Eigener PC:** geht, solange er an bleibt (Energiesparmodus aus).
-- **Kleiner VPS** (z. B. Hostinger VPS, Hetzner, ~5 €/Monat), am stabilsten. Dort mit `pm2` dauerhaft starten:
-  ```
-  npm install -g pm2
-  pm2 start index.js --name sniper
-  pm2 save && pm2 startup
-  pm2 logs sniper
-  ```
-- **Hostinger Node.js-App** (wie das Spiel): nur bedingt. Solche Apps werden oft schlafen gelegt,
-  wenn keiner die Seite aufruft. Dann verpasst der Bot Launches und Verkäufe. Nicht empfohlen.
+### Updates
 
-## Einstellungen auf der Statusseite
+Run the download command again (without `bash setup-vps.sh`), then `pm2 restart sniper`. `.env`, open
+positions and settings are kept.
 
-Oben rechts **⚙️ Einstellungen**: Fast alle Werte unten lassen sich dort ändern. Sie gelten sofort, ohne
-Neustart, und werden in `DATA_DIR/settings.json` gespeichert (gehen also bei Updates nicht verloren).
-Dort gibt es auch **„Käufe pausieren“**: Dann kauft der Bot nichts Neues, verkauft offene Positionen aber weiter.
-Jede Änderung steht im Log (und in Discord). Ein leeres Feld = zurück zum Standard.
-Wallet-Schlüssel, Passwort, Port und Server-Einstellungen gehen nur über die `.env`.
+### Daily use
 
-## Einstellungen (`.env`)
+- Live log: `pm2 logs sniper` (Ctrl+C only closes the view)
+- Restart: `pm2 restart sniper` · Stop: `pm2 stop sniper`
+- While the bot is stopped **nothing** is sold. Open positions are kept (`~/xrpl-sniper-data/state.json`)
+  and watched again after the start.
 
-Alle Werte stehen mit Erklärung in `.env.example`. Die wichtigsten:
+## Settings on the status page
 
-| Wert | Standard | Bedeutung |
+Top right **⚙️ Settings**: almost all values below can be changed there. They apply at once, no restart, and
+are stored in `DATA_DIR/settings.json` (so updates keep them). There is also **"Pause buying"**: no new buys,
+open positions are still sold by the rules. Every change is logged (and sent to Discord). An empty field =
+back to the default. Wallet key, password, port and server settings are `.env` only.
+
+## Settings (`.env`)
+
+All values are explained in `.env.example`. The main ones:
+
+| Value | Default | Meaning |
 |---|---|---|
-| `BUY_XRP` | 1 | XRP pro Launch |
-| `MIN_BALANCE_XRP` | 10 | so viel bleibt immer übrig |
-| `MIN_POOL_XRP` / `POOL_WAIT_MIN` | 100 / 10 | nur Pools ab 100 XRP, kleinere 10 Min. beobachten |
-| `TAKE_PROFIT` / `TAKE_PROFIT_PART` | 100 / auto | bei +100 % den Einsatz zurückholen, Rest läuft |
-| `TRAILING_STOP` | 0 | Moonbag nie verkaufen (z. B. `50` = Rest bei −50 % vom Hoch verkaufen) |
-| `STOP_LOSS` | 50 | bei −50 % alles verkaufen, solange der Einsatz noch nicht zurück ist (`0` = aus) |
-| `MCAP_APPROVAL` | 100000 | ab dieser Market Cap (USD) nur mit deinem OK verkaufen (`0` = aus) |
-| `RUNNER_START_XRP` / `RUNNER_GROWTH` / `RUNNER_WINDOW_MIN` | 300 / 100 / 60 | Start ab 300 XRP + Pool-XRP verdoppelt in 60 Min. → jeder Verkauf nur mit OK |
-| `TRACK_WALLETS` | leer | `rAdresse:Name,rAdresse2:Name2` – deren Käufe werden mitgemacht |
-| `COPY_BUY_XRP` / `COPY_MIN_XRP` | 1 / 5 | Einsatz pro Copy-Kauf / erst ab so großen Käufen der Wallet |
-| `COPY_TAKE_PROFIT` / `_PART` / `COPY_TRAILING_STOP` / `COPY_STOP_LOSS` / `COPY_RUG_POOL_DROP` / `COPY_MAX_HOLD_H` | 100 / 50 / 30 / 50 / 40 / 24 | Verkaufsregeln nur für Copy-Käufe |
-| `REQUIRE_BLACKHOLE` | 1 | nur Tokens, deren Issuer nichts mehr nachdrucken kann |
-| `DRY_RUN` | 0 | `1` = nur so tun, ohne echte Käufe |
+| `BUY_XRP` | 1 | XRP per launch |
+| `MIN_BALANCE_XRP` | 10 | always kept |
+| `MIN_POOL_XRP` / `POOL_WAIT_MIN` | 100 / 10 | pools from 100 XRP only, watch smaller ones for 10 min |
+| `TAKE_PROFIT` / `TAKE_PROFIT_PART` | 100 / auto | at +100 % take the stake back, the rest rides |
+| `TRAILING_STOP` | 0 | never sell the moonbag (e.g. `50` = sell the rest 50 % below its peak) |
+| `STOP_LOSS` | 50 | sell everything at −50 % while the stake isn't back (`0` = off) |
+| `MCAP_APPROVAL` | 100000 | from this market cap (USD) sell only with your OK (`0` = off) |
+| `RUNNER_START_XRP` / `RUNNER_GROWTH` / `RUNNER_WINDOW_MIN` | 300 / 100 / 60 | start ≥ 300 XRP + pool XRP doubled within 60 min → every sale needs your OK |
+| `TRACK_WALLETS` | empty | `rAddress:Name,rAddress2:Name2` – their buys are copied |
+| `COPY_BUY_XRP` / `COPY_MIN_XRP` | 1 / 5 | stake per copy buy / only for buys of the wallet from this size |
+| `COPY_TAKE_PROFIT` / `_PART` / `COPY_TRAILING_STOP` / `COPY_STOP_LOSS` / `COPY_RUG_POOL_DROP` / `COPY_MAX_HOLD_H` | 100 / 50 / 30 / 50 / 40 / 24 | sell rules for copy buys |
+| `REQUIRE_BLACKHOLE` | 1 | only tokens whose issuer can't mint more |
+| `PAUSE_BUYS` | 0 | `1` = no new buys |
+| `DRY_RUN` | 0 | `1` = pretend only, no real trades |
 
-## Test
+## Running elsewhere
 
-`npm test` spielt im simulierten Ledger 16 Szenarien durch (Genehmigung ab Market Cap / Runner / Behalten / Rug trotzdem, Einsatz raus + Moonbag, kleiner Pool wächst,
-Copy-Trade mit Hälfte/Trailing-Stop/Haltezeit, Rug, Clawback, Blackhole spät/nie, Stop-Loss, gelöschter Pool, Guthabengrenze, weggelaufener Preis). `node test/txcheck.mjs` prüft,
-dass alle Transaktionen gültig sind und signiert werden können.
+It's plain Node.js (18+): `npm start` with a `.env` next to it. It has to run **around the clock**, otherwise
+it misses launches and, worse, sales. A small VPS is the most reliable; a PC works while it stays on.
+A Hostinger Node.js web app is not recommended – those apps are often put to sleep without visitors.
+
+## Tests
+
+`npm test` runs 17 scenarios on a simulated ledger (approval by market cap / runner / keep / rug anyway,
+stake out + moonbag, small pool grows, copy trades with half/trailing stop/max hold, rug, clawback, late/no
+blackhole, stop loss, deleted pool, balance floor, runaway price, live settings + pause).
+`node test/txcheck.mjs` checks that every transaction is valid and can be signed.

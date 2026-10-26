@@ -33,9 +33,9 @@ function applyOverrides(next) {
 const servers = (process.env.XRPL_WS || 'wss://xrplcluster.com,wss://s1.ripple.com,wss://s2.ripple.com').split(',').map((s) => s.trim()).filter(Boolean);
 
 let wallet = null;
-try { wallet = loadWallet(); } catch (e) { console.error('Wallet-Fehler: ' + e.message); process.exit(1); }
+try { wallet = loadWallet(); } catch (e) { console.error('Wallet error: ' + e.message); process.exit(1); }
 if (!wallet && !cfg.dryRun) {
-  console.error('Kein Wallet-Schlüssel in .env (WALLET_SEED, WALLET_MNEMONIC oder WALLET_SECRET_NUMBERS) – oder DRY_RUN=1 setzen.');
+  console.error('No wallet key in .env (WALLET_SEED, WALLET_MNEMONIC or WALLET_SECRET_NUMBERS) – or set DRY_RUN=1.');
   process.exit(1);
 }
 
@@ -116,27 +116,27 @@ function page(st) {
   const t = (d) => new Date(d).toISOString().slice(5, 16).replace('T', ' ');
   const cap = (v) => (!v && v !== 0 ? '' : isNaN(v) ? '?' : (st.mcapCurrency === 'USD' ? '$' : '') + (v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(0) + 'k' : v.toFixed(0)) + (st.mcapCurrency === 'XRP' ? ' XRP' : ''));
   const btn = (k, what, label, cls = '') => `<form method="post" action="/act"><input type="hidden" name="k" value="${esc(k)}"><input type="hidden" name="do" value="${what}"><button class="${cls}">${label}</button></form>`;
-  const name = (p) => `${esc(p.name)}${p.copy ? ` <small>👀 ${esc(p.copy)}</small>` : ''}${p.manual ? ' <small>✋ manuell</small>' : ''}${p.runner ? ' <small>🚀 Runner</small>' : ''}`;
-  const manualBtns = (p) => (p.manual ? btn(p.k, 'sellhalf', 'Hälfte verkaufen') + btn(p.k, 'sellall', 'Alles verkaufen', 'no') + btn(p.k, 'auto', 'Wieder automatisch') : '');
+  const name = (p) => `${esc(p.name)}${p.copy ? ` <small>👀 ${esc(p.copy)}</small>` : ''}${p.manual ? ' <small>✋ manual</small>' : ''}${p.runner ? ' <small>🚀 Runner</small>' : ''}`;
+  const manualBtns = (p) => (p.manual ? btn(p.k, 'sellhalf', 'Sell half') + btn(p.k, 'sellall', 'Sell all', 'no') + btn(p.k, 'auto', 'Back to automatic') : '');
   const asks = st.open.filter((p) => p.ask);
   const live = st.open.filter((p) => !p.ask && !(p.tp1Done && !p.copy));
   const moon = st.open.filter((p) => !p.ask && p.tp1Done && !p.copy);
-  const askCards = asks.map((p) => `<div class="card"><b>${name(p)}</b> · Market Cap <b>${cap(p.mcap)}</b> · Einsatz ${p.cost.toFixed(3)} → Wert ${p.value.toFixed(3)} XRP<br>
-Der Bot will <b>${Math.round(p.ask.part * 100)} %</b> verkaufen: ${esc(p.ask.why)} <small>(seit ${t(p.ask.at)})</small><br>
-${p.domain ? `🌐 <a href="https://${esc(p.domain.replace(/^https?:\/\//, ''))}" target="_blank" rel="noopener">${esc(p.domain)}</a> · ` : '<small>keine Domain beim Issuer hinterlegt</small> · '}<a href="https://xrpscan.com/account/${esc(p.issuer)}" target="_blank" rel="noopener">XRPScan</a> · <a href="https://firstledger.net/token/${esc(p.issuer)}/${esc(p.currency)}" target="_blank" rel="noopener">FirstLedger</a> · <a href="https://x.com/search?q=${encodeURIComponent('$' + p.name)}" target="_blank" rel="noopener">X-Suche</a>
-<div class="row">${btn(p.k, 'sell', '✅ Verkaufen', 'ok')}${btn(p.k, 'hold', '✋ Behalten (legit)', 'no')}</div></div>`).join('');
-  const liveRows = live.map((p) => `<tr><td>${name(p)}</td><td>${p.cost.toFixed(3)}</td><td>${p.value.toFixed(3)}</td><td class="${p.value >= p.cost ? 'g' : 'r'}">${f((p.value / p.cost - 1) * 100, 0)}%${p.tp1Done ? ' · ½ verkauft' : ''}</td><td>${cap(p.mcap)}</td><td>${t(p.at)}</td><td>${manualBtns(p)}</td></tr>`).join('');
+  const askCards = asks.map((p) => `<div class="card"><b>${name(p)}</b> · Market Cap <b>${cap(p.mcap)}</b> · Stake ${p.cost.toFixed(3)} → value ${p.value.toFixed(3)} XRP<br>
+The bot wants to sell <b>${Math.round(p.ask.part * 100)}%</b>: ${esc(p.ask.why)} <small>(since ${t(p.ask.at)})</small><br>
+${p.domain ? `🌐 <a href="https://${esc(p.domain.replace(/^https?:\/\//, ''))}" target="_blank" rel="noopener">${esc(p.domain)}</a> · ` : '<small>no domain set on the issuer</small> · '}<a href="https://xrpscan.com/account/${esc(p.issuer)}" target="_blank" rel="noopener">XRPScan</a> · <a href="https://firstledger.net/token/${esc(p.issuer)}/${esc(p.currency)}" target="_blank" rel="noopener">FirstLedger</a> · <a href="https://x.com/search?q=${encodeURIComponent('$' + p.name)}" target="_blank" rel="noopener">X search</a>
+<div class="row">${btn(p.k, 'sell', '✅ Sell', 'ok')}${btn(p.k, 'hold', '✋ Keep (legit)', 'no')}</div></div>`).join('');
+  const liveRows = live.map((p) => `<tr><td>${name(p)}</td><td>${p.cost.toFixed(3)}</td><td>${p.value.toFixed(3)}</td><td class="${p.value >= p.cost ? 'g' : 'r'}">${f((p.value / p.cost - 1) * 100, 0)}%${p.tp1Done ? ' · ½ sold' : ''}</td><td>${cap(p.mcap)}</td><td>${t(p.at)}</td><td>${manualBtns(p)}</td></tr>`).join('');
   const moonRows = moon.map((p) => { const bag = p.value - p.proceeds; return `<tr><td>${name(p)}</td><td>${p.cost.toFixed(3)}</td><td>${p.proceeds.toFixed(3)}</td><td class="g">${bag.toFixed(3)}</td><td>${(bag / p.cost).toFixed(1)}×</td><td>${cap(p.mcap)}</td><td>${manualBtns(p)}</td></tr>`; }).join('');
   const hist = st.history.map((h) => `<tr><td>${esc(h.name)}</td><td>${h.cost.toFixed(3)}</td><td>${h.proceeds.toFixed(3)}</td><td class="${h.pnl >= 0 ? 'g' : 'r'}">${f(h.pnl)}</td><td>${esc(h.why)}</td><td>${t(h.closed)}</td></tr>`).join('');
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="20"><title>XRPL Sniper</title>
 <style>body{font:14px system-ui;margin:16px;background:#0e1726;color:#e6edf6}a{color:#6cb8ff}table{border-collapse:collapse;width:100%;margin:8px 0 24px}td,th{padding:4px 6px;border-bottom:1px solid #243247;text-align:left;vertical-align:top}.g{color:#3ad17a}.r{color:#ff6b6b}.k{display:inline-block;margin:0 16px 8px 0}small{color:#8aa0bb}form{display:inline}button{font:inherit;margin:2px 4px 2px 0;padding:4px 10px;border-radius:6px;border:1px solid #3a4d66;background:#1a2638;color:#e6edf6;cursor:pointer}button.ok{background:#1f6e43;border-color:#2c9a5e}button.no{background:#6e3a1f;border-color:#9a5a2c}.card{border:2px solid #f5b942;border-radius:10px;padding:10px 12px;margin:8px 0;line-height:1.7}.row{margin-top:6px}.wrap{overflow-x:auto}</style>
-<h2>XRPL Sniper ${st.dryRun ? '(DRY RUN)' : ''} <span style="float:right"><a href="/settings"><button type="button">⚙️ Einstellungen</button></a> <form method="post" action="/logout"><button>Abmelden</button></form></span></h2>
-${st.paused ? '<div class="card" style="border-color:#ff6b6b">⏸ <b>Käufe pausiert</b> – offene Positionen werden weiter nach den Regeln verkauft. <a href="/settings">Ändern</a></div>' : ''}
-<div><span class="k">Wallet ${esc(st.wallet)}</span><span class="k">Cash-Ergebnis <b class="${st.cash >= 0 ? 'g' : 'r'}">${f(st.cash)} XRP</b></span><span class="k">Moonbags wert <b class="g">${st.moonValue.toFixed(3)} XRP</b></span><span class="k">${st.wins} Gewinne / ${st.losses} Verluste</span><span class="k">Käufe heute ${st.buysToday}</span>${st.tracking.length ? `<span class="k">👀 ${st.tracking.map(esc).join(', ')}</span>` : ''}${st.mcapApproval ? `<span class="k">Genehmigung ab ${cap(st.mcapApproval)}</span>` : ''}</div>
-${asks.length ? `<h3>🙋 Wartet auf deine Genehmigung (${asks.length})</h3>${askCards}` : ''}
-<h3>Laufende Trades (${live.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Einsatz</th><th>Wert</th><th>%</th><th>MCap</th><th>Kauf (UTC)</th><th></th></tr>${liveRows}</table></div>
-<h3>🌙 Moonbags – Einsatz zurück, Rest läuft gratis (${moon.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Einsatz</th><th>Zurück</th><th>Rest wert</th><th>×</th><th>MCap</th><th></th></tr>${moonRows}</table></div>
-<h3>Abgeschlossen</h3><div class="wrap"><table><tr><th>Token</th><th>Einsatz</th><th>Erlös</th><th>XRP</th><th>Grund</th><th>Ende (UTC)</th></tr>${hist}</table></div>`;
+<h2>XRPL Sniper ${st.dryRun ? '(DRY RUN)' : ''} <span style="float:right"><a href="/settings"><button type="button">⚙️ Settings</button></a> <form method="post" action="/logout"><button>Log out</button></form></span></h2>
+${st.paused ? '<div class="card" style="border-color:#ff6b6b">⏸ <b>Buying paused</b> – open positions are still sold by the rules. <a href="/settings">Change</a></div>' : ''}
+<div><span class="k">Wallet ${esc(st.wallet)}</span><span class="k">Cash result <b class="${st.cash >= 0 ? 'g' : 'r'}">${f(st.cash)} XRP</b></span><span class="k">Moonbags worth <b class="g">${st.moonValue.toFixed(3)} XRP</b></span><span class="k">${st.wins} wins / ${st.losses} losses</span><span class="k">Buys today ${st.buysToday}</span>${st.tracking.length ? `<span class="k">👀 ${st.tracking.map(esc).join(', ')}</span>` : ''}${st.mcapApproval ? `<span class="k">Approval from ${cap(st.mcapApproval)}</span>` : ''}</div>
+${asks.length ? `<h3>🙋 Waiting for your approval (${asks.length})</h3>${askCards}` : ''}
+<h3>Open trades (${live.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Value</th><th>%</th><th>MCap</th><th>Bought (UTC)</th><th></th></tr>${liveRows}</table></div>
+<h3>🌙 Moonbags – stake back, the rest rides free (${moon.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Returned</th><th>Bag worth</th><th>×</th><th>MCap</th><th></th></tr>${moonRows}</table></div>
+<h3>Closed</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Proceeds</th><th>XRP</th><th>Reason</th><th>Closed (UTC)</th></tr>${hist}</table></div>`;
 }
 // ---------- login ----------
 // Password = STATUS_PASSWORD, else STATUS_KEY. A successful login sets a signed cookie (30 days);
@@ -182,9 +182,9 @@ function setSession(req, res, location) {
   res.end();
 }
 function loginPage(msg = '') {
-  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Login</title>
+  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Log in</title>
 <style>body{font:15px system-ui;margin:0;min-height:100vh;display:grid;place-items:center;background:#0e1726;color:#e6edf6}form{background:#152033;border:1px solid #243247;border-radius:12px;padding:24px;width:min(320px,calc(100vw - 32px));box-sizing:border-box}h1{font-size:18px;margin:0 0 16px}input,button{font:inherit;width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #3a4d66;background:#0e1726;color:#e6edf6}button{margin-top:12px;background:#1f6e43;border-color:#2c9a5e;cursor:pointer}p{color:#ff8a8a;margin:10px 0 0;font-size:14px}</style>
-<form method="post" action="/login"><h1>🔒 Anmelden</h1><input type="text" name="username" value="admin" autocomplete="username" hidden><input type="password" name="password" placeholder="Passwort" autocomplete="current-password" autofocus required><button>Anmelden</button>${msg ? `<p>${esc(msg)}</p>` : ''}</form>`;
+<form method="post" action="/login"><h1>🔒 Log in</h1><input type="text" name="username" value="admin" autocomplete="username" hidden><input type="password" name="password" placeholder="Password" autocomplete="current-password" autofocus required><button>Log in</button>${msg ? `<p>${esc(msg)}</p>` : ''}</form>`;
 }
 function readBody(req, cb) {
   let body = '';
@@ -196,16 +196,16 @@ if (process.env.PORT) {
   http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
     const html = (code, body) => { res.writeHead(code, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); res.end(body); };
-    if (!secret()) return html(403, 'STATUS_KEY oder STATUS_PASSWORD in .env setzen.');
+    if (!secret()) return html(403, 'Set STATUS_KEY or STATUS_PASSWORD in .env.');
     const ip = clientIp(req);
 
     if (u.pathname === '/login' && req.method === 'POST') {
-      if (blocked(ip)) return html(429, loginPage('Zu viele Versuche – in 15 Minuten nochmal.'));
+      if (blocked(ip)) return html(429, loginPage('Too many attempts – try again in 15 minutes.'));
       return readBody(req, (f) => {
         if (same(f.get('password') || '', secret())) { fails.delete(ip); return setSession(req, res, '/'); }
         failed(ip);
         console.log(`status page: failed login from ${ip}`);
-        html(401, loginPage('Falsches Passwort.'));
+        html(401, loginPage('Wrong password.'));
       });
     }
     if (u.pathname === '/logout' && req.method === 'POST') {
@@ -220,7 +220,7 @@ if (process.env.PORT) {
     }
     if (!tokenOk(cookieOf(req).sn_session)) return html(u.pathname === '/' ? 200 : 403, loginPage());
 
-    if (!bot) return html(503, 'Bot startet gerade …');
+    if (!bot) return html(503, 'Bot is starting …');
     if (u.pathname === '/act' && req.method === 'POST') {
       return readBody(req, async (f) => {
         const r = await bot.answer(f.get('k') || '', f.get('do') || '').catch((e) => e.message);
@@ -234,9 +234,9 @@ if (process.env.PORT) {
         const { next, errors, changes } = fromForm(f, process.env, overrides);
         if (changes.length) {
           applyOverrides(next);
-          bot.say(`⚙️ Einstellungen geändert: ${changes.join(' · ')}`);
+          bot.say(`⚙️ Settings changed: ${changes.join(' · ')}`);
         }
-        html(errors.length ? 400 : 200, settingsPage(process.env, overrides, changes.length ? `✅ Gespeichert: ${changes.map((c) => esc(c)).join('<br>')}` : 'Nichts geändert.', errors));
+        html(errors.length ? 400 : 200, settingsPage(process.env, overrides, changes.length ? `✅ Saved: ${changes.map((c) => esc(c)).join('<br>')}` : 'Nothing changed.', errors));
       });
     }
     if (u.pathname === '/settings') return html(200, settingsPage(process.env, overrides));
