@@ -99,8 +99,9 @@ cat <<EOF
  Bot-Wallet:   ${ADDR}
    → dorthin die XRP schicken (z. B. 50). Ohne Guthaben kauft er nichts.
 
- Statusseite:  ${URL}/?key=${KEY}
-   → als Lesezeichen aufs Handy. Den Link niemandem geben.
+ Statusseite:  ${URL}
+   → Login-Passwort: ${KEY}
+     (eigenes Passwort setzen: bash set-password.sh)
 
  Live-Log:     pm2 logs sniper      (Strg+C beendet nur die Anzeige)
  Neustart:     pm2 restart sniper

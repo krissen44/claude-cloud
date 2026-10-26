@@ -87,7 +87,8 @@ Pixel Scrappy verwenden. Der Seed steht im Klartext in `.env` auf dem Rechner, a
    npm start
    ```
    Im Fenster erscheint `🤖 Sniper running – wallet r…`. Ab jetzt kauft und verkauft er selbst.
-6. Statusseite im Browser: `http://localhost:3100/?key=<STATUS_KEY>` (aktualisiert sich alle 20 s).
+6. Statusseite im Browser: `http://localhost:3100` → Login mit dem Passwort (`STATUS_PASSWORD`, sonst `STATUS_KEY`).
+   Angemeldet bleibt man 30 Tage; nach 8 falschen Versuchen ist 15 Minuten Pause.
    Die Buttons zum Genehmigen funktionieren nur mit gesetztem `STATUS_KEY`. Damit du vom Handy genehmigen
    kannst, muss die Seite von außen erreichbar sein (VPS: Port 3100 öffnen, `PUBLIC_URL` eintragen).
    Mit `DISCORD_WEBHOOK` bekommst du jede Anfrage als Nachricht mit Link.

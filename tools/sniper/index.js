@@ -1,8 +1,9 @@
 // Entry point: loads .env, connects to the XRPL (with fallback servers), starts the bot and an
-// optional status page (set PORT; protect it with STATUS_KEY → /?key=...).
+// optional status page (set PORT): login with STATUS_PASSWORD (or STATUS_KEY), session cookie for 30 days.
 
 import fs from 'node:fs';
 import http from 'node:http';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'xrpl';
@@ -101,10 +102,10 @@ setInterval(async () => {
 // ---------- status page ----------
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f = (n, d = 3) => (n >= 0 ? '+' : '') + Number(n).toFixed(d);
-function page(st, key) {
+function page(st) {
   const t = (d) => new Date(d).toISOString().slice(5, 16).replace('T', ' ');
   const cap = (v) => (!v && v !== 0 ? '' : isNaN(v) ? '?' : (st.mcapCurrency === 'USD' ? '$' : '') + (v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(0) + 'k' : v.toFixed(0)) + (st.mcapCurrency === 'XRP' ? ' XRP' : ''));
-  const btn = (k, what, label, cls = '') => `<form method="post" action="/act?key=${encodeURIComponent(key)}"><input type="hidden" name="k" value="${esc(k)}"><input type="hidden" name="do" value="${what}"><button class="${cls}">${label}</button></form>`;
+  const btn = (k, what, label, cls = '') => `<form method="post" action="/act"><input type="hidden" name="k" value="${esc(k)}"><input type="hidden" name="do" value="${what}"><button class="${cls}">${label}</button></form>`;
   const name = (p) => `${esc(p.name)}${p.copy ? ` <small>👀 ${esc(p.copy)}</small>` : ''}${p.manual ? ' <small>✋ manuell</small>' : ''}${p.runner ? ' <small>🚀 Runner</small>' : ''}`;
   const manualBtns = (p) => (p.manual ? btn(p.k, 'sellhalf', 'Hälfte verkaufen') + btn(p.k, 'sellall', 'Alles verkaufen', 'no') + btn(p.k, 'auto', 'Wieder automatisch') : '');
   const asks = st.open.filter((p) => p.ask);
@@ -119,37 +120,106 @@ ${p.domain ? `🌐 <a href="https://${esc(p.domain.replace(/^https?:\/\//, ''))}
   const hist = st.history.map((h) => `<tr><td>${esc(h.name)}</td><td>${h.cost.toFixed(3)}</td><td>${h.proceeds.toFixed(3)}</td><td class="${h.pnl >= 0 ? 'g' : 'r'}">${f(h.pnl)}</td><td>${esc(h.why)}</td><td>${t(h.closed)}</td></tr>`).join('');
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="20"><title>XRPL Sniper</title>
 <style>body{font:14px system-ui;margin:16px;background:#0e1726;color:#e6edf6}a{color:#6cb8ff}table{border-collapse:collapse;width:100%;margin:8px 0 24px}td,th{padding:4px 6px;border-bottom:1px solid #243247;text-align:left;vertical-align:top}.g{color:#3ad17a}.r{color:#ff6b6b}.k{display:inline-block;margin:0 16px 8px 0}small{color:#8aa0bb}form{display:inline}button{font:inherit;margin:2px 4px 2px 0;padding:4px 10px;border-radius:6px;border:1px solid #3a4d66;background:#1a2638;color:#e6edf6;cursor:pointer}button.ok{background:#1f6e43;border-color:#2c9a5e}button.no{background:#6e3a1f;border-color:#9a5a2c}.card{border:2px solid #f5b942;border-radius:10px;padding:10px 12px;margin:8px 0;line-height:1.7}.row{margin-top:6px}.wrap{overflow-x:auto}</style>
-<h2>XRPL Sniper ${st.dryRun ? '(DRY RUN)' : ''}</h2>
+<h2>XRPL Sniper ${st.dryRun ? '(DRY RUN)' : ''} <form method="post" action="/logout" style="float:right"><button>Abmelden</button></form></h2>
 <div><span class="k">Wallet ${esc(st.wallet)}</span><span class="k">Cash-Ergebnis <b class="${st.cash >= 0 ? 'g' : 'r'}">${f(st.cash)} XRP</b></span><span class="k">Moonbags wert <b class="g">${st.moonValue.toFixed(3)} XRP</b></span><span class="k">${st.wins} Gewinne / ${st.losses} Verluste</span><span class="k">Käufe heute ${st.buysToday}</span>${st.tracking.length ? `<span class="k">👀 ${st.tracking.map(esc).join(', ')}</span>` : ''}${st.mcapApproval ? `<span class="k">Genehmigung ab ${cap(st.mcapApproval)}</span>` : ''}</div>
 ${asks.length ? `<h3>🙋 Wartet auf deine Genehmigung (${asks.length})</h3>${askCards}` : ''}
 <h3>Laufende Trades (${live.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Einsatz</th><th>Wert</th><th>%</th><th>MCap</th><th>Kauf (UTC)</th><th></th></tr>${liveRows}</table></div>
 <h3>🌙 Moonbags – Einsatz zurück, Rest läuft gratis (${moon.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Einsatz</th><th>Zurück</th><th>Rest wert</th><th>×</th><th>MCap</th><th></th></tr>${moonRows}</table></div>
 <h3>Abgeschlossen</h3><div class="wrap"><table><tr><th>Token</th><th>Einsatz</th><th>Erlös</th><th>XRP</th><th>Grund</th><th>Ende (UTC)</th></tr>${hist}</table></div>`;
 }
+// ---------- login ----------
+// Password = STATUS_PASSWORD, else STATUS_KEY. A successful login sets a signed cookie (30 days);
+// changing the password logs every device out. Old ?key= bookmarks still work once and
+// are turned into the cookie + a clean URL.
+const secret = () => process.env.STATUS_PASSWORD || process.env.STATUS_KEY || '';
+const sigKey = () => crypto.createHash('sha256').update('sniper-session:' + secret()).digest();
+const DAYS30 = 30 * 864e5;
+function makeToken() {
+  const exp = String(Date.now() + DAYS30);
+  return exp + '.' + crypto.createHmac('sha256', sigKey()).update(exp).digest('base64url');
+}
+function tokenOk(t) {
+  const [exp, sig] = String(t || '').split('.');
+  if (!exp || !sig || !(Number(exp) > Date.now())) return false;
+  const want = crypto.createHmac('sha256', sigKey()).update(exp).digest('base64url');
+  return sig.length === want.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want));
+}
+const same = (a, b) => {
+  const x = crypto.createHash('sha256').update(String(a)).digest();
+  const y = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(x, y);
+};
+const cookieOf = (req) => Object.fromEntries((req.headers.cookie || '').split(/;\s*/).filter(Boolean).map((c) => [c.split('=')[0], c.split('=').slice(1).join('=')]));
+// behind the HTTPS proxy (BIND=127.0.0.1) the real client IP is in X-Forwarded-For
+const clientIp = (req) => (process.env.BIND === '127.0.0.1' && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress || '?';
+const isHttps = (req) => req.headers['x-forwarded-proto'] === 'https';
+const fails = new Map(); // ip → {n, until}
+function blocked(ip) {
+  const f = fails.get(ip);
+  return f && f.n >= 8 && f.until > Date.now();
+}
+function failed(ip) {
+  const f = fails.get(ip);
+  const fresh = !f || f.until < Date.now();
+  fails.set(ip, { n: fresh ? 1 : f.n + 1, until: Date.now() + 15 * 60000 });
+}
+function setSession(req, res, location) {
+  res.writeHead(303, {
+    'set-cookie': `sn_session=${makeToken()}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${DAYS30 / 1000}${isHttps(req) ? '; Secure' : ''}`,
+    location,
+  });
+  res.end();
+}
+function loginPage(msg = '') {
+  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Login</title>
+<style>body{font:15px system-ui;margin:0;min-height:100vh;display:grid;place-items:center;background:#0e1726;color:#e6edf6}form{background:#152033;border:1px solid #243247;border-radius:12px;padding:24px;width:min(320px,calc(100vw - 32px));box-sizing:border-box}h1{font-size:18px;margin:0 0 16px}input,button{font:inherit;width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #3a4d66;background:#0e1726;color:#e6edf6}button{margin-top:12px;background:#1f6e43;border-color:#2c9a5e;cursor:pointer}p{color:#ff8a8a;margin:10px 0 0;font-size:14px}</style>
+<form method="post" action="/login"><h1>🔒 Anmelden</h1><input type="text" name="username" value="admin" autocomplete="username" hidden><input type="password" name="password" placeholder="Passwort" autocomplete="current-password" autofocus required><button>Anmelden</button>${msg ? `<p>${esc(msg)}</p>` : ''}</form>`;
+}
+function readBody(req, cb) {
+  let body = '';
+  req.on('data', (c) => { body += c; if (body.length > 4096) req.destroy(); });
+  req.on('end', () => cb(new URLSearchParams(body)));
+}
+
 if (process.env.PORT) {
-  const keyOk = (u) => !process.env.STATUS_KEY || u.searchParams.get('key') === process.env.STATUS_KEY;
   http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
-    if (!keyOk(u)) { res.writeHead(403); return res.end('forbidden'); }
-    if (!bot) { res.writeHead(503); return res.end('starting'); }
-    const key = u.searchParams.get('key') || '';
+    const html = (code, body) => { res.writeHead(code, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); res.end(body); };
+    if (!secret()) return html(403, 'STATUS_KEY oder STATUS_PASSWORD in .env setzen.');
+    const ip = clientIp(req);
+
+    if (u.pathname === '/login' && req.method === 'POST') {
+      if (blocked(ip)) return html(429, loginPage('Zu viele Versuche – in 15 Minuten nochmal.'));
+      return readBody(req, (f) => {
+        if (same(f.get('password') || '', secret())) { fails.delete(ip); return setSession(req, res, '/'); }
+        failed(ip);
+        console.log(`status page: failed login from ${ip}`);
+        html(401, loginPage('Falsches Passwort.'));
+      });
+    }
+    if (u.pathname === '/logout' && req.method === 'POST') {
+      res.writeHead(303, { 'set-cookie': 'sn_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0', location: '/' });
+      return res.end();
+    }
+    // old bookmark with ?key= → cookie + clean address
+    if (u.searchParams.has('key')) {
+      if (!blocked(ip) && same(u.searchParams.get('key'), process.env.STATUS_KEY || '\0')) return setSession(req, res, '/');
+      failed(ip);
+      return html(403, loginPage());
+    }
+    if (!tokenOk(cookieOf(req).sn_session)) return html(u.pathname === '/' ? 200 : 403, loginPage());
+
+    if (!bot) return html(503, 'Bot startet gerade …');
     if (u.pathname === '/act' && req.method === 'POST') {
-      // buttons only work with a STATUS_KEY, so nobody else can sell your tokens
-      if (!process.env.STATUS_KEY) { res.writeHead(403); return res.end('set STATUS_KEY to use the buttons'); }
-      let body = '';
-      req.on('data', (c) => { body += c; if (body.length > 4096) req.destroy(); });
-      req.on('end', async () => {
-        const f = new URLSearchParams(body);
+      return readBody(req, async (f) => {
         const r = await bot.answer(f.get('k') || '', f.get('do') || '').catch((e) => e.message);
         console.log(`status page: ${f.get('do')} ${f.get('k')} → ${r}`);
-        res.writeHead(303, { location: `/?key=${encodeURIComponent(key)}` });
+        res.writeHead(303, { location: '/' });
         res.end();
       });
-      return;
     }
-    if (u.pathname === '/status.json') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(bot.status())); }
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    res.end(page(bot.status(), key));
+    if (u.pathname === '/status.json') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); return res.end(JSON.stringify(bot.status())); }
+    html(200, page(bot.status()));
   // BIND=127.0.0.1 when a reverse proxy (HTTPS) sits in front, so the page is not reachable directly
   }).listen(Number(process.env.PORT), process.env.BIND || undefined, () => console.log(`status page on ${process.env.BIND || '*'}:${process.env.PORT}`));
 }

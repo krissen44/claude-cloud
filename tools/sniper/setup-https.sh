@@ -77,9 +77,9 @@ if [ "$CODE" = "403" ] || [ "$CODE" = "200" ]; then
 ========================================================
  ✅ HTTPS läuft.
 
- Neue Statusseite:  https://$DOMAIN/?key=$KEY
-   → altes Lesezeichen (http://…:3100) löschen, das hier speichern.
- Ohne Key zeigt die Seite nur "forbidden".
+ Statusseite:  https://$DOMAIN
+   → Login mit deinem Passwort (eigenes setzen: bash set-password.sh)
+   → altes Lesezeichen (http://…:3100) löschen.
 ========================================================
 DONE
 else
