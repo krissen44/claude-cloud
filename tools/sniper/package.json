@@ -1,0 +1,11 @@
+{
+  "name": "xrpl-sniper",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Buys new XRP/token AMM pools on the XRPL at launch and sells by fixed rules",
+  "type": "module",
+  "main": "index.js",
+  "scripts": { "start": "node index.js", "test": "node test/sim.mjs" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "xrpl": "4.4.3" }
+}

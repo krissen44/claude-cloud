@@ -13,6 +13,7 @@ ZIP with only changed files ("Nicht unterstütztes Framework oder ungültige Pro
 |---|---|---|
 | `server.js`, `worker.js`, `public/index.html`, `package.json` | **Bark Arena**, the Pixel Scrappy NFT fighting game | Hostinger Node.js app → `https://game.scrappyxrp.fun` |
 | `website/` | Pieces of the **scrappyxrp.fun** site (static files) | Hostinger `public_html/` |
+| `tools/sniper/` | Owner's private **XRPL launch sniper** (buys new XRP AMM pools, sells by rules). Separate from the game, not part of the weekly release. `README.md` (German), `npm test` = simulated ledger | Owner's PC / VPS (24/7), own wallet seed in `.env` |
 
 Git branches used so far: `claude/dreamy-pasteur-du9fm3` (up to v29), `claude/upbeat-hypatia-cht3ou` (v30+) — repo `krissen44/claude-cloud`.
 
