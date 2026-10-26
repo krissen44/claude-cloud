@@ -95,6 +95,16 @@ Pixel Scrappy verwenden. Der Seed steht im Klartext in `.env` auf dem Rechner, a
 Stoppen: `Strg + C`. Offene Positionen bleiben gespeichert (`~/xrpl-sniper-data/state.json`) und
 werden beim nächsten Start weiter überwacht. Während der Bot aus ist, wird **nichts** verkauft.
 
+## Einrichtung auf einem VPS (Ubuntu) in einem Schritt
+
+In der Server-Konsole (z. B. Hostinger „Web console“) eingeben:
+```
+cd /root && curl -fsSL https://codeload.github.com/krissen44/claude-cloud/tar.gz/refs/heads/claude/awesome-einstein-jnon4n | tar xz --strip-components=2 --wildcards '*/tools/sniper' && cd sniper && bash setup-vps.sh
+```
+Das Skript installiert Node.js, fragt nach dem Seed (unsichtbare Eingabe), erzeugt den Statusseiten-Key,
+öffnet die Firewall, testet die Verbindung zum XRPL und startet den Bot dauerhaft mit pm2. Am Ende stehen
+die Bot-Adresse und der Link zur Statusseite da.
+
 ## Wo laufen lassen?
 
 Es ist ganz normales Node.js, es läuft überall, wo Node läuft. Es muss aber **rund um die Uhr**
