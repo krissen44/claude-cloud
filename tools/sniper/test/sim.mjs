@@ -126,8 +126,10 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const settle = async (bot) => { for (let i = 0; i < 20; i++) { await wait(5); } await bot.tick(); for (let i = 0; i < 20; i++) await wait(5); };
 const logs = [];
 
-function setup(balance = 50, env = {}) {
+const RLUSD = '524C555344000000000000000000000000000000.rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De';
+function setup(balance = 50, env = {}, usd = true) {
   const sim = new Sim(balance);
+  if (usd) sim.amm[RLUSD] = { xrp: 1e6, tok: 2.5e6, fee: 0 }; // 1 XRP = $2.50
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'snipe-'));
   const cfg = readConfig({ DATA_DIR: dir, BLACKHOLE_WAIT_S: '6', POOL_WAIT_MIN: '0', ...env });
   const bot = createBot({ client: sim, wallet: { address: ME }, cfg, log: (m) => logs.push(m), fetchFn: null });
@@ -344,6 +346,68 @@ await test('buy slippage: price ran away → no buy, trust line removed again', 
   assert.equal(sim.lines[`${cur}.rR`], undefined, 'line removed');
   assert.ok(logs.join('\n').includes('Buy RUN failed'));
   bot.stop();
+});
+
+await test('market cap over the limit: sale waits for OK, "sell" executes it', async () => {
+  const { sim, bot } = setup(50, { MCAP_APPROVAL: '1000' });
+  await bot.start();
+  const cur = sim.launch({ name: 'BIG', issuer: 'rBig', poolXrp: 100, poolTok: 1e9 });
+  const k = `${cur}.rBig`;
+  await settle(bot);
+  sim.trade(cur, 'rBig', 150); // mcap ≈ 630 XRP ≈ $1,575
+  await settle(bot);
+  const pos = bot.state().positions[k];
+  assert.ok(pos.ask, 'asks');
+  assert.ok(pos.mcap > 1000 && pos.mcap < 3000, 'mcap in USD ' + pos.mcap);
+  assert.equal(pos.tp1Done, false, 'nothing sold yet');
+  assert.equal(sim.txs.filter((t) => t.TransactionType === 'Payment').length, 1, 'only the buy');
+  assert.ok(logs.join('\n').includes('Waiting for your OK'));
+  await settle(bot);
+  assert.equal(sim.txs.filter((t) => t.TransactionType === 'Payment').length, 1, 'still waiting');
+  assert.equal(await bot.answer(k, 'sell'), 'sold');
+  const m = bot.state().positions[k];
+  assert.ok(m.tp1Done && m.proceeds >= m.cost && !m.ask, 'stake back after OK');
+  bot.stop();
+});
+
+await test('"hold" makes it manual: no rule sells, a rug still does, buttons sell by hand', async () => {
+  const { sim, bot } = setup(50, { MCAP_APPROVAL: '1000' });
+  await bot.start();
+  const a = sim.launch({ name: 'LEGIT', issuer: 'rLeg', poolXrp: 100, poolTok: 1e9 });
+  const b = sim.launch({ name: 'FAKE', issuer: 'rFak', poolXrp: 100, poolTok: 1e9 });
+  await settle(bot);
+  sim.trade(a, 'rLeg', 150); sim.trade(b, 'rFak', 150);
+  await settle(bot);
+  assert.equal(await bot.answer(`${a}.rLeg`, 'hold'), 'held');
+  assert.equal(await bot.answer(`${b}.rFak`, 'hold'), 'held');
+  sim.trade(a, 'rLeg', -130); // −50 % from entry value region, but the user owns the decision now
+  await settle(bot);
+  assert.ok(bot.state().positions[`${a}.rLeg`], 'manual: not sold by rules');
+  assert.equal(await bot.answer(`${a}.rLeg`, 'sellall'), 'sold');
+  assert.equal(bot.state().positions[`${a}.rLeg`], undefined, 'sold by hand');
+  sim.amm[`${b}.rFak`].xrp = 50; // rug: pool XRP far below entry
+  await settle(bot);
+  assert.equal(bot.state().positions[`${b}.rFak`], undefined, 'rug sells even when manual');
+  assert.ok(/rug/.test(bot.state().history[0].why));
+  bot.stop();
+});
+
+await test('no USD price available: asks to be safe; under the limit: sells by itself', async () => {
+  const { sim, bot } = setup(50, { MCAP_APPROVAL: '1000' }, false);
+  await bot.start();
+  const cur = sim.launch({ name: 'NOUSD', issuer: 'rNu', poolXrp: 100, poolTok: 1e9 });
+  await settle(bot);
+  sim.trade(cur, 'rNu', 150);
+  await settle(bot);
+  assert.ok(bot.state().positions[`${cur}.rNu`].ask, 'asks when USD is unknown');
+  const t2 = setup(50, { MCAP_APPROVAL: '100000' });
+  await t2.bot.start();
+  const c2 = t2.sim.launch({ name: 'SMALL', issuer: 'rSm', poolXrp: 100, poolTok: 1e9 });
+  await settle(t2.bot);
+  t2.sim.trade(c2, 'rSm', 150);
+  await settle(t2.bot);
+  assert.equal(t2.bot.state().positions[`${c2}.rSm`].tp1Done, true, '$1.6k < $100k → automatic');
+  bot.stop(); t2.bot.stop();
 });
 
 console.log(`\n${passed} scenarios passed`);

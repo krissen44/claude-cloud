@@ -74,6 +74,12 @@ export function readConfig(env = process.env) {
     checkS: num('CHECK_S', 8),
     dataDir: env.DATA_DIR || path.join(process.env.HOME || '.', 'xrpl-sniper-data'),
     discord: env.DISCORD_WEBHOOK || '',
+    // sells of a token whose market cap is at least this much wait for your OK on the status page
+    // (rug exits stay automatic). 0 = off
+    mcapApproval: num('MCAP_APPROVAL', 100000),
+    mcapCurrency: /^xrp$/i.test(env.MCAP_CURRENCY || '') ? 'XRP' : 'USD',
+    xrpUsd: num('XRP_USD', 0), // fallback price if the XRP/RLUSD pool can't be read
+    publicUrl: (env.PUBLIC_URL || '').replace(/\/$/, ''), // status page address for the Discord link
   };
 }
 
@@ -481,13 +487,23 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   }
 
   // ---------- watching open positions ----------
+  // Position checks and your answers take turns, so a click and a rule can't both sell.
+  let lockChain = Promise.resolve();
+  function locked(fn) {
+    const r = lockChain.then(fn);
+    lockChain = r.catch(() => {});
+    return r;
+  }
+
   async function tick() {
     if (ticking || stopped) return;
     ticking = true;
     try {
-      for (const pos of Object.values(S.positions)) {
-        try { await watch(pos); } catch (e) { say(`⚠️ ${pos.name}: ${e.message}`); }
-      }
+      await locked(async () => {
+        for (const pos of Object.values(S.positions)) {
+          try { await watch(pos); } catch (e) { say(`⚠️ ${pos.name}: ${e.message}`); }
+        }
+      });
     } finally { ticking = false; }
   }
 
@@ -496,36 +512,130 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (!p) return close(pos, 'pool deleted – tokens worthless');
     pos.value = swapOut(pos.amount, p.tok, p.xrp, p.fee) + pos.proceeds; // what the trade is worth now
     pos.peak = Math.max(pos.peak, pos.value);
+    pos.mcap = await marketCap(pos, p);
+    const d = decide(pos, p);
+    if (!d) return;
+    if (d.rug) { delete pos.ask; return sell(pos, d.part, d.why, d.opt); } // never wait on a rug
+    if (pos.manual || pos.ask) return; // you decide for this one
+    if (needsOk(pos)) return ask(pos, d);
+    return sell(pos, d.part, d.why, d.opt);
+  }
+
+  // What the rules want to do with a position right now: {part, why, opt?, rug?} or null.
+  function decide(pos, p) {
     const gain = (pos.value / pos.cost - 1) * 100;
     const ageH = (now() - pos.at) / 3.6e6;
     const poolDrop = (1 - p.xrp / pos.entryPoolXrp) * 100;
+    const all = (why, rug = false) => ({ part: 1, why, rug });
 
     if (pos.copy) {
       // copied buy: classic exit, the whole position is sold in the end
       const c = cfg.copyRules;
-      if (c.rugDrop && poolDrop >= c.rugDrop) return sell(pos, 1, `rug: pool XRP down ${Math.round(poolDrop)}%`);
-      if (!pos.tp1Done && gain >= c.tp1) return sell(pos, c.tp1Part / 100, `take profit +${gain.toFixed(0)}%`);
-      if (pos.tp1Done && c.trail && pos.value < pos.peak * (1 - c.trail / 100)) return sell(pos, 1, `trailing stop (peak ${pos.peak.toFixed(3)} XRP)`);
-      if (!pos.tp1Done && c.stopLoss && gain <= -c.stopLoss) return sell(pos, 1, `stop loss ${gain.toFixed(0)}%`);
-      if (c.maxHoldH && ageH >= c.maxHoldH) return sell(pos, 1, `max hold ${c.maxHoldH}h`);
-      return;
+      if (c.rugDrop && poolDrop >= c.rugDrop) return all(`rug: pool XRP down ${Math.round(poolDrop)}%`, true);
+      if (pos.manual) return null;
+      if (!pos.tp1Done && gain >= c.tp1) return { part: c.tp1Part / 100, why: `take profit +${gain.toFixed(0)}%` };
+      if (pos.tp1Done && c.trail && pos.value < pos.peak * (1 - c.trail / 100)) return all(`trailing stop (peak ${pos.peak.toFixed(3)} XRP)`);
+      if (!pos.tp1Done && c.stopLoss && gain <= -c.stopLoss) return all(`stop loss ${gain.toFixed(0)}%`);
+      if (c.maxHoldH && ageH >= c.maxHoldH) return all(`max hold ${c.maxHoldH}h`);
+      return null;
     }
     if (pos.tp1Done) {
       // moonbag: rides for free. Only a dead pool is cleared (the trust line reserve is worth more).
-      if (cfg.deadPoolDrop && poolDrop >= cfg.deadPoolDrop) return sell(pos, 1, `moonbag dead: pool XRP down ${Math.round(poolDrop)}%`);
-      if (cfg.trail && pos.value < pos.peak * (1 - cfg.trail / 100)) return sell(pos, 1, `trailing stop (peak ${pos.peak.toFixed(3)} XRP)`);
-      return;
+      if (cfg.deadPoolDrop && poolDrop >= cfg.deadPoolDrop) return all(`moonbag dead: pool XRP down ${Math.round(poolDrop)}%`, true);
+      if (pos.manual) return null;
+      if (cfg.trail && pos.value < pos.peak * (1 - cfg.trail / 100)) return all(`trailing stop (peak ${pos.peak.toFixed(3)} XRP)`);
+      return null;
     }
-    if (cfg.rugDrop && poolDrop >= cfg.rugDrop) return sell(pos, 1, `rug: pool XRP down ${Math.round(poolDrop)}%`);
+    if (cfg.rugDrop && poolDrop >= cfg.rugDrop) return all(`rug: pool XRP down ${Math.round(poolDrop)}%`, true);
+    if (pos.manual) return null;
     if (gain >= cfg.tp1) {
-      if (cfg.tp1Part !== 'auto') return sell(pos, cfg.tp1Part / 100, `take profit +${gain.toFixed(0)}%`);
-      // sell just enough to get the stake back; the rest becomes the moonbag
-      const need = (pos.cost - pos.proceeds) * (1 + cfg.recoverBuffer / 100);
-      const tokens = Math.min(pos.amount * 0.95, tokensFor(need, p));
-      return sell(pos, tokens / pos.amount, `stake back at +${gain.toFixed(0)}%`, { tokens, minXrp: Math.min(need, swapOut(tokens, p.tok, p.xrp, p.fee)) * 0.98 });
+      if (cfg.tp1Part !== 'auto') return { part: cfg.tp1Part / 100, why: `take profit +${gain.toFixed(0)}%` };
+      return stakeBack(pos, p, `stake back at +${gain.toFixed(0)}%`);
     }
-    if (cfg.stopLoss && gain <= -cfg.stopLoss) return sell(pos, 1, `stop loss ${gain.toFixed(0)}%`);
-    if (cfg.maxHoldH && ageH >= cfg.maxHoldH) return sell(pos, 1, `max hold ${cfg.maxHoldH}h, stake not back`);
+    if (cfg.stopLoss && gain <= -cfg.stopLoss) return all(`stop loss ${gain.toFixed(0)}%`);
+    if (cfg.maxHoldH && ageH >= cfg.maxHoldH) return all(`max hold ${cfg.maxHoldH}h, stake not back`);
+    return null;
+  }
+
+  // Sell just enough to get the stake back; the rest becomes the moonbag.
+  function stakeBack(pos, p, why) {
+    const need = (pos.cost - pos.proceeds) * (1 + cfg.recoverBuffer / 100);
+    const tokens = Math.min(pos.amount * 0.95, tokensFor(need, p));
+    return { part: tokens / pos.amount, why, opt: { tokens, minXrp: Math.min(need, swapOut(tokens, p.tok, p.xrp, p.fee)) * 0.98 } };
+  }
+
+  // ---------- market cap + approval ----------
+  let usd = { price: 0, at: 0 };
+  const RLUSD = { currency: '524C555344000000000000000000000000000000', issuer: 'rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De' };
+  async function xrpUsd() {
+    if (now() - usd.at < 300000 && usd.price) return usd.price;
+    try {
+      const p = await pool(RLUSD.currency, RLUSD.issuer);
+      if (p && p.xrp > 0) usd = { price: p.tok / p.xrp, at: now() };
+    } catch {}
+    return usd.price || cfg.xrpUsd;
+  }
+
+  // Market cap = all issued tokens × pool price, in XRP or USD. Supply is re-read every 10 min.
+  async function marketCap(pos, p) {
+    if (!cfg.mcapApproval) return 0;
+    if (!pos.supply || now() - (pos.supplyAt || 0) > 600000) {
+      try {
+        const g = await req('gateway_balances', { account: pos.issuer, ledger_index: 'validated' });
+        pos.supply = Number(g.obligations?.[pos.currency] || 0);
+        pos.supplyAt = now();
+      } catch {}
+    }
+    const mcapXrp = (pos.supply || 0) * (p.xrp / p.tok);
+    if (cfg.mcapCurrency === 'XRP') return mcapXrp;
+    const px = await xrpUsd();
+    return px ? mcapXrp * px : NaN; // unknown → ask, to be safe
+  }
+  const needsOk = (pos) => cfg.mcapApproval > 0 && !(pos.mcap < cfg.mcapApproval);
+  const fmtCap = (v) => (isNaN(v) ? '?' : `${cfg.mcapCurrency === 'USD' ? '$' : ''}${v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : (v / 1e3).toFixed(0) + 'k'}${cfg.mcapCurrency === 'XRP' ? ' XRP' : ''}`);
+
+  async function ask(pos, d) {
+    pos.ask = { part: d.part, why: d.why, at: now(), mcap: pos.mcap, stakeBack: !!d.opt };
+    if (!pos.domain) {
+      try {
+        const info = (await req('account_info', { account: pos.issuer, ledger_index: 'validated' })).account_data;
+        pos.domain = info.Domain ? Buffer.from(info.Domain, 'hex').toString('utf8').slice(0, 120) : '';
+      } catch {}
+    }
+    save();
+    const link = cfg.publicUrl ? `\n➡️ ${cfg.publicUrl}/` : '';
+    say(`🙋 ${pos.name} has a market cap of ${fmtCap(pos.mcap)} – the bot wants to sell ${Math.round(d.part * 100)}% (${d.why}). Waiting for your OK.${pos.domain ? `\n🌐 ${pos.domain}` : ''}\n🔎 https://xrpscan.com/account/${pos.issuer}${link}`);
+  }
+
+  // Your answers from the status page.
+  const answer = (k, what) => locked(() => answerNow(k, what));
+  async function answerNow(k, what) {
+    const pos = S.positions[k];
+    if (!pos) return 'gone';
+    if (what === 'sell' && pos.ask) {
+      const p = await pool(pos.currency, pos.issuer);
+      const a = pos.ask;
+      delete pos.ask;
+      if (!p) return close(pos, 'pool deleted – tokens worthless');
+      // a stake-back sale is re-sized at today's price
+      const d = a.stakeBack && !pos.tp1Done ? stakeBack(pos, p, a.why + ' (approved)') : { part: a.part, why: a.why + ' (approved)' };
+      await sell(pos, d.part, d.why, d.opt);
+      return 'sold';
+    }
+    if (what === 'hold') {
+      delete pos.ask;
+      pos.manual = true;
+      save();
+      say(`✋ ${pos.name}: kept – the bot no longer sells it by itself (only on a rug). Sell it from the status page.`);
+      return 'held';
+    }
+    if (what === 'auto') { delete pos.ask; pos.manual = false; save(); say(`🤖 ${pos.name}: back to automatic rules`); return 'auto'; }
+    if (what === 'sellhalf' || what === 'sellall') {
+      delete pos.ask;
+      await sell(pos, what === 'sellall' ? 1 : 0.5, 'sold by hand');
+      return 'sold';
+    }
+    return 'nothing to do';
   }
 
   // Tokens to sell into the pool to receive `out` XRP (inverse of swapOut).
@@ -558,10 +668,11 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       cash: all.reduce((s, p) => s + p.proceeds - p.cost, 0), // XRP in minus XRP out, all trades
       moonValue: open.filter(isMoonbag).reduce((s, p) => s + (p.value - p.proceeds), 0),
       tracking: [...cfg.track.values()],
+      mcapApproval: cfg.mcapApproval, mcapCurrency: cfg.mcapCurrency,
       buysToday: S.buysToday, open, history: S.history.slice(0, 50),
       wins: S.history.filter((h) => h.pnl > 0).length, losses: S.history.filter((h) => h.pnl <= 0).length,
     };
   }
 
-  return { start, stop, resubscribe, tick, status, onTransaction, state: () => S, _pending: pending };
+  return { start, stop, resubscribe, tick, status, answer, onTransaction, state: () => S, _pending: pending };
 }

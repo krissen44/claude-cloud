@@ -31,7 +31,17 @@ Kauft neue Memecoins auf der XRPL direkt beim Launch und verkauft nach festen Re
      Trustline-Reserve von 0,2 XRP mehr wert als der Token.
    - **Solange der Einsatz noch nicht zurück ist**, schützt er ihn: bei −50 %, bei Rug-Alarm (40 % des
      Pool-XRP weg) oder nach 24 Stunden verkauft er alles.
-7. **Räumt auf.** Nach einem vollständigen Verkauf löscht er die Trustline. Das gibt die 0,2 XRP Reserve wieder frei.
+7. **Fragt bei großen Tokens nach.** Hat ein Token eine **Market Cap ab 100.000 $**, verkauft der Bot
+   nicht selbst. Er fragt dich auf der Statusseite (und in Discord) und wartet:
+   - **✅ Verkaufen**: Er führt den Verkauf aus, den die Regel wollte, zum aktuellen Preis.
+   - **✋ Behalten (legit)**: Der Token gehört ab jetzt dir. Der Bot verkauft ihn nicht mehr von selbst.
+     Auf der Statusseite gibt es dafür die Buttons „Hälfte verkaufen", „Alles verkaufen" und „Wieder automatisch".
+   - Auf der Karte stehen Links zum Prüfen: die Website des Issuers (falls hinterlegt), XRPScan,
+     FirstLedger und eine X-Suche nach dem Token-Namen. Socials prüfen kann der Bot nicht selbst, das machst du.
+   - **Ein Rug wird nie abgewartet:** Fällt das XRP im Pool um 40 %, verkauft er sofort, auch ohne Genehmigung.
+   - Market Cap = alle ausgegebenen Tokens × aktueller Pool-Preis. Den Dollarkurs von XRP liest der Bot
+     aus dem XRP/RLUSD-Pool im Ledger. Kann er den Kurs nicht lesen, fragt er sicherheitshalber.
+8. **Räumt auf.** Nach einem vollständigen Verkauf löscht er die Trustline. Das gibt die 0,2 XRP Reserve wieder frei.
 
 Jeder Kauf und Verkauf steht im Log, auf der Statusseite (laufende Trades und Moonbags getrennt)
 und optional in Discord.
@@ -73,7 +83,10 @@ Pixel Scrappy verwenden. Der Seed steht im Klartext in `.env` auf dem Rechner, a
    npm start
    ```
    Im Fenster erscheint `🤖 Sniper running – wallet r…`. Ab jetzt kauft und verkauft er selbst.
-6. Statusseite im Browser: `http://localhost:3100/?key=<STATUS_KEY>` (aktualisiert sich alle 15 s).
+6. Statusseite im Browser: `http://localhost:3100/?key=<STATUS_KEY>` (aktualisiert sich alle 20 s).
+   Die Buttons zum Genehmigen funktionieren nur mit gesetztem `STATUS_KEY`. Damit du vom Handy genehmigen
+   kannst, muss die Seite von außen erreichbar sein (VPS: Port 3100 öffnen, `PUBLIC_URL` eintragen).
+   Mit `DISCORD_WEBHOOK` bekommst du jede Anfrage als Nachricht mit Link.
 
 Stoppen: `Strg + C`. Offene Positionen bleiben gespeichert (`~/xrpl-sniper-data/state.json`) und
 werden beim nächsten Start weiter überwacht. Während der Bot aus ist, wird **nichts** verkauft.
@@ -106,6 +119,7 @@ Alle Werte stehen mit Erklärung in `.env.example`. Die wichtigsten:
 | `TAKE_PROFIT` / `TAKE_PROFIT_PART` | 100 / auto | bei +100 % den Einsatz zurückholen, Rest läuft |
 | `TRAILING_STOP` | 0 | Moonbag nie verkaufen (z. B. `50` = Rest bei −50 % vom Hoch verkaufen) |
 | `STOP_LOSS` | 50 | bei −50 % alles verkaufen, solange der Einsatz noch nicht zurück ist (`0` = aus) |
+| `MCAP_APPROVAL` | 100000 | ab dieser Market Cap (USD) nur mit deinem OK verkaufen (`0` = aus) |
 | `TRACK_WALLETS` | leer | `rAdresse:Name,rAdresse2:Name2` – deren Käufe werden mitgemacht |
 | `COPY_BUY_XRP` / `COPY_MIN_XRP` | 1 / 5 | Einsatz pro Copy-Kauf / erst ab so großen Käufen der Wallet |
 | `COPY_TAKE_PROFIT` / `_PART` / `COPY_TRAILING_STOP` / `COPY_STOP_LOSS` / `COPY_RUG_POOL_DROP` / `COPY_MAX_HOLD_H` | 100 / 50 / 30 / 50 / 40 / 24 | Verkaufsregeln nur für Copy-Käufe |
@@ -114,6 +128,6 @@ Alle Werte stehen mit Erklärung in `.env.example`. Die wichtigsten:
 
 ## Test
 
-`npm test` spielt im simulierten Ledger 12 Szenarien durch (Einsatz raus + Moonbag, kleiner Pool wächst,
+`npm test` spielt im simulierten Ledger 15 Szenarien durch (Genehmigung ab Market Cap / Behalten / Rug trotzdem, Einsatz raus + Moonbag, kleiner Pool wächst,
 Copy-Trade mit Hälfte/Trailing-Stop/Haltezeit, Rug, Clawback, Blackhole spät/nie, Stop-Loss, gelöschter Pool, Guthabengrenze, weggelaufener Preis). `node test/txcheck.mjs` prüft,
 dass alle Transaktionen gültig sind und signiert werden können.
