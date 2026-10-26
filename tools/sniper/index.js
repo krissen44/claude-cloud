@@ -123,6 +123,15 @@ function statsBlock(s) {
 ${skips.length ? `<div class="wrap"><table><tr><th>Skipped because</th><th>Count</th><th>Share</th></tr>${skips.map(([r, v]) => `<tr><td>${esc(r)}</td><td>${v}</td><td>${pct(v, total)}</td></tr>`).join('')}</table></div>` : ''}`;
 }
 
+function analysisBlock(an, following) {
+  if (!an) return '';
+  const pc = (v) => (v == null ? '–' : v + '%');
+  const table = (title, rows) => `<div class="wrap"><table><tr><th>${title}</th><th>Launches</th><th>followed 1h+</th><th>reached 2×</th><th>5×</th><th>10×</th><th>above start after 1h</th><th>dead</th><th>median best ×</th></tr>${rows.map((g) => `<tr><td>${esc(g.name)}</td><td>${g.n}</td><td>${g.done}</td><td>${pc(g.x2)}</td><td>${pc(g.x5)}</td><td>${pc(g.x10)}</td><td>${pc(g.up1h)}</td><td>${pc(g.dead)}</td><td>${g.medMax == null ? '–' : g.medMax.toFixed(2) + '×'}</td></tr>`).join('')}</table></div>`;
+  return `<h3>🔬 Launch outcomes – last ${an.days} days <small>(${an.total} launches, ${following} still followed; × = price vs. launch price)</small></h3>
+${an.total ? table('Decision', an.byDecision) + table('Start liquidity', an.byStart) : '<p><small>No data yet – every launch is followed for 24 h, the table fills up from the first hour on.</small></p>'}
+<p><small>Download: <a href="/export/launches.csv">launches.csv</a> (Excel) · <a href="/export/launches.json">launches.json</a> · <a href="/export/events.jsonl">events.jsonl</a> (every buy, sell, skip, approval, setting change)</small></p>`;
+}
+
 function page(st) {
   const t = (d) => new Date(d).toISOString().slice(5, 16).replace('T', ' ');
   const cap = (v) => (!v && v !== 0 ? '' : isNaN(v) ? '?' : (st.mcapCurrency === 'USD' ? '$' : '') + (v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(0) + 'k' : v.toFixed(0)) + (st.mcapCurrency === 'XRP' ? ' XRP' : ''));
@@ -148,8 +157,18 @@ ${asks.length ? `<h3>🙋 Waiting for your approval (${asks.length})</h3>${askCa
 <h3>Open trades (${live.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Value</th><th>%</th><th>MCap</th><th>Bought (UTC)</th><th></th></tr>${liveRows}</table></div>
 <h3>🌙 Moonbags – stake back, the rest rides free (${moon.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Returned</th><th>Bag worth</th><th>×</th><th>MCap</th><th></th></tr>${moonRows}</table></div>
 ${statsBlock(st.stats)}
+${analysisBlock(st.analysis, st.following || 0)}
 <h3>Closed</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Proceeds</th><th>XRP</th><th>Reason</th><th>Closed (UTC)</th></tr>${hist}</table></div>`;
 }
+// the outcome table reads all recorded launches – compute it at most once a minute
+let anCache = { at: 0, v: null };
+function analysisCached() {
+  if (Date.now() - anCache.at > 60e3) {
+    try { anCache = { at: Date.now(), v: bot.rec.analysis(7) }; } catch (e) { console.log('analysis failed', e.message); }
+  }
+  return anCache.v;
+}
+
 // ---------- login ----------
 // Password = STATUS_PASSWORD, else STATUS_KEY. A successful login sets a signed cookie (30 days);
 // changing the password logs every device out. Old ?key= bookmarks still work once and
@@ -247,13 +266,22 @@ if (process.env.PORT) {
         if (changes.length) {
           applyOverrides(next);
           bot.say(`⚙️ Settings changed: ${changes.join(' · ')}`);
+          bot.rec.event('settings', { changes, overrides: next });
         }
         html(errors.length ? 400 : 200, settingsPage(process.env, overrides, changes.length ? `✅ Saved: ${changes.map((c) => esc(c)).join('<br>')}` : 'Nothing changed.', errors));
       });
     }
     if (u.pathname === '/settings') return html(200, settingsPage(process.env, overrides));
+    if (u.pathname.startsWith('/export/')) {
+      const name = u.pathname.slice(8);
+      const send = (type, body) => { res.writeHead(200, { 'content-type': type, 'content-disposition': `attachment; filename="sniper-${new Date().toISOString().slice(0, 10)}-${name}"`, 'cache-control': 'no-store' }); res.end(body); };
+      if (name === 'launches.csv') return send('text/csv; charset=utf-8', bot.rec.csv(bot.rec.rows()));
+      if (name === 'launches.json') return send('application/json', JSON.stringify(bot.rec.rows()));
+      if (name === 'events.jsonl') return send('application/x-ndjson', bot.rec.events().map((e) => JSON.stringify(e)).join('\n'));
+      return html(404, 'not found');
+    }
     if (u.pathname === '/status.json') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); return res.end(JSON.stringify(bot.status())); }
-    html(200, page(bot.status()));
+    html(200, page({ ...bot.status(), analysis: analysisCached() }));
   // BIND=127.0.0.1 when a reverse proxy (HTTPS) sits in front, so the page is not reachable directly
   }).listen(Number(process.env.PORT), process.env.BIND || undefined, () => console.log(`status page on ${process.env.BIND || '*'}:${process.env.PORT}`));
 }

@@ -55,6 +55,29 @@ approval requests – the numbers to tune the filters with.
 
 Every buy and sale is in the log, on the status page (open trades and moonbags apart) and optionally in Discord.
 
+## Data collection
+
+The bot records as much as it can, in `DATA_DIR/data/` (kept across updates):
+
+- **Every launch is followed for 24 h – bought or not.** Price and pool XRP at 1/5/15/30 min and 1/3/6/24 h,
+  best and worst price (and when), whether the pool died, plus the trading in the pool from the live stream
+  (buys, sells, distinct buyers, volume in/out, liquidity added/removed). So you can see what the skipped
+  launches would have done.
+- The checks of each launch (blackhole, clawback, freeze, approval-only trust lines, fees, supply share,
+  issuer domain), the decision and its reason.
+- Every own action: buy (expected vs. received, slippage, delay after the launch), each sale, close, approval
+  requests and your answers, copy signals, runner marks, settings changes.
+
+On the status page: **🔬 Launch outcomes** (last 7 days, grouped by decision and by start liquidity: share
+that reached 2×/5×/10×, still above start after 1 h, died, median best multiple) and downloads:
+`launches.csv` (one row per launch, opens in Excel), `launches.json`, `events.jsonl`.
+
+### Launch protections (anti-snipe)
+
+If an issuer that is not blackholed yet has the token frozen, requires approved trust lines or charges a
+transfer fee, the bot treats it as a launch protection phase and waits (up to `BLACKHOLE_WAIT_S`) instead of
+skipping for good. Once the issuer is blackholed those flags can't change any more, so then they are final.
+
 ## Honestly
 
 - **50 → 500 XRP in a month can't be planned.** Most new coins lose value fast. The bot lives on a few hits

@@ -499,6 +499,72 @@ await test('stats: launches, skips by reason, failed buys', async () => {
   bot.stop();
 });
 
+await test('recorder: follows bought AND skipped launches, counts pool trades, samples over time, exports', async () => {
+  const realNow = Date.now;
+  let offset = 0;
+  Date.now = () => realNow() + offset;
+  try {
+    const { sim, bot } = setup();
+    await bot.start();
+    const ammOf = { rA1: 'rAmmA1', rB1: 'rAmmB1' };
+    const launchWithAmm = (name, issuer, xrp, extra = {}) => {
+      const currency = sim.launch({ name, issuer, poolXrp: xrp, poolTok: 1e9, silent: true, ...extra });
+      sim.emit('transaction', {
+        validated: true, ledger_index: 1000,
+        tx_json: { TransactionType: 'AMMCreate', Account: 'rDEV', Amount: String(xrp * 1e6), Amount2: { currency, issuer, value: '1000000000' } },
+        meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [{ CreatedNode: { LedgerEntryType: 'AccountRoot', NewFields: { Account: ammOf[issuer], AMMID: 'X', Balance: String(xrp * 1e6) } } }] },
+      });
+      return currency;
+    };
+    const poolTrade = (issuer, cur, xrp, who) => {
+      const before = Math.round(sim.amm[`${cur}.${issuer}`].xrp * 1e6);
+      sim.trade(cur, issuer, xrp);
+      const after = Math.round(sim.amm[`${cur}.${issuer}`].xrp * 1e6);
+      sim.emit('transaction', { validated: true, tx_json: { TransactionType: 'Payment', Account: who }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [{ ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: ammOf[issuer], Balance: String(after) }, PreviousFields: { Balance: String(before) } } }] } });
+    };
+    const a = launchWithAmm('GOOD', 'rA1', 200);
+    const b = launchWithAmm('CLAWX', 'rB1', 200, { flags: 0x00100000 | 0x80000000 });
+    await settle(bot);
+    poolTrade('rA1', a, 50, 'rBuyer1'); poolTrade('rA1', a, 30, 'rBuyer2'); poolTrade('rA1', a, -20, 'rSeller');
+    poolTrade('rB1', b, 300, 'rBuyer3'); // the skipped one runs 3x+ – exactly what the data should show
+    offset = 2 * 60e3; await bot.rec.sample();
+    offset = 61 * 60e3; await bot.rec.sample();
+    const rows = bot.rec.rows();
+    const ra = rows.find((r) => r.name === 'GOOD');
+    const rb = rows.find((r) => r.name === 'CLAWX');
+    assert.equal(ra.decision, 'bought'); assert.ok(ra.my_cost > 0 && ra.my_entryPrice > 0, 'my trade in the row');
+    assert.equal(rb.decision, 'skipped'); assert.equal(rb.reason, 'clawback'); assert.equal(rb.clawback, true);
+    assert.equal(ra.buys, 2, 'other traders (our own buy is not streamed in the sim)'); assert.equal(ra.sells, 1); assert.equal(ra.buyers, 2);
+    assert.ok(rb.x_m1 > 3 && rb.x_h1 > 3 && rb.maxX > 3, 'skipped token outcome recorded: ' + rb.maxX);
+    assert.ok(ra.x_h1 != null && ra.buys1h === 2);
+    const csv = bot.rec.csv(rows);
+    assert.ok(csv.split('\n')[0].includes('x_h1') && csv.includes('CLAWX'));
+    const an = bot.rec.analysis(7);
+    assert.ok(an.byDecision.find((g) => g.name === 'skipped: clawback').x2 === 100);
+    assert.ok(an.byStart.find((g) => g.name === '200–300 XRP').n === 2);
+    const ev = bot.rec.events().map((e) => e.type);
+    for (const t of ['launch', 'decision', 'buy']) assert.ok(ev.includes(t), 'event ' + t);
+    bot.stop();
+  } finally { Date.now = realNow; }
+});
+
+await test('launch protection phase: frozen + fee + auth while not blackholed → waits, buys when lifted', async () => {
+  const { sim, bot } = setup(50, { BLACKHOLE_WAIT_S: '30' });
+  await bot.start();
+  const cur = sim.launch({ name: 'SAFE', issuer: 'rSafe', poolXrp: 200, poolTok: 1e9, flags: 0x00800000 | 0x00400000 | 0x00040000, transferRate: 1200000000 });
+  await settle(bot);
+  assert.equal(bot.state().positions[`${cur}.rSafe`], undefined, 'waits during the protection');
+  assert.ok(logs.join('\n').includes('launch protection?'));
+  sim.acc.rSafe.Flags = 0x00800000 | 0x00100000; delete sim.acc.rSafe.TransferRate; // lifted + blackholed
+  await wait(4500); await settle(bot);
+  assert.ok(bot.state().positions[`${cur}.rSafe`], 'bought after the protection ended');
+  const c2 = sim.launch({ name: 'AUTHX', issuer: 'rAuth', poolXrp: 200, poolTok: 1e9, flags: 0x00800000 | 0x00100000 | 0x00040000 });
+  await settle(bot);
+  assert.equal(bot.state().positions[`${c2}.rAuth`], undefined);
+  assert.equal(bot.status().stats.skipped['trust lines need approval'], 1, 'blackholed + RequireAuth = final skip');
+  bot.stop();
+});
+
 await test('settings change live: pause stops buys, unpause buys again, open trades still sell', async () => {
   const { sim, bot, cfg } = setup();
   await bot.start();

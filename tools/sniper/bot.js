@@ -7,11 +7,13 @@
 // mainnet and against the simulator in test/sim.mjs.
 
 import fs from 'node:fs';
+import { createRecorder, ammAccountOf } from './recorder.mjs';
 import path from 'node:path';
 
 const DROPS = 1_000_000;
 const F = {
   disableMaster: 0x00100000,
+  requireAuth: 0x00040000,
   noFreeze: 0x00200000,
   globalFreeze: 0x00400000,
   defaultRipple: 0x00800000,
@@ -191,7 +193,7 @@ export function buysOf(meta, account, feeDrops = 0) {
 export const isMoonbag = (p) => p.tp1Done && !p.copy;
 
 // ---------- the bot ----------
-export function createBot({ client, wallet, cfg, log = console.log, fetchFn = globalThis.fetch }) {
+export function createBot({ client, wallet, cfg, log = console.log, fetchFn = globalThis.fetch, record = true }) {
   const me = wallet?.address || 'rDRYRUN';
   const file = path.join(cfg.dataDir, 'state.json');
   fs.mkdirSync(cfg.dataDir, { recursive: true });
@@ -246,7 +248,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   const SKIP_KINDS = [
     [/blackholed/, 'not blackholed'], [/pool only/, 'pool too small'], [/> max/, 'pool too big'],
     [/clawback/, 'clawback'], [/froze/, 'frozen'], [/transfer fee/, 'transfer fee'], [/AMM fee/, 'AMM fee'],
-    [/supply/, 'dev holds the supply'], [/pool gone/, 'pool gone'],
+    [/supply/, 'dev holds the supply'], [/pool gone/, 'pool gone'], [/approval/, 'trust lines need approval'],
   ];
   const skipKind = (text) => (SKIP_KINDS.find(([re]) => re.test(text)) || [0, 'other'])[1];
 
@@ -268,6 +270,10 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     }
   }
 
+  // data recorder: follows every launch for 24 h and logs every event (see recorder.mjs)
+  const NOREC = { follow() {}, checks() {}, decision() {}, trade() {}, tx() {}, event() {}, stop() {}, rows: () => [], csv: () => '', analysis: () => null, events: () => [], following: () => 0 };
+  const rec = record ? createRecorder({ dir: cfg.dataDir, pool: (c, i) => pool(c, i), log: (m) => log(m) }) : NOREC;
+
   async function refreshReserves() {
     try {
       const r = await req('server_info');
@@ -287,6 +293,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   function onTransaction(ev) {
     const tx = ev.tx_json || ev.transaction;
     if (!tx || !ev.validated || ev.meta?.TransactionResult !== 'tesSUCCESS') return;
+    rec.tx(ev);
     if (cfg.track.has(tx.Account) && tx.Account !== me) onTracked(tx, ev);
     if (tx.TransactionType !== 'AMMCreate') return;
     const xrpAmt = typeof tx.Amount === 'string' ? tx.Amount : typeof tx.Amount2 === 'string' ? tx.Amount2 : null;
@@ -302,6 +309,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     };
     pending.set(k, launch);
     stat('launches');
+    rec.follow({ k, kind: 'launch', name: launch.name, currency: tok.currency, issuer: tok.issuer, creator: tx.Account, poolXrp: launch.poolXrp, poolTok: launch.poolTok, amm: ammAccountOf(ev.meta), ledger: ev.ledger_index || 0, hash: launch.hash || '' });
     say(`🆕 Launch ${launch.name} (${launch.issuer.slice(0, 8)}…) pool ${launch.poolXrp.toFixed(1)} XRP`);
     evaluate(launch).catch((e) => { pending.delete(k); say(`⚠️ ${launch.name}: check failed – ${e.message}`); });
   }
@@ -322,6 +330,8 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       };
       pending.set(k, l);
       stat('copySignals');
+      rec.follow({ k, kind: 'copy', name: l.name, currency: b.currency, issuer: b.issuer, copy: who, ledger: ev.ledger_index || 0 });
+      rec.event('copy_signal', { k, who, wallet: tx.Account, xrp: +b.xrp.toFixed(3), tokens: b.tokens });
       say(`👀 ${who} bought ${l.name} for ${b.xrp.toFixed(1)} XRP – checking`);
       evaluate(l).catch((e) => { pending.delete(k); say(`⚠️ ${l.name}: check failed – ${e.message}`); });
     }
@@ -330,13 +340,20 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   async function checks(l) {
     const reasons = [];
     let small = '';
+    let supplyPct = null;
     const info = (await req('account_info', { account: l.issuer, ledger_index: 'validated' })).account_data;
     const flags = info.Flags || 0;
     const blackholed = (flags & F.disableMaster) && (!info.RegularKey || BLACKHOLES.has(info.RegularKey));
-    if (flags & F.globalFreeze) reasons.push('issuer froze the token');
-    if (flags & F.clawback) reasons.push('clawback enabled');
+    // Launch protections (anti-snipe phases) – freeze, transfer fee, authorized trust lines – can
+    // still be lifted while the issuer is not blackholed, so they are waited for like the
+    // blackhole. Once blackholed nothing can change any more and they are final.
+    const wait = [];
+    const soft = (text) => (blackholed ? reasons : wait).push(text);
+    if (flags & F.clawback) reasons.push('clawback enabled'); // can never be turned off
+    if (flags & F.globalFreeze) soft('issuer froze the token');
+    if (flags & F.requireAuth) soft('trust lines need the issuer\'s approval');
     const fee = info.TransferRate ? (info.TransferRate / 1e9 - 1) * 100 : 0;
-    if (fee > cfg.maxTransferFee + 1e-9) reasons.push(`transfer fee ${fee.toFixed(2)}%`);
+    if (fee > cfg.maxTransferFee + 1e-9) soft(`transfer fee ${fee.toFixed(2)}%`);
     const p = await pool(l.currency, l.issuer);
     if (!p) reasons.push('pool gone');
     else {
@@ -348,11 +365,18 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
           const g = await req('gateway_balances', { account: l.issuer, ledger_index: 'validated' });
           const supply = Number(g.obligations?.[l.currency] || 0);
           const pct = supply > 0 ? (p.tok / supply) * 100 : 100;
+          supplyPct = +pct.toFixed(1);
           if (pct < cfg.minPoolSupplyPct) reasons.push(`only ${pct.toFixed(0)}% of supply in the pool`);
         } catch {}
       }
     }
-    return { blackholed: !!blackholed, reasons, small, pool: p };
+    rec.checks(l.k, {
+      blackholed: !!blackholed, clawback: !!(flags & F.clawback), frozen: !!(flags & F.globalFreeze), requireAuth: !!(flags & F.requireAuth),
+      transferFee: +fee.toFixed(3), ammFee: p?.fee ?? null, poolAtCheck: p ? +p.xrp.toFixed(2) : null, supplyPct,
+      domain: info.Domain ? Buffer.from(info.Domain, 'hex').toString('utf8').slice(0, 80) : '',
+      checkedAfterS: Math.round((now() - l.at) / 1000),
+    });
+    return { blackholed: !!blackholed, reasons, wait, small, pool: p };
   }
 
   // Hard problems skip at once; a missing blackhole or a pool below the minimum is waited for.
@@ -367,22 +391,32 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       if (c.reasons.length) {
         pending.delete(l.k);
         stat(0, skipKind(c.reasons[0]));
+        rec.decision(l.k, 'skipped', skipKind(c.reasons[0]));
         return say(`⛔ Skip ${l.name}: ${c.reasons.join(', ')}`);
       }
-      if (hole && !c.small) {
+      if (c.wait.length && now() > holeBy) {
+        pending.delete(l.k);
+        stat(0, skipKind(c.wait[0]));
+        rec.decision(l.k, 'skipped', skipKind(c.wait[0]));
+        return say(`⛔ Skip ${l.name}: still ${c.wait.join(', ')} after ${cfg.blackholeWaitS}s`);
+      }
+      if (hole && !c.small && !c.wait.length) {
         pending.delete(l.k);
         return buy(l, c.pool);
       }
       if (!hole && now() > holeBy) {
         pending.delete(l.k);
         stat(0, 'not blackholed');
+        rec.decision(l.k, 'skipped', 'not blackholed');
         return say(`⛔ Skip ${l.name}: issuer not blackholed after ${cfg.blackholeWaitS}s (can mint more)`);
       }
       if (c.small && now() >= poolBy) {
         pending.delete(l.k);
         stat(0, 'pool too small');
+        rec.decision(l.k, 'skipped', 'pool too small');
         return say(`⛔ Skip ${l.name}: ${c.small} (min ${l.minPool ?? cfg.minPoolXrp})`);
       }
+      if (c.wait.length && !told) { told = true; say(`⏳ ${l.name}: ${c.wait.join(', ')} – waiting up to ${cfg.blackholeWaitS}s (launch protection?)`); }
       if (c.small && !told) { told = true; say(`⏳ ${l.name}: ${c.small} – watching for ${l.poolWait ?? cfg.poolWaitMin} min`); }
       // poll fast while it is fresh, then slower so many waiting launches don't flood the server
       await new Promise((r) => setTimeout(r, now() - l.at < 120000 ? 4000 : 15000));
@@ -399,16 +433,17 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   }
 
   async function buyNow(l, p) {
-    if (cfg.pauseBuys) return stat(0, 'paused'), say(`⏸ ${l.name}: buying is paused`);
+    if (cfg.pauseBuys) return stat(0, 'paused'), rec.decision(l.k, 'skipped', 'paused'), say(`⏸ ${l.name}: buying is paused`);
     if (S.day !== day()) { S.day = day(); S.buysToday = 0; }
     const open = Object.values(S.positions).filter((x) => !isMoonbag(x)).length; // moonbags don't count
-    if (open >= cfg.maxOpen) return stat(0, 'max open trades'), say(`⏸ ${l.name}: ${open} positions open (max ${cfg.maxOpen})`);
+    if (open >= cfg.maxOpen) return stat(0, 'max open trades'), rec.decision(l.k, 'skipped', 'max open trades'), say(`⏸ ${l.name}: ${open} positions open (max ${cfg.maxOpen})`);
     const stake = l.buyXrp ?? cfg.buyXrp;
-    if (S.buysToday >= cfg.maxBuysPerDay) return stat(0, 'daily buy limit'), say(`⏸ ${l.name}: daily buy limit reached`);
+    if (S.buysToday >= cfg.maxBuysPerDay) return stat(0, 'daily buy limit'), rec.decision(l.k, 'skipped', 'daily buy limit'), say(`⏸ ${l.name}: daily buy limit reached`);
     p = (await pool(l.currency, l.issuer)) || p; // fresh price, the queue may have waited
     const free = await spendable();
     if (free - reserves.inc - stake < cfg.minBalanceXrp) {
       stat(0, 'balance floor');
+      rec.decision(l.k, 'skipped', 'balance floor');
       return say(`⏸ ${l.name}: only ${free.toFixed(2)} XRP free – keeping ${cfg.minBalanceXrp} XRP floor`);
     }
     const expect = swapOut(stake, p.xrp, p.tok, p.fee);
@@ -417,6 +452,8 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (cfg.dryRun) {
       S.positions[l.k] = position(l, stake, expect, p);
       save();
+      rec.decision(l.k, 'bought', 'dry run');
+      rec.trade(l.k, { dry: true, cost: stake, tokens: expect, entryPoolXrp: +p.xrp.toFixed(2), delayS: Math.round((now() - l.at) / 1000) });
       return say(`🧪 DRY buy ${l.name}: ${stake} XRP → ${expect.toPrecision(6)}`);
     }
     // One transaction: an immediate-or-cancel sell offer of exactly `stake` XRP for at least `min`
@@ -430,6 +467,8 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     const got = fx.tokDelta;
     if (!(got > 0)) {
       stat('buyFailed');
+      rec.decision(l.k, 'buy failed', r?.meta?.TransactionResult || 'no fill');
+      rec.event('buy_failed', { k: l.k, result: r?.meta?.TransactionResult || 'no fill', expected: expect, minTokens: min, poolXrp: p.xrp, slippage: cfg.buySlippage, delayS: (now() - l.at) / 1000 });
       await dropTrustLine(l.currency, l.issuer).catch(() => {});
       return say(`❌ Buy ${l.name} failed (${r?.meta?.TransactionResult || 'no fill'}) – price moved more than ${cfg.buySlippage}%`);
     }
@@ -437,6 +476,14 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     const cost = Math.max(0, -fx.xrpDelta) || stake;
     S.positions[l.k] = position(l, cost, got, p);
     save();
+    const buyInfo = {
+      cost: +cost.toFixed(6), tokens: got, expected: expect, slipPct: +((1 - got / expect) * 100).toFixed(2),
+      entryPoolXrp: +p.xrp.toFixed(2), entryPrice: cost / got, delayS: +((now() - l.at) / 1000).toFixed(1),
+      ledger: r.ledger_index || null, hash: r.hash || r.tx_json?.hash || '',
+    };
+    rec.decision(l.k, 'bought');
+    rec.trade(l.k, buyInfo);
+    rec.event('buy', { k: l.k, name: l.name, copy: l.copy || '', ...buyInfo });
     say(`🟢 Bought ${l.name}${l.copy ? ` (copy ${l.copy})` : ''}: ${cost.toFixed(4)} XRP → ${got.toPrecision(6)} tokens`);
   }
 
@@ -485,6 +532,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   }
 
   async function booked(pos, amount, got, why, part) {
+    rec.event('sell', { k: pos.k, name: pos.name, tokens: amount, xrp: got, why, share: +(amount / pos.amount).toFixed(4), gainPct: +((pos.value / pos.cost - 1) * 100).toFixed(1), mcap: pos.mcap ?? null });
     pos.fails = 0;
     pos.amount = Math.max(0, pos.amount - amount);
     pos.sold += amount;
@@ -503,6 +551,8 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     S.history.unshift({ name: pos.name, k: pos.k, cost: pos.cost, proceeds: pos.proceeds, pnl, why, at: pos.at, closed: now() });
     S.history = S.history.slice(0, 500);
     save();
+    rec.trade(pos.k, { proceeds: +pos.proceeds.toFixed(6), pnl: +pnl.toFixed(6), closeWhy: why, heldMin: Math.round((now() - pos.at) / 60000), peak: +pos.peak.toFixed(6), runner: !!pos.runner });
+    rec.event('close', { k: pos.k, name: pos.name, cost: pos.cost, proceeds: pos.proceeds, pnl, why });
     say(`${pnl >= 0 ? '✅' : '🔴'} Closed ${pos.name}: ${pos.cost.toFixed(3)} → ${pos.proceeds.toFixed(3)} XRP (${pnl >= 0 ? '+' : ''}${pnl.toFixed(3)}) – ${why}. Total ${S.realized >= 0 ? '+' : ''}${S.realized.toFixed(3)} XRP`);
     if (!cfg.dryRun) await dropTrustLine(pos.currency, pos.issuer).catch(() => {});
   }
@@ -629,6 +679,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (now() - (pos.launchedAt || pos.at) > cfg.runnerWindowMin * 60000) return;
     if (p.xrp < pos.startPoolXrp * (1 + cfg.runnerGrowth / 100)) return;
     pos.runner = true;
+    rec.event('runner', { k: pos.k, name: pos.name, startPoolXrp: pos.startPoolXrp, poolXrp: p.xrp });
     save();
     say(`🚀 ${pos.name} looks like a runner: pool ${pos.startPoolXrp.toFixed(0)} → ${p.xrp.toFixed(0)} XRP in ${Math.round((now() - (pos.launchedAt || pos.at)) / 60000)} min. Sells now wait for your OK.`);
   }
@@ -636,6 +687,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
 
   async function ask(pos, d) {
     pos.ask = { part: d.part, why: d.why, at: now(), mcap: pos.mcap, stakeBack: !!d.opt };
+    rec.event('ask', { k: pos.k, name: pos.name, part: d.part, why: d.why, mcap: pos.mcap ?? null, runner: !!pos.runner, valueXrp: pos.value });
     if (!pos.domain) {
       try {
         const info = (await req('account_info', { account: pos.issuer, ledger_index: 'validated' })).account_data;
@@ -650,6 +702,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   // Your answers from the status page.
   const answer = (k, what) => locked(() => answerNow(k, what));
   async function answerNow(k, what) {
+    rec.event('answer', { k, what, waitedMin: S.positions[k]?.ask ? Math.round((now() - S.positions[k].ask.at) / 60000) : null });
     const pos = S.positions[k];
     if (!pos) return 'gone';
     if (what === 'sell' && pos.ask) {
@@ -697,7 +750,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     await refreshReserves();
     await client.request({ command: 'subscribe', streams: ['transactions'] });
   }
-  function stop() { stopped = true; clearInterval(timer); save(); }
+  function stop() { stopped = true; clearInterval(timer); save(); rec.stop(); }
 
   function status() {
     const open = Object.values(S.positions);
@@ -708,12 +761,12 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       cash: all.reduce((s, p) => s + p.proceeds - p.cost, 0), // XRP in minus XRP out, all trades
       moonValue: open.filter(isMoonbag).reduce((s, p) => s + (p.value - p.proceeds), 0),
       tracking: [...cfg.track.values()],
-      stats: S.stats,
+      stats: S.stats, following: rec.following(),
       mcapApproval: cfg.mcapApproval, mcapCurrency: cfg.mcapCurrency, paused: cfg.pauseBuys,
       buysToday: S.buysToday, open, history: S.history.slice(0, 50),
       wins: S.history.filter((h) => h.pnl > 0).length, losses: S.history.filter((h) => h.pnl <= 0).length,
     };
   }
 
-  return { start, stop, resubscribe, tick, status, answer, say, onTransaction, state: () => S, _pending: pending };
+  return { start, stop, resubscribe, tick, status, answer, say, rec, onTransaction, state: () => S, _pending: pending };
 }
