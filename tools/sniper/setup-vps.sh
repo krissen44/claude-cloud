@@ -37,8 +37,11 @@ else
   while :; do
     echo "Jetzt den Schlüssel: 12/24 Wörter, Family Seed (s…) oder Xaman-Zahlen."
     read -rsp "Eingabe (wird nicht angezeigt), dann Enter: " SECRET; echo
-    if FOUND=$(SECRET="$SECRET" ADDRESS="$ADDRESS" node wallet.mjs find); then break; fi
-    echo "Passt nicht zur Adresse $ADDRESS (Tippfehler? andere Wallet?). Bitte nochmal."
+    if FOUND=$(SECRET="$SECRET" ADDRESS="$ADDRESS" node wallet.mjs find 2>/tmp/wallet-why); then break; fi
+    echo "❌ Passt nicht zur Adresse $ADDRESS."
+    echo "   $(cat /tmp/wallet-why)"
+    echo "   Bitte nochmal eingeben."
+    rm -f /tmp/wallet-why
   done
   KIND=$(cut -f1 <<<"$FOUND"); WPATH=$(cut -f2 <<<"$FOUND")
   CLEAN=$(tr -s '[:space:]' ' ' <<<"$SECRET" | sed 's/^ //; s/ $//')
