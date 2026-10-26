@@ -257,6 +257,28 @@ await test('pool list unavailable: active pools are learned from the stream', as
   bot.stop();
 });
 
+await test('unfunded wallet: keeps watching, starts trading once XRP arrives', async () => {
+  const { L, bot } = setup();
+  let funded = false;
+  const orig = L.request.bind(L);
+  L.request = async (r) => {
+    if (r.command === 'account_info' && r.account === L.me && !funded) throw Object.assign(new Error('Account not found.'), { data: { error: 'actNotFound' } });
+    return orig(r);
+  };
+  await bot.start();
+  await ready(bot);
+  assert.equal(bot.status().poolsReady, 3, 'discovery runs anyway');
+  assert.equal(bot.status().activated, false);
+  L.trade('rPoolAB', B, 2e6); await wait(250);
+  assert.ok(bot.status().stats.ledgers >= 1, 'stream is processed');
+  assert.equal(L.sent.length, 0);
+  funded = true;
+  await bot._loadWallet();
+  assert.equal(bot.status().activated, true);
+  assert.ok(bot.status().balance > 0);
+  bot.stop();
+});
+
 await test('token with a transfer fee is never traded', async () => {
   const { L, bot } = setup();
   L.issuerFee = { [IB]: 0.01 };

@@ -83,6 +83,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   let acct = { balance: 0, seq: 0, owners: 0 };
   let ledger = 0;
   let inFlight = null;
+  let activated = null;
   let stopped = false;
 
   const req = async (command, params = {}) => (await client.request({ command, ...params })).result;
@@ -306,6 +307,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   }
 
   async function execute(o) {
+    if (!acct.seq) return; // wallet not activated yet
     const tx = buildBatch(o);
     if (!tx) return;
     let signed;
@@ -411,6 +413,19 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     save();
   }
 
+  // a wallet without XRP isn't on the ledger yet – keep watching/recording and check again every minute
+  async function loadWallet() {
+    if (cfg.dryRun || acct.seq) return;
+    try {
+      await refreshAccount(); await refreshLines();
+      if (activated === false) say(`💰 Wallet activated: ${acct.balance.toFixed(2)} XRP – trading starts`);
+      activated = true;
+    } catch (e) {
+      if (activated !== false) say(`⚠️ Wallet ${me} not on the ledger yet (${e?.data?.error || e.message}) – send XRP to it; watching and recording meanwhile`);
+      activated = false;
+    }
+  }
+
   // ---------- lifecycle ----------
   const timers = [];
   async function start() {
@@ -418,7 +433,8 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       const v = (await req('server_info')).info?.validated_ledger;
       if (v) { reserves = { base: v.reserve_base_xrp, inc: v.reserve_inc_xrp }; ledger = v.seq; }
     } catch {}
-    if (!cfg.dryRun) { await refreshAccount(); await refreshLines(); }
+    await loadWallet();
+    timers.push(setInterval(loadWallet, 60000));
     client.on('transaction', onTransaction);
     await client.request({ command: 'subscribe', streams: ['transactions'] });
     fetchLoop();
@@ -437,7 +453,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       available: Math.max(0, available()), ledger, pools: g.pools.size, poolsReady: ready, queue: queue.length, discovering,
       stats: S.stats, dayFees: S.dayFees, maxFeesDay: cfg.maxFeesDay, trades: S.trades.slice(0, 50), rivals: S.rivals.slice(0, 40),
       lines: [...lines].map(name), hot: Object.entries(S.hot).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k, v]) => ({ token: name(k), score: +v.toFixed(4), line: lines.has(k) })),
-      watching: [...cfg.watch.values()], inFlight: inFlight ? inFlight.route : null,
+      watching: [...cfg.watch.values()], inFlight: inFlight ? inFlight.route : null, activated: activated !== false,
     };
   }
   const readJsonl = (prefix) => {
@@ -448,5 +464,5 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     return out;
   };
 
-  return { start, stop, resubscribe, status, onTransaction, onLedgerDone, readJsonl, graph: g, say, _manageLines: manageLines, _state: () => S, _lines: lines, _acct: () => acct };
+  return { start, stop, resubscribe, status, onTransaction, onLedgerDone, readJsonl, graph: g, say, _manageLines: manageLines, _loadWallet: loadWallet, _state: () => S, _lines: lines, _acct: () => acct };
 }
