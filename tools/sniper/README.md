@@ -1,4 +1,4 @@
-# XRPL Launch Sniper
+# XRPL Launch Sniper + Arbitrage Bot
 
 Buys new memecoins on the XRPL right at launch and sells them by fixed rules.
 
@@ -188,3 +188,51 @@ A Hostinger Node.js web app is not recommended – those apps are often put to s
 stake out + moonbag, small pool grows, copy trades with half/trailing stop/max hold, rug, clawback, late/no
 blackhole, stop loss, deleted pool, balance floor, runaway price, live settings + pause).
 `node test/txcheck.mjs` checks that every transaction is valid and can be signed.
+
+---
+
+# Arbitrage bot (`arb.js`)
+
+A second bot in the same folder, with **its own wallet** and its own pm2 process (`arb`). Its page is
+`<status site>/arb`, behind the same login.
+
+## How it works
+
+- **Pools:** reads the list of all AMM pools from the ledger once (`ledger_data type=amm`, cached), then the
+  balances (`amm_info`, XRP pools first). After that every balance comes from the metadata of the live
+  transaction stream – exact and without polling. Pools it didn't know are learned when they trade.
+- **Search after every ledger:** loops XRP → A → … → XRP of 2–4 pools (`ARB_MAX_HOPS`) that use at least one
+  pool that just moved, with the exact AMM math incl. fees, and the input size that earns most (between
+  `ARB_MIN_SIZE` and `ARB_MAX_SIZE`, never touching `ARB_FLOOR`).
+- **One all-or-nothing Batch per cycle** (XLS-56, like the bwif bots): payment 1 XRP → … → T (exact amount of
+  T for at most the stake), payment 2 T → … → XRP with `DeliverMin` = stake + fee + `ARB_MIN_PROFIT`. If the
+  second can't deliver that, **nothing** happens and only the batch fee (≈ 0.00005 XRP) is spent.
+- **Held token T:** any token of the loop the wallet has a trust line for. Trust lines are added
+  automatically for the tokens that show up most in good loops and in the rivals' batches (`ARB_MAX_LINES`,
+  0.2 XRP reserve each).
+
+## Improvements over the bwif bots
+
+- Exact reserves from the stream instead of polling; optimal size per cycle; any token of the loop can be
+  the held one.
+- **Learns from rivals:** watches the bwif bots (`ARB_WATCH`), records their cycles and profit, and adds
+  trust lines for the tokens they hold.
+- **Safety:** tokens whose issuer charges a transfer fee or froze the token are never used (our math would be
+  wrong → endless failed batches); a loop that didn't go through is cooled down for 10 ledgers, a token with 3
+  failures for 1 hour; a daily fee cap (`ARB_MAX_FEES_DAY`); one batch at a time.
+- **Data:** every opportunity (taken or not), every attempt, every rival cycle → `opportunities.csv`,
+  `trades.csv`, `rivals.csv` on the page.
+
+## Setup
+
+After the sniper is running:
+```
+cd /root && curl -fsSL https://codeload.github.com/krissen44/claude-cloud/tar.gz/refs/heads/claude/awesome-einstein-jnon4n | tar xz --strip-components=2 --wildcards '*/tools/sniper' && cd sniper && bash setup-arb.sh
+```
+It asks for the arbitrage wallet (address + key, hidden), tests the connection and starts `arb` with pm2.
+Then send the XRP to that wallet. Settings: `/arb` → ⚙️ Settings (pause, min. profit, sizes, hops, fees, lines,
+rivals). Tests: `node test/arb-sim.mjs` (simulated ledger that runs the signed batches all-or-nothing).
+
+**Honestly:** the bwif bots made ≈ +1,000 XRP in October with two bots and much more capital and experience.
+Competing for the same loops means many of ours will be taken first (cost: the fee). The data will show how
+much is left for us.

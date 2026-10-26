@@ -62,26 +62,6 @@ export const GROUPS = [
     ['DISCORD_WEBHOOK', 'Discord webhook', 'text', '', 'empty = no messages'],
   ]],
 ];
-export const FIELDS = GROUPS.flatMap(([, f]) => f);
-const BY_KEY = Object.fromEntries(FIELDS.map((f) => [f[0], f]));
-
-const fileOf = (dir) => path.join(dir, 'settings.json');
-export function loadOverrides(dir) {
-  try {
-    const o = JSON.parse(fs.readFileSync(fileOf(dir), 'utf8'));
-    return Object.fromEntries(Object.entries(o).filter(([k, v]) => BY_KEY[k] && typeof v === 'string'));
-  } catch { return {}; }
-}
-export function saveOverrides(dir, o) {
-  fs.mkdirSync(dir, { recursive: true });
-  const tmp = fileOf(dir) + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(o, null, 1));
-  fs.renameSync(tmp, fileOf(dir));
-}
-
-// Value without overrides: .env / process env, else the built-in default.
-export const baseValue = (env, k) => (env[k] !== undefined && env[k] !== '' ? String(env[k]) : BY_KEY[k][3]);
-
 const WALLET_RE = /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/;
 function clean(f, raw) {
   const [k, label, type, , , min, max] = f;
@@ -111,47 +91,75 @@ function clean(f, raw) {
   return { v };
 }
 
-// Form → new overrides. Only values that differ from the base are stored.
-export function fromForm(form, env, current) {
-  const next = { ...current };
-  const errors = [];
-  const changes = [];
-  for (const f of FIELDS) {
-    const k = f[0];
-    const raw = f[2] === 'bool' ? (form.get(k) ? '1' : '0') : form.get(k);
-    if (raw === null) continue;
-    // an empty number/choice field = back to the standard value
-    const r = String(raw).trim() === '' && !['wallets', 'text', 'bool'].includes(f[2]) ? { v: baseValue(env, k) } : clean(f, raw);
-    if (r.err) { errors.push(r.err); continue; }
-    const before = current[k] ?? baseValue(env, k);
-    const base = baseValue(env, k);
-    if (r.v === base) delete next[k];
-    else next[k] = r.v;
-    if (r.v !== before) changes.push(`${f[1]}: ${short(before)} → ${short(r.v)}`);
-  }
-  return { next, errors, changes };
-}
 const short = (v) => (v === '' ? '–' : v.length > 40 ? v.slice(0, 37) + '…' : v);
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-export function settingsPage(env, overrides, msg = '', errors = []) {
-  const val = (k) => overrides[k] ?? baseValue(env, k);
-  const input = (f) => {
-    const [k, label, type, def, help] = f;
-    const v = val(k);
-    const mark = overrides[k] !== undefined ? ' <small class="ch">changed</small>' : '';
-    let el;
-    if (type === 'bool') el = `<label class="sw"><input type="checkbox" name="${k}" value="1"${v === '1' ? ' checked' : ''}> on</label>`;
-    else if (type === 'cur') el = `<select name="${k}">${['USD', 'XRP'].map((c) => `<option${c === v ? ' selected' : ''}>${c}</option>`).join('')}</select>`;
-    else if (type === 'wallets') el = `<textarea name="${k}" rows="4" placeholder="rAbc…:Name">${esc(v.split(',').filter(Boolean).join('\n'))}</textarea>`;
-    else el = `<input name="${k}" value="${esc(v)}" ${type === 'num' ? 'inputmode="decimal"' : ''} autocomplete="off">`;
-    return `<div class="f"><div class="l">${esc(label)}${mark}${help ? `<small>${esc(help)}</small>` : ''}<small class="d">Default: ${esc(def === '' ? '–' : def)}</small></div><div class="i">${el}</div></div>`;
-  };
-  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Settings</title>
-<style>body{font:14px system-ui;margin:16px;background:#0e1726;color:#e6edf6;max-width:760px}a{color:#6cb8ff}h3{margin:22px 0 6px}.f{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid #243247}.l{flex:1}.l small{display:block;color:#8aa0bb;font-size:12px}.l small.d{color:#5f7590}.ch{display:inline!important;color:#f5b942!important;margin-left:6px}.i{width:min(220px,45vw)}input,select,textarea{font:inherit;width:100%;box-sizing:border-box;padding:7px;border-radius:7px;border:1px solid #3a4d66;background:#152033;color:#e6edf6}.sw input{width:auto;margin-right:6px}button{font:inherit;padding:9px 16px;border-radius:8px;border:1px solid #2c9a5e;background:#1f6e43;color:#e6edf6;cursor:pointer}.bar{position:sticky;bottom:0;background:#0e1726;padding:12px 0;border-top:1px solid #243247;margin-top:16px}.ok{background:#173d2a;border:1px solid #2c9a5e;padding:8px 12px;border-radius:8px}.err{background:#4a1f1f;border:1px solid #9a3c3c;padding:8px 12px;border-radius:8px}@media(max-width:520px){.f{flex-direction:column}.i{width:100%}}</style>
-<p><a href="/">← back to the overview</a></p><h2>⚙️ Settings</h2>
-<p><small>Changes apply at once, no restart. An empty field resets the value to the default. The wallet key and the password can’t be changed here.</small></p>
-${msg ? `<div class="ok">${msg}</div>` : ''}${errors.length ? `<div class="err">${errors.map(esc).join('<br>')}</div>` : ''}
-<form method="post" action="/settings">${GROUPS.map(([g, fs]) => `<h3>${g}</h3>${fs.map(input).join('')}`).join('')}
-<div class="bar"><button>💾 Save</button></div></form>`;
+// One settings page per bot: its field groups, its file in the data folder, its URLs.
+export function makeSettings(GROUPS, { file = 'settings.json', title = '⚙️ Settings', action = '/settings', back = '/' } = {}) {
+  const FIELDS = GROUPS.flatMap(([, f]) => f);
+  const BY_KEY = Object.fromEntries(FIELDS.map((f) => [f[0], f]));
+
+  const fileOf = (dir) => path.join(dir, file);
+  function loadOverrides(dir) {
+    try {
+      const o = JSON.parse(fs.readFileSync(fileOf(dir), 'utf8'));
+      return Object.fromEntries(Object.entries(o).filter(([k, v]) => BY_KEY[k] && typeof v === 'string'));
+    } catch { return {}; }
+  }
+  function saveOverrides(dir, o) {
+    fs.mkdirSync(dir, { recursive: true });
+    const tmp = fileOf(dir) + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(o, null, 1));
+    fs.renameSync(tmp, fileOf(dir));
+  }
+
+  // Value without overrides: .env / process env, else the built-in default.
+  const baseValue = (env, k) => (env[k] !== undefined && env[k] !== '' ? String(env[k]) : BY_KEY[k][3]);
+
+  // Form → new overrides. Only values that differ from the base are stored.
+  function fromForm(form, env, current) {
+    const next = { ...current };
+    const errors = [];
+    const changes = [];
+    for (const f of FIELDS) {
+      const k = f[0];
+      const raw = f[2] === 'bool' ? (form.get(k) ? '1' : '0') : form.get(k);
+      if (raw === null) continue;
+      // an empty number/choice field = back to the standard value
+      const r = String(raw).trim() === '' && !['wallets', 'text', 'bool'].includes(f[2]) ? { v: baseValue(env, k) } : clean(f, raw);
+      if (r.err) { errors.push(r.err); continue; }
+      const before = current[k] ?? baseValue(env, k);
+      const base = baseValue(env, k);
+      if (r.v === base) delete next[k];
+      else next[k] = r.v;
+      if (r.v !== before) changes.push(`${f[1]}: ${short(before)} → ${short(r.v)}`);
+    }
+    return { next, errors, changes };
+  }
+  function settingsPage(env, overrides, msg = '', errors = []) {
+    const val = (k) => overrides[k] ?? baseValue(env, k);
+    const input = (f) => {
+      const [k, label, type, def, help] = f;
+      const v = val(k);
+      const mark = overrides[k] !== undefined ? ' <small class="ch">changed</small>' : '';
+      let el;
+      if (type === 'bool') el = `<label class="sw"><input type="checkbox" name="${k}" value="1"${v === '1' ? ' checked' : ''}> on</label>`;
+      else if (type === 'cur') el = `<select name="${k}">${['USD', 'XRP'].map((c) => `<option${c === v ? ' selected' : ''}>${c}</option>`).join('')}</select>`;
+      else if (type === 'wallets') el = `<textarea name="${k}" rows="4" placeholder="rAbc…:Name">${esc(v.split(',').filter(Boolean).join('\n'))}</textarea>`;
+      else el = `<input name="${k}" value="${esc(v)}" ${type === 'num' ? 'inputmode="decimal"' : ''} autocomplete="off">`;
+      return `<div class="f"><div class="l">${esc(label)}${mark}${help ? `<small>${esc(help)}</small>` : ''}<small class="d">Default: ${esc(def === '' ? '–' : def)}</small></div><div class="i">${el}</div></div>`;
+    };
+    return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Settings</title>
+  <style>body{font:14px system-ui;margin:16px;background:#0e1726;color:#e6edf6;max-width:760px}a{color:#6cb8ff}h3{margin:22px 0 6px}.f{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid #243247}.l{flex:1}.l small{display:block;color:#8aa0bb;font-size:12px}.l small.d{color:#5f7590}.ch{display:inline!important;color:#f5b942!important;margin-left:6px}.i{width:min(220px,45vw)}input,select,textarea{font:inherit;width:100%;box-sizing:border-box;padding:7px;border-radius:7px;border:1px solid #3a4d66;background:#152033;color:#e6edf6}.sw input{width:auto;margin-right:6px}button{font:inherit;padding:9px 16px;border-radius:8px;border:1px solid #2c9a5e;background:#1f6e43;color:#e6edf6;cursor:pointer}.bar{position:sticky;bottom:0;background:#0e1726;padding:12px 0;border-top:1px solid #243247;margin-top:16px}.ok{background:#173d2a;border:1px solid #2c9a5e;padding:8px 12px;border-radius:8px}.err{background:#4a1f1f;border:1px solid #9a3c3c;padding:8px 12px;border-radius:8px}@media(max-width:520px){.f{flex-direction:column}.i{width:100%}}</style>
+  <p><a href="${back}">← back to the overview</a></p><h2>${title}</h2>
+  <p><small>Changes apply at once, no restart. An empty field resets the value to the default. The wallet key and the password can’t be changed here.</small></p>
+  ${msg ? `<div class="ok">${msg}</div>` : ''}${errors.length ? `<div class="err">${errors.map(esc).join('<br>')}</div>` : ''}
+  <form method="post" action="${action}">${GROUPS.map(([g, fs]) => `<h3>${g}</h3>${fs.map(input).join('')}`).join('')}
+  <div class="bar"><button>💾 Save</button></div></form>`;
+  }
+  return { GROUPS, FIELDS, loadOverrides, saveOverrides, baseValue, fromForm, settingsPage };
 }
+
+// the sniper's settings (used by index.js)
+const sniper = makeSettings(GROUPS);
+export const { FIELDS, loadOverrides, saveOverrides, baseValue, fromForm, settingsPage } = sniper;

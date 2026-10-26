@@ -214,6 +214,19 @@ export function createRecorder({ dir, pool, log = () => {} }) {
 }
 
 // AMM account created by an AMMCreate (from the metadata), so pool trades can be counted.
+// Rows (objects) → CSV text; epoch-ms numbers become ISO times.
+export function toCsv(list) {
+  const cols = [...new Set(list.flatMap((r) => Object.keys(r)))];
+  const isTime = (v) => typeof v === 'number' && v > 1.6e12 && v < 2.2e12;
+  const cell = (v) => {
+    if (v == null) return '';
+    if (isTime(v)) return new Date(v).toISOString();
+    const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [cols.join(','), ...list.map((r) => cols.map((c) => cell(r[c])).join(','))].join('\n');
+}
+
 export function ammAccountOf(meta) {
   for (const n of meta?.AffectedNodes || []) {
     const c = n.CreatedNode;

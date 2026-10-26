@@ -150,7 +150,7 @@ ${p.domain ? `🌐 <a href="https://${esc(p.domain.replace(/^https?:\/\//, ''))}
   const hist = st.history.map((h) => `<tr><td>${esc(h.name)}</td><td>${h.cost.toFixed(3)}</td><td>${h.proceeds.toFixed(3)}</td><td class="${h.pnl >= 0 ? 'g' : 'r'}">${f(h.pnl)}</td><td>${esc(h.why)}</td><td>${t(h.closed)}</td></tr>`).join('');
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="20"><title>XRPL Sniper</title>
 <style>body{font:14px system-ui;margin:16px;background:#0e1726;color:#e6edf6}a{color:#6cb8ff}table{border-collapse:collapse;width:100%;margin:8px 0 24px}td,th{padding:4px 6px;border-bottom:1px solid #243247;text-align:left;vertical-align:top}.g{color:#3ad17a}.r{color:#ff6b6b}.k{display:inline-block;margin:0 16px 8px 0}small{color:#8aa0bb}form{display:inline}button{font:inherit;margin:2px 4px 2px 0;padding:4px 10px;border-radius:6px;border:1px solid #3a4d66;background:#1a2638;color:#e6edf6;cursor:pointer}button.ok{background:#1f6e43;border-color:#2c9a5e}button.no{background:#6e3a1f;border-color:#9a5a2c}.card{border:2px solid #f5b942;border-radius:10px;padding:10px 12px;margin:8px 0;line-height:1.7}.row{margin-top:6px}.wrap{overflow-x:auto}</style>
-<h2>XRPL Sniper ${st.dryRun ? '(DRY RUN)' : ''} <span style="float:right"><a href="/settings"><button type="button">⚙️ Settings</button></a> <form method="post" action="/logout"><button>Log out</button></form></span></h2>
+<h2>XRPL Sniper ${st.dryRun ? '(DRY RUN)' : ''} <span style="float:right"><a href="/arb"><button type="button">⇄ Arbitrage</button></a> <a href="/settings"><button type="button">⚙️ Settings</button></a> <form method="post" action="/logout"><button>Log out</button></form></span></h2>
 ${st.paused ? '<div class="card" style="border-color:#ff6b6b">⏸ <b>Buying paused</b> – open positions are still sold by the rules. <a href="/settings">Change</a></div>' : ''}
 <div><span class="k">Wallet ${esc(st.wallet)}</span><span class="k">Cash result <b class="${st.cash >= 0 ? 'g' : 'r'}">${f(st.cash)} XRP</b></span><span class="k">Moonbags worth <b class="g">${st.moonValue.toFixed(3)} XRP</b></span><span class="k">${st.wins} wins / ${st.losses} losses</span><span class="k">Buys today ${st.buysToday}</span>${st.tracking.length ? `<span class="k">👀 ${st.tracking.map(esc).join(', ')}</span>` : ''}${st.mcapApproval ? `<span class="k">Approval from ${cap(st.mcapApproval)}</span>` : ''}</div>
 ${asks.length ? `<h3>🙋 Waiting for your approval (${asks.length})</h3>${askCards}` : ''}
@@ -217,6 +217,30 @@ function loginPage(msg = '') {
 <style>body{font:15px system-ui;margin:0;min-height:100vh;display:grid;place-items:center;background:#0e1726;color:#e6edf6}form{background:#152033;border:1px solid #243247;border-radius:12px;padding:24px;width:min(320px,calc(100vw - 32px));box-sizing:border-box}h1{font-size:18px;margin:0 0 16px}input,button{font:inherit;width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #3a4d66;background:#0e1726;color:#e6edf6}button{margin-top:12px;background:#1f6e43;border-color:#2c9a5e;cursor:pointer}p{color:#ff8a8a;margin:10px 0 0;font-size:14px}</style>
 <form method="post" action="/login"><h1>🔒 Log in</h1><input type="text" name="username" value="admin" autocomplete="username" hidden><input type="password" name="password" placeholder="Password" autocomplete="current-password" autofocus required><button>Log in</button>${msg ? `<p>${esc(msg)}</p>` : ''}</form>`;
 }
+// /arb/* → the arbitrage bot's own pages (arb.js on 127.0.0.1:ARB_PORT), behind this login
+const arbToken = () => crypto.createHash('sha256').update('arb:' + secret()).digest('hex');
+function proxyArb(req, res, u) {
+  const chunks = [];
+  req.on('data', (c) => chunks.push(c));
+  req.on('end', async () => {
+    try {
+      const r = await fetch(`http://127.0.0.1:${process.env.ARB_PORT || 3101}${u.pathname.slice(4) || '/'}${u.search}`, {
+        method: req.method,
+        headers: { 'x-arb-token': arbToken(), 'content-type': req.headers['content-type'] || 'text/plain' },
+        body: req.method === 'POST' ? Buffer.concat(chunks) : undefined,
+        redirect: 'manual',
+      });
+      const headers = { 'content-type': r.headers.get('content-type') || 'text/html', 'cache-control': 'no-store' };
+      if (r.headers.get('content-disposition')) headers['content-disposition'] = r.headers.get('content-disposition');
+      res.writeHead(r.status, headers);
+      res.end(Buffer.from(await r.arrayBuffer()));
+    } catch {
+      res.writeHead(503, { 'content-type': 'text/html; charset=utf-8' });
+      res.end('<body style="font:15px system-ui;background:#0e1726;color:#e6edf6;padding:24px">The arbitrage bot is not running. On the server: <code>pm2 start arb</code> (or run <code>bash setup-arb.sh</code>). <a style="color:#6cb8ff" href="/">← Sniper</a></body>');
+    }
+  });
+}
+
 function readBody(req, cb) {
   let body = '';
   req.on('data', (c) => { body += c; if (body.length > 65536) req.destroy(); });
@@ -251,6 +275,7 @@ if (process.env.PORT) {
     }
     if (!tokenOk(cookieOf(req).sn_session)) return html(u.pathname === '/' ? 200 : 403, loginPage());
 
+    if (u.pathname === '/arb' || u.pathname.startsWith('/arb/')) return proxyArb(req, res, u);
     if (!bot) return html(503, 'Bot is starting …');
     if (u.pathname === '/act' && req.method === 'POST') {
       return readBody(req, async (f) => {
