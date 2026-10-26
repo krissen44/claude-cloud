@@ -150,7 +150,8 @@ if (process.env.PORT) {
     if (u.pathname === '/status.json') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(bot.status())); }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(page(bot.status(), key));
-  }).listen(Number(process.env.PORT), () => console.log(`status page on :${process.env.PORT}`));
+  // BIND=127.0.0.1 when a reverse proxy (HTTPS) sits in front, so the page is not reachable directly
+  }).listen(Number(process.env.PORT), process.env.BIND || undefined, () => console.log(`status page on ${process.env.BIND || '*'}:${process.env.PORT}`));
 }
 
 process.on('SIGINT', () => { bot?.stop(); process.exit(0); });

@@ -106,6 +106,15 @@ Family Seed oder Xaman-Zahlen, unsichtbare Eingabe; es prüft, dass der Schlüss
 öffnet die Firewall, testet die Verbindung zum XRPL und startet den Bot dauerhaft mit pm2. Am Ende stehen
 die Bot-Adresse und der Link zur Statusseite da.
 
+### HTTPS mit eigener Domain
+
+Die Domain braucht im DNS einen A-Eintrag `@` → IP des Servers. Dann in der Konsole:
+```
+cd /root && curl -fsSL https://codeload.github.com/krissen44/claude-cloud/tar.gz/refs/heads/claude/awesome-einstein-jnon4n | tar xz --strip-components=2 --wildcards '*/tools/sniper' && cd sniper && bash setup-https.sh deine-domain.tld
+```
+Installiert Caddy (kostenloses Zertifikat, erneuert sich selbst), leitet `https://deine-domain.tld` auf die
+Statusseite, schließt Port 3100 (`BIND=127.0.0.1`) und stellt `PUBLIC_URL` für Discord um.
+
 ## Wo laufen lassen?
 
 Es ist ganz normales Node.js, es läuft überall, wo Node läuft. Es muss aber **rund um die Uhr**
