@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'xrpl';
 import { loadWallet } from './wallet.mjs';
+import { loadOverrides, saveOverrides, fromForm, settingsPage } from './settings.mjs';
 import { createBot, readConfig } from './bot.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -19,7 +20,16 @@ try {
   }
 } catch {}
 
-const cfg = readConfig();
+// values changed on the settings page (DATA_DIR/settings.json) win over .env
+const dataDir = readConfig().dataDir;
+let overrides = loadOverrides(dataDir);
+const cfg = readConfig({ ...process.env, ...overrides });
+// apply new overrides to the running bot (it reads cfg on every decision)
+function applyOverrides(next) {
+  overrides = next;
+  saveOverrides(dataDir, next);
+  Object.assign(cfg, readConfig({ ...process.env, ...next }), { dataDir, dryRun: cfg.dryRun });
+}
 const servers = (process.env.XRPL_WS || 'wss://xrplcluster.com,wss://s1.ripple.com,wss://s2.ripple.com').split(',').map((s) => s.trim()).filter(Boolean);
 
 let wallet = null;
@@ -120,7 +130,8 @@ ${p.domain ? `🌐 <a href="https://${esc(p.domain.replace(/^https?:\/\//, ''))}
   const hist = st.history.map((h) => `<tr><td>${esc(h.name)}</td><td>${h.cost.toFixed(3)}</td><td>${h.proceeds.toFixed(3)}</td><td class="${h.pnl >= 0 ? 'g' : 'r'}">${f(h.pnl)}</td><td>${esc(h.why)}</td><td>${t(h.closed)}</td></tr>`).join('');
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="20"><title>XRPL Sniper</title>
 <style>body{font:14px system-ui;margin:16px;background:#0e1726;color:#e6edf6}a{color:#6cb8ff}table{border-collapse:collapse;width:100%;margin:8px 0 24px}td,th{padding:4px 6px;border-bottom:1px solid #243247;text-align:left;vertical-align:top}.g{color:#3ad17a}.r{color:#ff6b6b}.k{display:inline-block;margin:0 16px 8px 0}small{color:#8aa0bb}form{display:inline}button{font:inherit;margin:2px 4px 2px 0;padding:4px 10px;border-radius:6px;border:1px solid #3a4d66;background:#1a2638;color:#e6edf6;cursor:pointer}button.ok{background:#1f6e43;border-color:#2c9a5e}button.no{background:#6e3a1f;border-color:#9a5a2c}.card{border:2px solid #f5b942;border-radius:10px;padding:10px 12px;margin:8px 0;line-height:1.7}.row{margin-top:6px}.wrap{overflow-x:auto}</style>
-<h2>XRPL Sniper ${st.dryRun ? '(DRY RUN)' : ''} <form method="post" action="/logout" style="float:right"><button>Abmelden</button></form></h2>
+<h2>XRPL Sniper ${st.dryRun ? '(DRY RUN)' : ''} <span style="float:right"><a href="/settings"><button type="button">⚙️ Einstellungen</button></a> <form method="post" action="/logout"><button>Abmelden</button></form></span></h2>
+${st.paused ? '<div class="card" style="border-color:#ff6b6b">⏸ <b>Käufe pausiert</b> – offene Positionen werden weiter nach den Regeln verkauft. <a href="/settings">Ändern</a></div>' : ''}
 <div><span class="k">Wallet ${esc(st.wallet)}</span><span class="k">Cash-Ergebnis <b class="${st.cash >= 0 ? 'g' : 'r'}">${f(st.cash)} XRP</b></span><span class="k">Moonbags wert <b class="g">${st.moonValue.toFixed(3)} XRP</b></span><span class="k">${st.wins} Gewinne / ${st.losses} Verluste</span><span class="k">Käufe heute ${st.buysToday}</span>${st.tracking.length ? `<span class="k">👀 ${st.tracking.map(esc).join(', ')}</span>` : ''}${st.mcapApproval ? `<span class="k">Genehmigung ab ${cap(st.mcapApproval)}</span>` : ''}</div>
 ${asks.length ? `<h3>🙋 Wartet auf deine Genehmigung (${asks.length})</h3>${askCards}` : ''}
 <h3>Laufende Trades (${live.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Einsatz</th><th>Wert</th><th>%</th><th>MCap</th><th>Kauf (UTC)</th><th></th></tr>${liveRows}</table></div>
@@ -177,7 +188,7 @@ function loginPage(msg = '') {
 }
 function readBody(req, cb) {
   let body = '';
-  req.on('data', (c) => { body += c; if (body.length > 4096) req.destroy(); });
+  req.on('data', (c) => { body += c; if (body.length > 65536) req.destroy(); });
   req.on('end', () => cb(new URLSearchParams(body)));
 }
 
@@ -218,6 +229,17 @@ if (process.env.PORT) {
         res.end();
       });
     }
+    if (u.pathname === '/settings' && req.method === 'POST') {
+      return readBody(req, (f) => {
+        const { next, errors, changes } = fromForm(f, process.env, overrides);
+        if (changes.length) {
+          applyOverrides(next);
+          bot.say(`⚙️ Einstellungen geändert: ${changes.join(' · ')}`);
+        }
+        html(errors.length ? 400 : 200, settingsPage(process.env, overrides, changes.length ? `✅ Gespeichert: ${changes.map((c) => esc(c)).join('<br>')}` : 'Nichts geändert.', errors));
+      });
+    }
+    if (u.pathname === '/settings') return html(200, settingsPage(process.env, overrides));
     if (u.pathname === '/status.json') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); return res.end(JSON.stringify(bot.status())); }
     html(200, page(bot.status()));
   // BIND=127.0.0.1 when a reverse proxy (HTTPS) sits in front, so the page is not reachable directly

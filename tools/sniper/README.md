@@ -132,6 +132,14 @@ laufen, sonst verpasst er Launches und, schlimmer, Verkäufe.
 - **Hostinger Node.js-App** (wie das Spiel): nur bedingt. Solche Apps werden oft schlafen gelegt,
   wenn keiner die Seite aufruft. Dann verpasst der Bot Launches und Verkäufe. Nicht empfohlen.
 
+## Einstellungen auf der Statusseite
+
+Oben rechts **⚙️ Einstellungen**: Fast alle Werte unten lassen sich dort ändern. Sie gelten sofort, ohne
+Neustart, und werden in `DATA_DIR/settings.json` gespeichert (gehen also bei Updates nicht verloren).
+Dort gibt es auch **„Käufe pausieren“**: Dann kauft der Bot nichts Neues, verkauft offene Positionen aber weiter.
+Jede Änderung steht im Log (und in Discord). Ein leeres Feld = zurück zum Standard.
+Wallet-Schlüssel, Passwort, Port und Server-Einstellungen gehen nur über die `.env`.
+
 ## Einstellungen (`.env`)
 
 Alle Werte stehen mit Erklärung in `.env.example`. Die wichtigsten:

@@ -30,6 +30,7 @@ export function readConfig(env = process.env) {
   const bool = (k, d) => (env[k] === undefined || env[k] === '' ? d : /^(1|true|yes|on)$/i.test(env[k]));
   return {
     dryRun: bool('DRY_RUN', false),
+    pauseBuys: bool('PAUSE_BUYS', false), // no new buys, open positions are still sold by the rules
     buyXrp: num('BUY_XRP', 1),
     maxOpen: num('MAX_OPEN', 25),
     maxBuysPerDay: num('MAX_BUYS_PER_DAY', 40),
@@ -376,6 +377,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   }
 
   async function buyNow(l, p) {
+    if (cfg.pauseBuys) return say(`⏸ ${l.name}: buying is paused`);
     if (S.day !== day()) { S.day = day(); S.buysToday = 0; }
     const open = Object.values(S.positions).filter((x) => !isMoonbag(x)).length; // moonbags don't count
     if (open >= cfg.maxOpen) return say(`⏸ ${l.name}: ${open} positions open (max ${cfg.maxOpen})`);
@@ -685,11 +687,11 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       cash: all.reduce((s, p) => s + p.proceeds - p.cost, 0), // XRP in minus XRP out, all trades
       moonValue: open.filter(isMoonbag).reduce((s, p) => s + (p.value - p.proceeds), 0),
       tracking: [...cfg.track.values()],
-      mcapApproval: cfg.mcapApproval, mcapCurrency: cfg.mcapCurrency,
+      mcapApproval: cfg.mcapApproval, mcapCurrency: cfg.mcapCurrency, paused: cfg.pauseBuys,
       buysToday: S.buysToday, open, history: S.history.slice(0, 50),
       wins: S.history.filter((h) => h.pnl > 0).length, losses: S.history.filter((h) => h.pnl <= 0).length,
     };
   }
 
-  return { start, stop, resubscribe, tick, status, answer, onTransaction, state: () => S, _pending: pending };
+  return { start, stop, resubscribe, tick, status, answer, say, onTransaction, state: () => S, _pending: pending };
 }

@@ -429,5 +429,25 @@ await test('no USD price available: asks to be safe; under the limit: sells by i
   bot.stop(); t2.bot.stop();
 });
 
+await test('settings change live: pause stops buys, unpause buys again, open trades still sell', async () => {
+  const { sim, bot, cfg } = setup();
+  await bot.start();
+  const a = sim.launch({ name: 'PRE', issuer: 'rPre', poolXrp: 100, poolTok: 1e9 });
+  await settle(bot);
+  Object.assign(cfg, readConfig({ DATA_DIR: cfg.dataDir, PAUSE_BUYS: '1' }), { dataDir: cfg.dataDir });
+  const b = sim.launch({ name: 'PAUSED', issuer: 'rPau', poolXrp: 100, poolTok: 1e9 });
+  await settle(bot);
+  assert.equal(bot.state().positions[`${b}.rPau`], undefined, 'no buy while paused');
+  assert.ok(logs.join('\n').includes('buying is paused'));
+  sim.trade(a, 'rPre', 150);
+  await settle(bot);
+  assert.ok(bot.state().positions[`${a}.rPre`].tp1Done, 'still sells while paused');
+  Object.assign(cfg, readConfig({ DATA_DIR: cfg.dataDir, BUY_XRP: '2' }), { dataDir: cfg.dataDir });
+  const c = sim.launch({ name: 'AFTER', issuer: 'rAft', poolXrp: 100, poolTok: 1e9 });
+  await settle(bot);
+  assert.ok(Math.abs(bot.state().positions[`${c}.rAft`].cost - 2) < 1e-3, 'buys again with the new stake');
+  bot.stop();
+});
+
 console.log(`\n${passed} scenarios passed`);
 process.exit(0);
