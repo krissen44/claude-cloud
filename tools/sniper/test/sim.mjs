@@ -206,6 +206,41 @@ await test('copy trade: a tracked wallet buys a token → the bot buys it too, o
   whaleBuy();
   await settle(bot);
   assert.equal(sim.txs.filter((t) => t.TransactionType === 'Payment').length, 1, 'bought only once');
+  // copy rules: half at +100 %, rest on a 30 % trailing stop
+  const k = `${cur}.rOld`;
+  const bag = pos.amount;
+  sim.trade(cur, 'rOld', 300); // ~4x
+  await settle(bot);
+  const p1 = bot.state().positions[k];
+  assert.ok(p1.tp1Done && Math.abs(p1.amount / bag - 0.5) < 0.01, 'half sold');
+  sim.trade(cur, 'rOld', 300);
+  await settle(bot);
+  assert.ok(bot.state().positions[k], 'rides up');
+  sim.trade(cur, 'rOld', -350); // > 30 % off the peak
+  await settle(bot);
+  assert.equal(bot.state().positions[k], undefined, 'rest sold – no moonbag for copies');
+  assert.ok(/trailing/.test(bot.state().history[0].why));
+  assert.ok(bot.state().history[0].pnl > 0);
+  bot.stop();
+});
+
+await test('copy trade: sold after the max hold time', async () => {
+  const { sim, bot } = setup(50, { TRACK_WALLETS: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh:W', COPY_MAX_HOLD_H: '0.0001' });
+  await bot.start();
+  const cur = sim.launch({ name: 'SLOW', issuer: 'rSl', poolXrp: 300, poolTok: 1e9, silent: true });
+  sim.emit('transaction', {
+    validated: true,
+    tx_json: { TransactionType: 'OfferCreate', Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh', Fee: '12' },
+    meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [
+      { ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh', Balance: '80000000' }, PreviousFields: { Balance: '100000012' } } },
+      { CreatedNode: { LedgerEntryType: 'RippleState', NewFields: { Balance: { currency: cur, value: '3000000' }, LowLimit: { issuer: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh' }, HighLimit: { issuer: 'rSl' } } } },
+    ] },
+  });
+  await settle(bot);
+  assert.ok(bot.state().positions[`${cur}.rSl`], 'copied (OfferCreate, new trust line)');
+  await wait(500); await settle(bot);
+  assert.equal(bot.state().positions[`${cur}.rSl`], undefined);
+  assert.ok(/max hold/.test(bot.state().history[0].why));
   bot.stop();
 });
 

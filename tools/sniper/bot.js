@@ -61,6 +61,16 @@ export function readConfig(env = process.env) {
     copyBuyXrp: num('COPY_BUY_XRP', num('BUY_XRP', 1)),
     copyMinXrp: num('COPY_MIN_XRP', 5), // ignore buys of the tracked wallet below this many XRP
     copyMinPoolXrp: num('COPY_MIN_POOL_XRP', num('MIN_POOL_XRP', 100)),
+    // copied buys sell by classic rules (no moonbag): half at +100 %, rest on a 30 % trailing stop,
+    // everything at −50 %, on a 40 % pool drop or after 24 h
+    copyRules: {
+      tp1: num('COPY_TAKE_PROFIT', 100),
+      tp1Part: num('COPY_TAKE_PROFIT_PART', 50),
+      trail: num('COPY_TRAILING_STOP', 30),
+      stopLoss: num('COPY_STOP_LOSS', 50),
+      rugDrop: num('COPY_RUG_POOL_DROP', 40),
+      maxHoldH: num('COPY_MAX_HOLD_H', 24),
+    },
     checkS: num('CHECK_S', 8),
     dataDir: env.DATA_DIR || path.join(process.env.HOME || '.', 'xrpl-sniper-data'),
     discord: env.DISCORD_WEBHOOK || '',
@@ -161,6 +171,8 @@ export function buysOf(meta, account, feeDrops = 0) {
   const spent = -(xrpDelta + feeDrops / DROPS);
   return spent > 0 ? got.map((g) => ({ ...g, xrp: spent })) : [];
 }
+
+export const isMoonbag = (p) => p.tp1Done && !p.copy;
 
 // ---------- the bot ----------
 export function createBot({ client, wallet, cfg, log = console.log, fetchFn = globalThis.fetch }) {
@@ -354,7 +366,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
 
   async function buyNow(l, p) {
     if (S.day !== day()) { S.day = day(); S.buysToday = 0; }
-    const open = Object.values(S.positions).filter((x) => !x.tp1Done).length; // moonbags don't count
+    const open = Object.values(S.positions).filter((x) => !isMoonbag(x)).length; // moonbags don't count
     if (open >= cfg.maxOpen) return say(`⏸ ${l.name}: ${open} positions open (max ${cfg.maxOpen})`);
     const stake = l.buyXrp ?? cfg.buyXrp;
     if (S.buysToday >= cfg.maxBuysPerDay) return say(`⏸ ${l.name}: daily buy limit reached`);
@@ -488,6 +500,16 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     const ageH = (now() - pos.at) / 3.6e6;
     const poolDrop = (1 - p.xrp / pos.entryPoolXrp) * 100;
 
+    if (pos.copy) {
+      // copied buy: classic exit, the whole position is sold in the end
+      const c = cfg.copyRules;
+      if (c.rugDrop && poolDrop >= c.rugDrop) return sell(pos, 1, `rug: pool XRP down ${Math.round(poolDrop)}%`);
+      if (!pos.tp1Done && gain >= c.tp1) return sell(pos, c.tp1Part / 100, `take profit +${gain.toFixed(0)}%`);
+      if (pos.tp1Done && c.trail && pos.value < pos.peak * (1 - c.trail / 100)) return sell(pos, 1, `trailing stop (peak ${pos.peak.toFixed(3)} XRP)`);
+      if (!pos.tp1Done && c.stopLoss && gain <= -c.stopLoss) return sell(pos, 1, `stop loss ${gain.toFixed(0)}%`);
+      if (c.maxHoldH && ageH >= c.maxHoldH) return sell(pos, 1, `max hold ${c.maxHoldH}h`);
+      return;
+    }
     if (pos.tp1Done) {
       // moonbag: rides for free. Only a dead pool is cleared (the trust line reserve is worth more).
       if (cfg.deadPoolDrop && poolDrop >= cfg.deadPoolDrop) return sell(pos, 1, `moonbag dead: pool XRP down ${Math.round(poolDrop)}%`);
@@ -534,7 +556,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       wallet: me, dryRun: cfg.dryRun, realized: S.realized,
       unrealized: open.reduce((s, p) => s + (p.value - p.cost), 0),
       cash: all.reduce((s, p) => s + p.proceeds - p.cost, 0), // XRP in minus XRP out, all trades
-      moonValue: open.filter((p) => p.tp1Done).reduce((s, p) => s + (p.value - p.proceeds), 0),
+      moonValue: open.filter(isMoonbag).reduce((s, p) => s + (p.value - p.proceeds), 0),
       tracking: [...cfg.track.values()],
       buysToday: S.buysToday, open, history: S.history.slice(0, 50),
       wins: S.history.filter((h) => h.pnl > 0).length, losses: S.history.filter((h) => h.pnl <= 0).length,

@@ -17,8 +17,13 @@ Kauft neue Memecoins auf der XRPL direkt beim Launch und verkauft nach festen Re
 4. **Kauft für 1 XRP** (einstellbar). Ist der Preis schon um mehr als 25 % weggelaufen, kauft er nicht.
 5. **Wallet-Tracking (optional):** In `TRACK_WALLETS` trägst du Wallets ein, denen du folgen willst.
    Kauft so eine Wallet einen Token für mindestens 5 XRP, kauft der Bot ihn auch: mit denselben
-   Sicherheitsprüfungen, einmal pro Token.
-6. **Verkauft nach dem Prinzip „Einsatz raus, Rest läuft":**
+   Sicherheitsprüfungen, einmal pro Token. **Copy-Käufe verkauft er nach eigenen Regeln** (kein Moonbag):
+   - bei **+100 %** die Hälfte,
+   - den Rest **30 % unter dem Höchststand**,
+   - bei **−50 %** alles,
+   - fällt das XRP im Pool um **40 %** (Rug): sofort alles,
+   - nach **24 Stunden** verkauft er, was übrig ist.
+6. **Launch-Käufe verkauft er nach dem Prinzip „Einsatz raus, Rest läuft":**
    - Bei **+100 %** verkauft er **genau so viel, dass der Einsatz zurück ist** (+5 % für Gebühren).
      Je höher der Kurs dann steht, desto weniger muss er verkaufen und desto mehr bleibt liegen.
    - Der Rest ist ein **Moonbag**: Er kostet nichts mehr und wird **nie verkauft**, egal wie der Kurs schwankt.
@@ -103,11 +108,12 @@ Alle Werte stehen mit Erklärung in `.env.example`. Die wichtigsten:
 | `STOP_LOSS` | 50 | bei −50 % alles verkaufen, solange der Einsatz noch nicht zurück ist (`0` = aus) |
 | `TRACK_WALLETS` | leer | `rAdresse:Name,rAdresse2:Name2` – deren Käufe werden mitgemacht |
 | `COPY_BUY_XRP` / `COPY_MIN_XRP` | 1 / 5 | Einsatz pro Copy-Kauf / erst ab so großen Käufen der Wallet |
+| `COPY_TAKE_PROFIT` / `_PART` / `COPY_TRAILING_STOP` / `COPY_STOP_LOSS` / `COPY_RUG_POOL_DROP` / `COPY_MAX_HOLD_H` | 100 / 50 / 30 / 50 / 40 / 24 | Verkaufsregeln nur für Copy-Käufe |
 | `REQUIRE_BLACKHOLE` | 1 | nur Tokens, deren Issuer nichts mehr nachdrucken kann |
 | `DRY_RUN` | 0 | `1` = nur so tun, ohne echte Käufe |
 
 ## Test
 
-`npm test` spielt im simulierten Ledger 11 Szenarien durch (Einsatz raus + Moonbag, kleiner Pool wächst,
-Copy-Trade, Rug, Clawback, Blackhole spät/nie, Stop-Loss, gelöschter Pool, Guthabengrenze, weggelaufener Preis). `node test/txcheck.mjs` prüft,
+`npm test` spielt im simulierten Ledger 12 Szenarien durch (Einsatz raus + Moonbag, kleiner Pool wächst,
+Copy-Trade mit Hälfte/Trailing-Stop/Haltezeit, Rug, Clawback, Blackhole spät/nie, Stop-Loss, gelöschter Pool, Guthabengrenze, weggelaufener Preis). `node test/txcheck.mjs` prüft,
 dass alle Transaktionen gültig sind und signiert werden können.
