@@ -571,6 +571,32 @@ await test('launch protection phase: frozen + fee + auth while not blackholed â†
   bot.stop();
 });
 
+await test('buy blocked by a protection (no flags visible) â†’ buys once the issuer lifts it; slippage is not retried', async () => {
+  const { sim, bot } = setup();
+  await bot.start();
+  const blocked = new Set(['rBlk']);
+  const orig = sim.submitAndWait.bind(sim);
+  sim.submitAndWait = async (tx) => {
+    if (tx.TransactionType === 'OfferCreate' && blocked.has(tx.TakerPays.issuer)) { sim.txs.push(tx); return { result: { meta: { TransactionResult: 'tecFROZEN' } } }; }
+    return orig(tx);
+  };
+  const cur = sim.launch({ name: 'BLK', issuer: 'rBlk', poolXrp: 200, poolTok: 1e9 });
+  await settle(bot);
+  assert.equal(bot.state().positions[`${cur}.rBlk`], undefined);
+  assert.ok(logs.join('\n').includes('buy blocked by a launch protection (tecFROZEN)'));
+  await wait(4500); await settle(bot);
+  assert.equal(bot.state().positions[`${cur}.rBlk`], undefined, 'no new try before the issuer acts');
+  assert.equal(sim.txs.filter((t) => t.TransactionType === 'OfferCreate').length, 1);
+  blocked.delete('rBlk');
+  sim.emit('transaction', { validated: true, tx_json: { TransactionType: 'AccountSet', Account: 'rBlk' }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [] } });
+  await settle(bot);
+  assert.ok(bot.state().positions[`${cur}.rBlk`], 'bought after the protection');
+  assert.equal(bot.status().stats.buyBlocked, 1);
+  const row = bot.rec.rows().find((r) => r.name === 'BLK');
+  assert.equal(row.decision, 'bought'); assert.equal(row.reason, 'after launch protection');
+  bot.stop();
+});
+
 await test('settings change live: pause stops buys, unpause buys again, open trades still sell', async () => {
   const { sim, bot, cfg } = setup();
   await bot.start();

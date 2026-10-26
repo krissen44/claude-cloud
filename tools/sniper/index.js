@@ -119,7 +119,7 @@ function statsBlock(s) {
   const skips = Object.entries(s.skipped || {}).sort((a, b) => b[1] - a[1]);
   const total = skips.reduce((n, [, v]) => n + v, 0);
   return `<h3>📊 Stats <small>since ${new Date(s.since).toISOString().slice(0, 16).replace('T', ' ')} UTC</small></h3>
-<div><span class="k">Launches seen <b>${s.launches || 0}</b></span><span class="k">Copy signals <b>${s.copySignals || 0}</b></span><span class="k">Bought <b>${s.bought || 0}</b></span><span class="k">Buys failed (slippage) <b>${s.buyFailed || 0}</b> <small>(${pct(s.buyFailed || 0, tries)} of tries)</small></span><span class="k">Approval requests <b>${s.asks || 0}</b></span></div>
+<div><span class="k">Launches seen <b>${s.launches || 0}</b></span><span class="k">Copy signals <b>${s.copySignals || 0}</b></span><span class="k">Bought <b>${s.bought || 0}</b></span><span class="k">Buys failed (slippage) <b>${s.buyFailed || 0}</b> <small>(${pct(s.buyFailed || 0, tries)} of tries)</small></span><span class="k">Blocked by launch protection <b>${s.buyBlocked || 0}</b></span><span class="k">Approval requests <b>${s.asks || 0}</b></span></div>
 ${skips.length ? `<div class="wrap"><table><tr><th>Skipped because</th><th>Count</th><th>Share</th></tr>${skips.map(([r, v]) => `<tr><td>${esc(r)}</td><td>${v}</td><td>${pct(v, total)}</td></tr>`).join('')}</table></div>` : ''}`;
 }
 

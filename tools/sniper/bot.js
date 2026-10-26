@@ -20,6 +20,8 @@ const F = {
   clawback: 0x80000000,
 };
 const TF_PARTIAL = 0x00020000;
+// results that mean "not allowed (yet)" rather than "price moved"
+const PROTECT_CODES = /^(tecFROZEN|tecNO_AUTH|tecNO_LINE|tecNO_PERMISSION|tecNO_ISSUER|tecPATH_DRY)$/;
 const TF_IOC = 0x00020000; // OfferCreate: tfImmediateOrCancel
 const TF_SELL = 0x00080000; // OfferCreate: tfSell – spend all of TakerGets even at a better rate
 const TF_SET_NO_RIPPLE = 0x00020000;
@@ -299,7 +301,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (cfg.track.has(tx.Account) && tx.Account !== me) onTracked(tx, ev);
     // the issuer of a waiting launch did something (unfreeze, blackhole, fee change) → re-check now
     const ws = waiters.get(tx.Account);
-    if (ws) { waiters.delete(tx.Account); for (const wake of ws) setTimeout(wake, 50); }
+    if (ws) { waiters.delete(tx.Account); for (const wake of ws) setTimeout(() => wake(true), 50); }
     if (tx.TransactionType !== 'AMMCreate') return;
     const xrpAmt = typeof tx.Amount === 'string' ? tx.Amount : typeof tx.Amount2 === 'string' ? tx.Amount2 : null;
     const tok = typeof tx.Amount === 'object' ? tx.Amount : typeof tx.Amount2 === 'object' ? tx.Amount2 : null;
@@ -416,7 +418,15 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
         rec.decision(l.k, 'skipped', skipKind(c.wait[0]));
         return say(`⛔ Skip ${l.name}: still ${c.wait.join(', ')} after ${Math.round((holeBy - l.at) / 1000)}s`);
       }
-      if (hole && !c.small && !c.wait.length) {
+      // a buy that bounced off a protection without visible flags waits for the issuer to act
+      const stillBlocked = l.blocked && !l.issuerMoved && !c.wait.length;
+      if (stillBlocked && now() > holeBy) {
+        pending.delete(l.k);
+        stat(0, 'blocked at launch');
+        rec.decision(l.k, 'skipped', 'blocked at launch');
+        return say(`⛔ Skip ${l.name}: buy was blocked (${l.blocked}) and nothing changed for ${Math.round((holeBy - l.at) / 60000)} min`);
+      }
+      if (hole && !c.small && !c.wait.length && !stillBlocked) {
         pending.delete(l.k);
         return buy(l, c.pool);
       }
@@ -438,7 +448,10 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       const ms = now() - l.at < 120000 ? 4000 : 15000;
       await new Promise((r) => {
         const t = setTimeout(done, ms);
-        function done() { clearTimeout(t); waiters.get(l.issuer)?.delete(done); r(); }
+        function done(fromIssuer) {
+          if (fromIssuer === true) l.issuerMoved = now();
+          clearTimeout(t); waiters.get(l.issuer)?.delete(done); r();
+        }
         if (!waiters.has(l.issuer)) waiters.set(l.issuer, new Set());
         waiters.get(l.issuer).add(done);
       });
@@ -488,8 +501,28 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     const fx = okResult(r) ? txEffects(r.meta, me, l.currency, l.issuer) : { tokDelta: 0, xrpDelta: 0 };
     const got = fx.tokDelta;
     if (!(got > 0)) {
+      const code = r?.meta?.TransactionResult || 'no fill';
+      // Did it bounce off a launch protection? Then don't give up: watch the token and buy once
+      // the protection is lifted (one retry per token). A plain price move is not retried.
+      if (!l.retried && !cfg.dryRun) {
+        let blocked = PROTECT_CODES.test(code);
+        if (!blocked) { try { blocked = (await checks(l)).wait.length > 0; } catch {} }
+        if (blocked) {
+          l.retried = true;
+          l.blocked = code;
+          l.protected ||= now();
+          S.buysToday = Math.max(0, S.buysToday - 1);
+          stat('buyBlocked');
+          rec.event('buy_blocked', { k: l.k, name: l.name, result: code, delayS: (now() - l.at) / 1000 });
+          await dropTrustLine(l.currency, l.issuer).catch(() => {});
+          say(`🛡️ ${l.name}: buy blocked by a launch protection (${code}) – buying as soon as it is lifted`);
+          pending.set(l.k, l);
+          evaluate(l).catch((e) => { pending.delete(l.k); say(`⚠️ ${l.name}: check failed – ${e.message}`); });
+          return;
+        }
+      }
       stat('buyFailed');
-      rec.decision(l.k, 'buy failed', r?.meta?.TransactionResult || 'no fill');
+      rec.decision(l.k, 'buy failed', code);
       rec.event('buy_failed', { k: l.k, result: r?.meta?.TransactionResult || 'no fill', expected: expect, minTokens: min, poolXrp: p.xrp, slippage: cfg.buySlippage, delayS: (now() - l.at) / 1000 });
       await dropTrustLine(l.currency, l.issuer).catch(() => {});
       return say(`❌ Buy ${l.name} failed (${r?.meta?.TransactionResult || 'no fill'}) – price moved more than ${cfg.buySlippage}%`);
@@ -503,7 +536,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       entryPoolXrp: +p.xrp.toFixed(2), entryPrice: cost / got, delayS: +((now() - l.at) / 1000).toFixed(1),
       ledger: r.ledger_index || null, hash: r.hash || r.tx_json?.hash || '',
     };
-    rec.decision(l.k, 'bought');
+    rec.decision(l.k, 'bought', l.retried ? 'after launch protection' : '');
     rec.trade(l.k, buyInfo);
     rec.event('buy', { k: l.k, name: l.name, copy: l.copy || '', ...buyInfo });
     say(`🟢 Bought ${l.name}${l.copy ? ` (copy ${l.copy})` : ''}: ${cost.toFixed(4)} XRP → ${got.toPrecision(6)} tokens`);

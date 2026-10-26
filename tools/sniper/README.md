@@ -77,8 +77,13 @@ that reached 2×/5×/10×, still above start after 1 h, died, median best multip
 If an issuer that is not blackholed yet has the token frozen, requires approved trust lines or charges a
 transfer fee, the bot treats it as a launch protection phase and waits up to `PROTECT_WAIT_MIN` (60 min)
 instead of skipping. It sees every ledger transaction, so the moment the issuer lifts the protection (any
-transaction from the issuer) it re-checks at once and buys in the first open ledger. It does not try to get
-around a protection. Once the issuer is blackholed those flags can't change any more, so then they are final.
+transaction from the issuer) it re-checks at once and buys in the first open ledger. Normal launches are not slowed
+down by this – they are bought in the first possible ledger as before.
+
+If a buy **fails because of a protection** (result like `tecFROZEN`, `tecNO_AUTH`, or the issuer still shows
+protection flags), the bot doesn't give up: it keeps the token, waits for the issuer to lift it and buys
+once (one retry per token). A failure because the price ran away (slippage) is not retried.
+It does not try to get around a protection. Once the issuer is blackholed those flags can't change any more, so then they are final.
 
 ## Honestly
 

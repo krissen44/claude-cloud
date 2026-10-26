@@ -59,7 +59,8 @@ export function createRecorder({ dir, pool, log = () => {} }) {
 
   const checks = (k, c) => { if (W[k]) { W[k].checks = c; dirty = true; } };
   function decision(k, result, reason = '') {
-    if (W[k] && !W[k].decision) { W[k].decision = { result, reason, at: Date.now() }; dirty = true; }
+    // first decision counts – except a buy that finally works after a blocked/failed try
+    if (W[k] && (!W[k].decision || (result === 'bought' && W[k].decision.result !== 'bought'))) { W[k].decision = { result, reason, at: Date.now() }; dirty = true; }
     event('decision', { k, result, reason });
   }
   function trade(k, data) {
