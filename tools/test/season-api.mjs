@@ -30,6 +30,11 @@ const a = await post("/admin/anchor?key=adm", {week: LAST}); console.log("anchor
 console.log("anchor status:", JSON.stringify(await get("/admin/xaman?key=adm&uuid=" + a.uuid)));
 console.log("anchor again:", (await post("/admin/anchor?key=adm", {week: LAST})).error);
 console.log("public anchor:", JSON.stringify((await (await fetch(U + "/api/public/results?week=" + LAST)).json()).anchor));
+// a Scrappy planned for the Advent calendar is kept out of the weekly prizes (owner, 26 Oct)
+{ const adv = s.treasury.find(n => n.nftId !== "T102" && !n.handmade);
+  const pl = await post("/admin/dash/plan?key=adm", {plan: {"dash-2026-12-01": adv.nftId}});
+  const s2 = await get("/admin/season?key=adm"), r = await post("/admin/prize?key=adm", {week: LAST, place: "1", nftId: adv.nftId});
+  console.log("advent piece kept out of weekly prizes:", !!pl.ok && !s2.treasury.some(n => n.nftId === adv.nftId) && s2.reserved === 1 && r.error === "advent_reserved", "#" + adv.token, r.error); }
 const pz = await post("/admin/prize?key=adm", {week: LAST, place: "1", nftId: "T102"}); console.log("prize payload:", !!pz.uuid);
 await get("/admin/xaman?key=adm&uuid=" + pz.uuid);
 console.log("winner prizes:", JSON.stringify((await get("/prizes", acc(1))).prizes));

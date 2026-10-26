@@ -4,6 +4,14 @@ Changes collect here during the week and go live together when the new week star
 Live (owner, 24 Oct): game **v34 komplett** (24 Oct: v34.2 = Joey + Shorts fix handed over) (bond fix, hit flash, new /clip) — no Dash yet (no
 `dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
 
+## v39.3 — weekly prizes never take an Advent Scrappy (same package, 26 Oct, before the week close)
+- **Why** (owner): the week close pre-picks the rarest free Scrappys — which would have been the Epic and Rares planned
+  for the Advent calendar.
+- `/admin/season` leaves every Scrappy that is in the Advent prize plan (`dashplan`, not sent yet) out of the weekly
+  treasury list and says how many are "kept for the Advent calendar"; `/admin/prize` refuses one with `advent_reserved`
+  (the admin page explains it). To use such a piece for a weekly prize, change the Advent plan first.
+- Test: `tools/test/season-api.mjs` ("advent piece kept out of weekly prizes").
+
 ## v39.2 — Dash easier to get going (same package)
 - **Why** (owner, 24 Oct): "I often can't get past 1,500 — the chimneys are too high or I hit birds. Jumping on a bird
   should kill it without damage, and there could be more stars." Test pilots on the real simulation agreed: about 95 of

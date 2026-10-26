@@ -2034,9 +2034,18 @@ async function adminSeason(env) {
     weeks.push({week: wk, sha256: rec.sha256, anchor: rec.anchor, players: d.players.length, top: d.players.slice(0, 5), packs: d.packs,
       prizes: d.prizes.map(p => ({...p, ...(rec.prizes[p.place] || {})}))});
   }
-  let treasury = [], treasuryError = null;
+  let treasury = [], treasuryError = null, reserved = 0;
   try { treasury = await treasuryFree(env); } catch (e) { treasuryError = String(e.message); }
-  return json({issuer: env.ISSUER, xaman: !!env.XUMM_API_KEY, weeks, treasury, treasuryError});
+  // the Scrappys planned for the Advent calendar are kept out of the weekly prizes (owner, 26 Oct)
+  const adv = await dashReserved(env), n0 = treasury.length;
+  treasury = treasury.filter(n => !adv.has(n.nftId)); reserved = n0 - treasury.length;
+  return json({issuer: env.ISSUER, xaman: !!env.XUMM_API_KEY, weeks, treasury, treasuryError, reserved});
+}
+// nftId → plan key ("dash-<day>" / "grand-<n>") of every Advent prize that is planned but not sent yet
+async function dashReserved(env) {
+  const out = new Map();
+  try { for (const [k, x] of Object.entries(await dashPlan(env))) if (x && x.nftId && !x.sent) out.set(x.nftId, k); } catch {}
+  return out;
 }
 /* The Pixel Scrappys in the issuer wallet that no prize (weekly or Dash) has gone out with yet, with their rarity. */
 async function treasuryFree(env) {
@@ -2089,6 +2098,8 @@ async function adminPrize(env, b) {
   if ((rec.prizes[place] || {}).status === "offered" || (rec.prizes[place] || {}).status === "claimed") return json({error: "already_offered"}, 409);
   const nft = (await accountNfts(env, env.ISSUER)).find(n => n.nft_id === String(b.nftId || ""));
   if (!nft) return json({error: "not_in_treasury"}, 404);
+  const adv = (await dashReserved(env)).get(nft.nft_id);
+  if (adv) return json({error: "advent_reserved", plan: adv}, 409);       // planned for the Advent calendar
   const token = +(nft.uri.match(/(\d+)\.json$/) || [])[1] || null;
   rec.prizes[place] = {account: win.account, nftId: nft.nft_id, token, status: "signing"};
   await storeOf(env).resultSet(rec.week, rec);

@@ -399,6 +399,7 @@ async function season(){
   const tiers = {}; for (const n of T) tiers[RLAB(n)] = (tiers[RLAB(n)] || 0) + 1;
   $("season").innerHTML = "<p class='muted'>Treasury (issuer " + esc(SEASON.issuer) + "): <b>" + T.length + "</b> Pixel Scrappys free" +
     (T.length ? " — " + Object.entries(tiers).map(([k, v]) => v + " " + esc(k)).join(" · ") : "") +
+    (SEASON.reserved ? " · <b>" + SEASON.reserved + " kept for the Advent calendar</b> (not offered here)" : "") +
     (SEASON.treasuryError ? " — ledger error: " + esc(SEASON.treasuryError) : "") + (SEASON.xaman ? "" : " · <b>XUMM keys missing</b>") + "</p>" +
     "<p class='muted'>🎲 Prizes are pre-picked by rarity: the rarest free Scrappy for 1st, the next for 2nd, 3rd and the pack prize. Change any pick in its list. " +
     "<label><input type='checkbox' id='legOk'" + (LEG ? " checked" : "") + " style='min-width:0'> include the hand-built Legendaries #1–20</label></p>" +
@@ -501,7 +502,8 @@ async function dashAdmin(){
 }
 async function sign(req, title, text, onDone){
   const j = await req;
-  if (!j.uuid){ alert("Could not create the Xaman request: " + (j.error || "error")); season(); return; }
+  if (!j.uuid){ alert(j.error === "advent_reserved" ? "This Scrappy is planned for the Advent calendar (" + j.plan + ") — pick another one, or change the Advent plan first."
+    : "Could not create the Xaman request: " + (j.error || "error")); season(); return; }
   ONDONE = onDone || null;
   $("mTitle").textContent = title; $("mText").textContent = text; $("mQr").src = j.qr; $("mLink").href = j.deeplink;
   $("mState").textContent = "Waiting for the signature…"; $("modal").hidden = false;
