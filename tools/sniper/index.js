@@ -100,13 +100,18 @@ setInterval(async () => {
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const f = (n, d = 3) => (n >= 0 ? '+' : '') + Number(n).toFixed(d);
 function page(st) {
-  const rows = st.open.map((p) => `<tr><td>${esc(p.name)}</td><td>${p.cost.toFixed(3)}</td><td>${p.value.toFixed(3)}</td><td class="${p.value >= p.cost ? 'g' : 'r'}">${f((p.value / p.cost - 1) * 100, 0)}%</td><td>${p.tp1Done ? 'TP1 ✔' : ''}</td><td>${new Date(p.at).toISOString().slice(5, 16).replace('T', ' ')}</td></tr>`).join('');
-  const hist = st.history.map((h) => `<tr><td>${esc(h.name)}</td><td>${h.cost.toFixed(3)}</td><td>${h.proceeds.toFixed(3)}</td><td class="${h.pnl >= 0 ? 'g' : 'r'}">${f(h.pnl)}</td><td>${esc(h.why)}</td><td>${new Date(h.closed).toISOString().slice(5, 16).replace('T', ' ')}</td></tr>`).join('');
+  const t = (d) => new Date(d).toISOString().slice(5, 16).replace('T', ' ');
+  const live = st.open.filter((p) => !p.tp1Done);
+  const moon = st.open.filter((p) => p.tp1Done);
+  const liveRows = live.map((p) => `<tr><td>${esc(p.name)}${p.copy ? ` <small>👀 ${esc(p.copy)}</small>` : ''}</td><td>${p.cost.toFixed(3)}</td><td>${p.value.toFixed(3)}</td><td class="${p.value >= p.cost ? 'g' : 'r'}">${f((p.value / p.cost - 1) * 100, 0)}%</td><td>${t(p.at)}</td></tr>`).join('');
+  const moonRows = moon.map((p) => { const bag = p.value - p.proceeds; return `<tr><td>${esc(p.name)}${p.copy ? ` <small>👀 ${esc(p.copy)}</small>` : ''}</td><td>${p.cost.toFixed(3)}</td><td>${p.proceeds.toFixed(3)}</td><td class="g">${bag.toFixed(3)}</td><td>${(bag / p.cost).toFixed(1)}×</td><td>${t(p.at)}</td></tr>`; }).join('');
+  const hist = st.history.map((h) => `<tr><td>${esc(h.name)}</td><td>${h.cost.toFixed(3)}</td><td>${h.proceeds.toFixed(3)}</td><td class="${h.pnl >= 0 ? 'g' : 'r'}">${f(h.pnl)}</td><td>${esc(h.why)}</td><td>${t(h.closed)}</td></tr>`).join('');
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="15"><title>XRPL Sniper</title>
-<style>body{font:14px system-ui;margin:16px;background:#0e1726;color:#e6edf6}table{border-collapse:collapse;width:100%;margin:8px 0 24px}td,th{padding:4px 6px;border-bottom:1px solid #243247;text-align:left}.g{color:#3ad17a}.r{color:#ff6b6b}.k{display:inline-block;margin:0 16px 8px 0}</style>
+<style>body{font:14px system-ui;margin:16px;background:#0e1726;color:#e6edf6}table{border-collapse:collapse;width:100%;margin:8px 0 24px}td,th{padding:4px 6px;border-bottom:1px solid #243247;text-align:left}.g{color:#3ad17a}.r{color:#ff6b6b}.k{display:inline-block;margin:0 16px 8px 0}small{color:#8aa0bb}</style>
 <h2>XRPL Sniper ${st.dryRun ? '(DRY RUN)' : ''}</h2>
-<div><span class="k">Wallet ${esc(st.wallet)}</span><span class="k">Realisiert <b class="${st.realized >= 0 ? 'g' : 'r'}">${f(st.realized)} XRP</b></span><span class="k">Offen ${f(st.unrealized)} XRP</span><span class="k">${st.wins} Gewinne / ${st.losses} Verluste</span><span class="k">Käufe heute ${st.buysToday}</span></div>
-<h3>Offene Positionen (${st.open.length})</h3><table><tr><th>Token</th><th>Einsatz</th><th>Wert</th><th>%</th><th></th><th>Kauf (UTC)</th></tr>${rows}</table>
+<div><span class="k">Wallet ${esc(st.wallet)}</span><span class="k">Cash-Ergebnis <b class="${st.cash >= 0 ? 'g' : 'r'}">${f(st.cash)} XRP</b></span><span class="k">Moonbags wert <b class="g">${st.moonValue.toFixed(3)} XRP</b></span><span class="k">${st.wins} Gewinne / ${st.losses} Verluste</span><span class="k">Käufe heute ${st.buysToday}</span>${st.tracking.length ? `<span class="k">👀 ${st.tracking.map(esc).join(', ')}</span>` : ''}</div>
+<h3>Laufende Trades – Einsatz noch nicht zurück (${live.length})</h3><table><tr><th>Token</th><th>Einsatz</th><th>Wert</th><th>%</th><th>Kauf (UTC)</th></tr>${liveRows}</table>
+<h3>🌙 Moonbags – Einsatz zurück, Rest läuft gratis (${moon.length})</h3><table><tr><th>Token</th><th>Einsatz</th><th>Zurück</th><th>Rest wert</th><th>×</th><th>Kauf (UTC)</th></tr>${moonRows}</table>
 <h3>Abgeschlossen</h3><table><tr><th>Token</th><th>Einsatz</th><th>Erlös</th><th>XRP</th><th>Grund</th><th>Ende (UTC)</th></tr>${hist}</table>`;
 }
 if (process.env.PORT) {

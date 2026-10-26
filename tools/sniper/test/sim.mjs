@@ -25,11 +25,12 @@ class Sim {
   emit(ev, x) { for (const fn of this.handlers[ev] || []) fn(x); }
   k(c, i) { return `${c}.${i}`; }
 
-  launch({ name, issuer, poolXrp, poolTok, supply = poolTok, flags = 0x00800000 | 0x00100000, regularKey, transferRate, fee = 500 }) {
+  launch({ name, issuer, poolXrp, poolTok, supply = poolTok, flags = 0x00800000 | 0x00100000, regularKey, transferRate, fee = 500, silent = false }) {
     const currency = hex(name);
     this.acc[issuer] = { Balance: '50000000', Flags: flags, OwnerCount: 0, RegularKey: regularKey, TransferRate: transferRate };
     this.amm[this.k(currency, issuer)] = { xrp: poolXrp, tok: poolTok, fee };
     this.supply[this.k(currency, issuer)] = supply;
+    if (silent) return currency;
     this.emit('transaction', {
       validated: true, hash: 'H' + name,
       tx_json: { TransactionType: 'AMMCreate', Account: 'rDEV', Amount: String(poolXrp * D), Amount2: { currency, issuer, value: String(poolTok) }, TradingFee: fee },
@@ -128,7 +129,7 @@ const logs = [];
 function setup(balance = 50, env = {}) {
   const sim = new Sim(balance);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'snipe-'));
-  const cfg = readConfig({ DATA_DIR: dir, BLACKHOLE_WAIT_S: '6', ...env });
+  const cfg = readConfig({ DATA_DIR: dir, BLACKHOLE_WAIT_S: '6', POOL_WAIT_MIN: '0', ...env });
   const bot = createBot({ client: sim, wallet: { address: ME }, cfg, log: (m) => logs.push(m), fetchFn: null });
   return { sim, bot, cfg };
 }
@@ -140,35 +141,78 @@ async function test(name, fn) {
   catch (e) { console.log('✘', name, '\n', logs.join('\n')); throw e; }
 }
 
-await test('pump: take profit 50 %, then trailing stop, trust line removed', async () => {
+await test('pump: stake back at +100 %, moonbag never sold on a dump, cleared when the pool dies', async () => {
   const { sim, bot } = setup();
   await bot.start();
   const cur = sim.launch({ name: 'PUMP', issuer: 'rIss1', poolXrp: 100, poolTok: 1e9 });
+  const k = `${cur}.rIss1`;
   await settle(bot);
-  const pos = bot.state().positions[`${cur}.rIss1`];
+  const pos = bot.state().positions[k];
   assert.ok(pos, 'bought');
   assert.ok(Math.abs(pos.cost - 1) < 1e-4, 'spent 1 XRP');
+  const bought = pos.amount;
   sim.trade(cur, 'rIss1', 150); // price ~6x
   await settle(bot);
-  assert.equal(bot.state().positions[`${cur}.rIss1`].tp1Done, true, 'first take profit');
-  sim.trade(cur, 'rIss1', 200); // keeps pumping → peak rises
+  const m = bot.state().positions[k];
+  assert.equal(m.tp1Done, true, 'first sale done');
+  assert.ok(m.proceeds >= m.cost, `stake back: ${m.proceeds} >= ${m.cost}`);
+  assert.ok(m.proceeds < m.cost * 1.1, 'sold only what was needed');
+  assert.ok(m.amount > bought * 0.7, `most of the bag rides: ${(m.amount / bought * 100).toFixed(0)}%`);
+  sim.trade(cur, 'rIss1', -200); // big dump
   await settle(bot);
-  assert.ok(bot.state().positions[`${cur}.rIss1`], 'still riding');
-  sim.trade(cur, 'rIss1', -300); // dump
+  assert.ok(bot.state().positions[k], 'moonbag kept through the dump');
+  sim.amm[k].xrp = 5; // pool drained → dead
   await settle(bot);
-  assert.equal(bot.state().positions[`${cur}.rIss1`], undefined, 'closed by trailing stop');
+  assert.equal(bot.state().positions[k], undefined, 'dead moonbag cleared');
   const h = bot.state().history[0];
-  assert.ok(h.pnl > 0, 'profit ' + h.pnl);
-  assert.ok(/trailing/.test(h.why));
-  assert.equal(sim.lines[`${cur}.rIss1`], undefined, 'trust line deleted');
+  assert.ok(/moonbag dead/.test(h.why), h.why);
+  assert.ok(h.pnl >= 0, 'never below zero once the stake is back ' + h.pnl);
+  assert.equal(sim.lines[k], undefined, 'trust line deleted');
   assert.equal(sim.acc[ME].OwnerCount, 0);
+  bot.stop();
+});
+
+await test('small launch: watched, bought once the pool passes 100 XRP', async () => {
+  const { sim, bot } = setup(50, { POOL_WAIT_MIN: '1' });
+  await bot.start();
+  const cur = sim.launch({ name: 'GROW', issuer: 'rGr', poolXrp: 60, poolTok: 1e9 });
+  await settle(bot);
+  assert.equal(bot.state().positions[`${cur}.rGr`], undefined, 'not yet');
+  assert.ok(logs.join('\n').includes('watching'));
+  sim.trade(cur, 'rGr', 50);
+  await wait(4500); await settle(bot);
+  assert.ok(bot.state().positions[`${cur}.rGr`], 'bought at 110 XRP');
+  bot.stop();
+});
+
+await test('copy trade: a tracked wallet buys a token → the bot buys it too, once', async () => {
+  const { sim, bot } = setup(50, { TRACK_WALLETS: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh:Whale', COPY_BUY_XRP: '2' });
+  await bot.start();
+  const cur = sim.launch({ name: 'OLD', issuer: 'rOld', poolXrp: 400, poolTok: 1e9, silent: true });
+  const whaleBuy = () => sim.emit('transaction', {
+    validated: true,
+    tx_json: { TransactionType: 'Payment', Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh', Fee: '12' },
+    meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [
+      { ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh', Balance: '80000000' }, PreviousFields: { Balance: '100000012' } } },
+      { ModifiedNode: { LedgerEntryType: 'RippleState', FinalFields: { Balance: { currency: cur, value: '-50000000' }, LowLimit: { issuer: 'rOld' }, HighLimit: { issuer: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh' } }, PreviousFields: { Balance: { currency: cur, value: '0' } } } },
+    ] },
+  });
+  whaleBuy();
+  await settle(bot);
+  const pos = bot.state().positions[`${cur}.rOld`];
+  assert.ok(pos, 'copied');
+  assert.equal(pos.copy, 'Whale');
+  assert.ok(Math.abs(pos.cost - 2) < 1e-3, 'COPY_BUY_XRP used');
+  whaleBuy();
+  await settle(bot);
+  assert.equal(sim.txs.filter((t) => t.TransactionType === 'Payment').length, 1, 'bought only once');
   bot.stop();
 });
 
 await test('rug: dev pulls the pool → sell everything', async () => {
   const { sim, bot } = setup();
   await bot.start();
-  const cur = sim.launch({ name: 'RUG', issuer: 'rIss2', poolXrp: 80, poolTok: 5e8 });
+  const cur = sim.launch({ name: 'RUG', issuer: 'rIss2', poolXrp: 200, poolTok: 5e8 });
   await settle(bot);
   assert.ok(bot.state().positions[`${cur}.rIss2`]);
   sim.amm[`${cur}.rIss2`].xrp = 30; sim.amm[`${cur}.rIss2`].tok = 1.3e9; // liquidity withdrawn / dumped
@@ -190,7 +234,7 @@ await test('filters: clawback, transfer fee, small pool, dev holds the supply, f
   await settle(bot);
   assert.equal(Object.keys(bot.state().positions).length, 0);
   const text = logs.join('\n');
-  for (const r of ['clawback', 'transfer fee 5.00%', 'pool only 5.0 XRP', '1% of supply', 'froze']) assert.ok(text.includes(r), 'reason ' + r);
+  for (const r of ['clawback', 'transfer fee 5.00%', 'pool only 5.0 XRP (min 100)', '1% of supply', 'froze']) assert.ok(text.includes(r), 'reason ' + r);
   assert.equal(sim.txs.length, 0, 'no transactions sent');
   bot.stop();
 });

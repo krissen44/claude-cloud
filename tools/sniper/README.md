@@ -7,22 +7,29 @@ Kauft neue Memecoins auf der XRPL direkt beim Launch und verkauft nach festen Re
 1. **Erkennt jeden Launch.** FirstLedger, Horizon und die anderen Launchpads starten einen Token,
    indem sie einen AMM-Pool XRP/Token anlegen (`AMMCreate`). Der Bot hört live im Ledger mit und
    sieht jeden neuen Pool im selben Ledger (≈ 4 Sekunden).
-2. **Prüft auf Rug-Anzeichen.** Gekauft wird nur, wenn alles stimmt:
+2. **Nur Pools ab 100 XRP.** Startet ein Launch kleiner, beobachtet ihn der Bot 10 Minuten lang. Wächst
+   der Pool in der Zeit über 100 XRP, kauft er. Sonst lässt er ihn liegen.
+3. **Prüft auf Rug-Anzeichen.** Gekauft wird nur, wenn alles stimmt:
    - Der Issuer ist **blackholed** (kann keine neuen Tokens mehr erzeugen). Der Bot wartet bis zu 2 Minuten darauf.
    - Kein Clawback (Issuer kann Tokens nicht zurückholen), kein Freeze.
    - Keine Transfer-Gebühr.
-   - Mindestens 20 XRP im Pool.
    - Mindestens 20 % aller Tokens liegen im Pool (sonst kann der Entwickler mit dem Rest den Kurs zerstören).
-3. **Kauft für 1 XRP** (einstellbar). Ist der Preis schon um mehr als 25 % weggelaufen, kauft er nicht.
-4. **Verkauft automatisch:**
-   - Bei **+100 %** verkauft er die Hälfte. Damit ist der Einsatz meistens schon zurück.
-   - Den Rest hält er, solange der Kurs steigt, und verkauft ihn, sobald der Wert **30 % unter dem Höchststand** liegt.
-   - Bei **−50 %** (vor dem ersten Gewinn) verkauft er alles.
-   - **Rug-Alarm:** Fällt das XRP im Pool um 40 % unter den Stand beim Kauf, verkauft er sofort alles.
-   - Nach **24 Stunden** verkauft er, was noch übrig ist.
-5. **Räumt auf.** Nach dem Verkauf löscht er die Trustline. Das gibt die 0,2 XRP Reserve wieder frei.
+4. **Kauft für 1 XRP** (einstellbar). Ist der Preis schon um mehr als 25 % weggelaufen, kauft er nicht.
+5. **Wallet-Tracking (optional):** In `TRACK_WALLETS` trägst du Wallets ein, denen du folgen willst.
+   Kauft so eine Wallet einen Token für mindestens 5 XRP, kauft der Bot ihn auch: mit denselben
+   Sicherheitsprüfungen, einmal pro Token.
+6. **Verkauft nach dem Prinzip „Einsatz raus, Rest läuft":**
+   - Bei **+100 %** verkauft er **genau so viel, dass der Einsatz zurück ist** (+5 % für Gebühren).
+     Je höher der Kurs dann steht, desto weniger muss er verkaufen und desto mehr bleibt liegen.
+   - Der Rest ist ein **Moonbag**: Er kostet nichts mehr und wird **nie verkauft**, egal wie der Kurs schwankt.
+   - Einzige Ausnahme: Ist der Pool tot (90 % des XRP sind raus), räumt der Bot den Rest weg. Dann ist die
+     Trustline-Reserve von 0,2 XRP mehr wert als der Token.
+   - **Solange der Einsatz noch nicht zurück ist**, schützt er ihn: bei −50 %, bei Rug-Alarm (40 % des
+     Pool-XRP weg) oder nach 24 Stunden verkauft er alles.
+7. **Räumt auf.** Nach einem vollständigen Verkauf löscht er die Trustline. Das gibt die 0,2 XRP Reserve wieder frei.
 
-Jeder Kauf und Verkauf steht im Log, optional auf der Statusseite und in Discord.
+Jeder Kauf und Verkauf steht im Log, auf der Statusseite (laufende Trades und Moonbags getrennt)
+und optional in Discord.
 
 ## Ehrlich gesagt
 
@@ -40,7 +47,11 @@ Jeder Kauf und Verkauf steht im Log, optional auf der Statusseite und in Discord
 | Grundreserve der Wallet (gesperrt) | 1 |
 | Mindestguthaben, wird nie verkauft (`MIN_BALANCE_XRP`) | 10 |
 | Pro offener Position: Einsatz + Trustline-Reserve | 1 + 0,2 |
-| → gleichzeitig offene Positionen bei 50 XRP | ca. 30, begrenzt auf 25 (`MAX_OPEN`) |
+| → gleichzeitig offene Trades bei 50 XRP | ca. 30, begrenzt auf 25 (`MAX_OPEN`) |
+| Jeder Moonbag sperrt 0,2 XRP Reserve | 50 Moonbags = 10 XRP |
+
+Moonbags zählen nicht zu `MAX_OPEN`. Ihre Reserve geht aber vom Guthaben ab. Das Mindestguthaben
+sorgt dafür, dass dabei nie mehr ausgegeben wird als erlaubt.
 
 ## Einrichten
 
@@ -86,14 +97,17 @@ Alle Werte stehen mit Erklärung in `.env.example`. Die wichtigsten:
 |---|---|---|
 | `BUY_XRP` | 1 | XRP pro Launch |
 | `MIN_BALANCE_XRP` | 10 | so viel bleibt immer übrig |
-| `TAKE_PROFIT` / `TAKE_PROFIT_PART` | 100 / 50 | bei +100 % die Hälfte verkaufen |
-| `TRAILING_STOP` | 30 | Rest verkaufen 30 % unter dem Höchststand |
-| `STOP_LOSS` | 50 | bei −50 % alles verkaufen |
+| `MIN_POOL_XRP` / `POOL_WAIT_MIN` | 100 / 10 | nur Pools ab 100 XRP, kleinere 10 Min. beobachten |
+| `TAKE_PROFIT` / `TAKE_PROFIT_PART` | 100 / auto | bei +100 % den Einsatz zurückholen, Rest läuft |
+| `TRAILING_STOP` | 0 | Moonbag nie verkaufen (z. B. `50` = Rest bei −50 % vom Hoch verkaufen) |
+| `STOP_LOSS` | 50 | bei −50 % alles verkaufen, solange der Einsatz noch nicht zurück ist (`0` = aus) |
+| `TRACK_WALLETS` | leer | `rAdresse:Name,rAdresse2:Name2` – deren Käufe werden mitgemacht |
+| `COPY_BUY_XRP` / `COPY_MIN_XRP` | 1 / 5 | Einsatz pro Copy-Kauf / erst ab so großen Käufen der Wallet |
 | `REQUIRE_BLACKHOLE` | 1 | nur Tokens, deren Issuer nichts mehr nachdrucken kann |
 | `DRY_RUN` | 0 | `1` = nur so tun, ohne echte Käufe |
 
 ## Test
 
-`npm test` spielt im simulierten Ledger 9 Szenarien durch (Pump, Rug, Clawback, Blackhole spät/nie,
-Stop-Loss, gelöschter Pool, Guthabengrenze, weggelaufener Preis). `node test/txcheck.mjs` prüft,
+`npm test` spielt im simulierten Ledger 11 Szenarien durch (Einsatz raus + Moonbag, kleiner Pool wächst,
+Copy-Trade, Rug, Clawback, Blackhole spät/nie, Stop-Loss, gelöschter Pool, Guthabengrenze, weggelaufener Preis). `node test/txcheck.mjs` prüft,
 dass alle Transaktionen gültig sind und signiert werden können.

@@ -34,7 +34,8 @@ export function readConfig(env = process.env) {
     maxOpen: num('MAX_OPEN', 25),
     maxBuysPerDay: num('MAX_BUYS_PER_DAY', 40),
     minBalanceXrp: num('MIN_BALANCE_XRP', 10), // spendable XRP that is never used for buys
-    minPoolXrp: num('MIN_POOL_XRP', 20),
+    minPoolXrp: num('MIN_POOL_XRP', 100),
+    poolWaitMin: num('POOL_WAIT_MIN', 10), // a smaller launch is watched this long and bought once it reaches the minimum
     maxPoolXrp: num('MAX_POOL_XRP', 0), // 0 = no upper limit
     maxAmmFee: num('MAX_AMM_FEE', 1), // percent
     maxTransferFee: num('MAX_TRANSFER_FEE', 0), // percent
@@ -44,11 +45,22 @@ export function readConfig(env = process.env) {
     buySlippage: num('BUY_SLIPPAGE', 25),
     sellSlippage: num('SELL_SLIPPAGE', 30),
     tp1: num('TAKE_PROFIT', 100), // percent gain for the first sale
-    tp1Part: num('TAKE_PROFIT_PART', 50), // percent of the bag sold there
-    trail: num('TRAILING_STOP', 30), // percent below the peak value, after the first sale
-    stopLoss: num('STOP_LOSS', 50),
-    rugDrop: num('RUG_POOL_DROP', 40), // pool XRP below entry by this percent → sell everything
-    maxHoldH: num('MAX_HOLD_H', 24),
+    // first sale: 'auto' = exactly enough tokens to get the stake back (+ buffer), the rest is a free
+    // "moonbag" that is never sold; a number = that percent of the bag
+    tp1Part: /^auto$/i.test(env.TAKE_PROFIT_PART || 'auto') ? 'auto' : Number(env.TAKE_PROFIT_PART),
+    recoverBuffer: num('RECOVER_BUFFER', 5), // percent on top of the stake (fees, trust line)
+    trail: num('TRAILING_STOP', 0), // after the first sale: sell the rest this far below the peak (0 = never)
+    // before the stake is back:
+    stopLoss: num('STOP_LOSS', 50), // 0 = off
+    rugDrop: num('RUG_POOL_DROP', 40), // pool XRP below entry by this percent → sell everything (0 = off)
+    maxHoldH: num('MAX_HOLD_H', 24), // 0 = off
+    // moonbags: only a dead pool is cleared, to free the 0.2 XRP trust line reserve
+    deadPoolDrop: num('DEAD_POOL_DROP', 90),
+    // wallet tracking: TRACK_WALLETS=rAbc…:Name,rDef… → buy what these wallets buy
+    track: parseTrack(env.TRACK_WALLETS || ''),
+    copyBuyXrp: num('COPY_BUY_XRP', num('BUY_XRP', 1)),
+    copyMinXrp: num('COPY_MIN_XRP', 5), // ignore buys of the tracked wallet below this many XRP
+    copyMinPoolXrp: num('COPY_MIN_POOL_XRP', num('MIN_POOL_XRP', 100)),
     checkS: num('CHECK_S', 8),
     dataDir: env.DATA_DIR || path.join(process.env.HOME || '.', 'xrpl-sniper-data'),
     discord: env.DISCORD_WEBHOOK || '',
@@ -56,6 +68,15 @@ export function readConfig(env = process.env) {
 }
 
 // ---------- helpers ----------
+function parseTrack(s) {
+  const m = new Map();
+  for (const part of s.split(',').map((x) => x.trim()).filter(Boolean)) {
+    const [addr, name] = part.split(':');
+    if (/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(addr)) m.set(addr, name || addr.slice(0, 8));
+  }
+  return m;
+}
+
 export function currencyName(c) {
   if (!c || c.length !== 40) return c;
   try {
@@ -111,6 +132,34 @@ function txEffects(meta, account, currency, issuer) {
     }
   }
   return { xrpDelta, tokDelta };
+}
+
+// Tokens `account` bought with XRP in a validated tx (Payment, OfferCreate, …): XRP went down by
+// more than the fee and a trust line balance went up. LP tokens (currency 03…) are ignored.
+export function buysOf(meta, account, feeDrops = 0) {
+  let xrpDelta = 0;
+  const got = [];
+  for (const n of meta?.AffectedNodes || []) {
+    const node = n.ModifiedNode || n.CreatedNode || n.DeletedNode;
+    if (!node) continue;
+    const fin = node.FinalFields || node.NewFields || {};
+    const prev = node.PreviousFields || {};
+    if (node.LedgerEntryType === 'AccountRoot' && fin.Account === account && prev.Balance !== undefined) {
+      xrpDelta += xrp(fin.Balance) - xrp(prev.Balance);
+    }
+    if (node.LedgerEntryType === 'RippleState' && fin.Balance) {
+      const lo = fin.LowLimit?.issuer;
+      const hi = fin.HighLimit?.issuer;
+      if (lo !== account && hi !== account) continue;
+      const cur = fin.Balance.currency;
+      if (/^03/.test(cur) && cur.length === 40) continue;
+      const before = Number(prev.Balance?.value ?? (n.CreatedNode ? 0 : fin.Balance.value));
+      const d = (lo === account ? 1 : -1) * (Number(fin.Balance.value) - before);
+      if (d > 0) got.push({ currency: cur, issuer: lo === account ? hi : lo, tokens: d });
+    }
+  }
+  const spent = -(xrpDelta + feeDrops / DROPS);
+  return spent > 0 ? got.map((g) => ({ ...g, xrp: spent })) : [];
 }
 
 // ---------- the bot ----------
@@ -196,8 +245,9 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   // ---------- launch detection ----------
   function onTransaction(ev) {
     const tx = ev.tx_json || ev.transaction;
-    if (!tx || !ev.validated || tx.TransactionType !== 'AMMCreate') return;
-    if (ev.meta?.TransactionResult !== 'tesSUCCESS') return;
+    if (!tx || !ev.validated || ev.meta?.TransactionResult !== 'tesSUCCESS') return;
+    if (cfg.track.has(tx.Account) && tx.Account !== me) onTracked(tx, ev);
+    if (tx.TransactionType !== 'AMMCreate') return;
     const xrpAmt = typeof tx.Amount === 'string' ? tx.Amount : typeof tx.Amount2 === 'string' ? tx.Amount2 : null;
     const tok = typeof tx.Amount === 'object' ? tx.Amount : typeof tx.Amount2 === 'object' ? tx.Amount2 : null;
     if (!xrpAmt || !tok) return; // token/token pools are not launches against XRP
@@ -214,8 +264,29 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     evaluate(launch).catch((e) => { pending.delete(k); say(`⚠️ ${launch.name}: check failed – ${e.message}`); });
   }
 
+  // A tracked wallet bought a token → run the same checks and buy it too (once per token).
+  function onTracked(tx, ev) {
+    if (tx.TransactionType === 'AMMDeposit' || tx.TransactionType === 'AMMCreate') return;
+    const who = cfg.track.get(tx.Account);
+    for (const b of buysOf(ev.meta, tx.Account, Number(tx.Fee || 0))) {
+      if (b.issuer === tx.Account || b.xrp < cfg.copyMinXrp) continue;
+      const k = key(b.currency, b.issuer);
+      S.copied ||= {};
+      if (S.copied[k] || pending.has(k) || S.positions[k]) continue;
+      S.copied[k] = now();
+      const l = {
+        k, currency: b.currency, issuer: b.issuer, name: currencyName(b.currency), at: now(),
+        copy: who, buyXrp: cfg.copyBuyXrp, minPool: cfg.copyMinPoolXrp, poolWait: 0,
+      };
+      pending.set(k, l);
+      say(`👀 ${who} bought ${l.name} for ${b.xrp.toFixed(1)} XRP – checking`);
+      evaluate(l).catch((e) => { pending.delete(k); say(`⚠️ ${l.name}: check failed – ${e.message}`); });
+    }
+  }
+
   async function checks(l) {
     const reasons = [];
+    let small = '';
     const info = (await req('account_info', { account: l.issuer, ledger_index: 'validated' })).account_data;
     const flags = info.Flags || 0;
     const blackholed = (flags & F.disableMaster) && (!info.RegularKey || BLACKHOLES.has(info.RegularKey));
@@ -226,7 +297,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     const p = await pool(l.currency, l.issuer);
     if (!p) reasons.push('pool gone');
     else {
-      if (p.xrp < cfg.minPoolXrp) reasons.push(`pool only ${p.xrp.toFixed(1)} XRP`);
+      if (p.xrp < (l.minPool ?? cfg.minPoolXrp)) small = `pool only ${p.xrp.toFixed(1)} XRP`;
       if (cfg.maxPoolXrp && p.xrp > cfg.maxPoolXrp) reasons.push(`pool ${p.xrp.toFixed(0)} XRP > max`);
       if (p.fee > cfg.maxAmmFee) reasons.push(`AMM fee ${p.fee}%`);
       if (cfg.minPoolSupplyPct > 0) {
@@ -238,27 +309,37 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
         } catch {}
       }
     }
-    return { blackholed: !!blackholed, reasons, pool: p };
+    return { blackholed: !!blackholed, reasons, small, pool: p };
   }
 
+  // Hard problems skip at once; a missing blackhole or a pool below the minimum is waited for.
   async function evaluate(l) {
-    const deadline = l.at + cfg.blackholeWaitS * 1000;
+    const holeBy = l.at + cfg.blackholeWaitS * 1000;
+    const poolBy = l.at + (l.poolWait ?? cfg.poolWaitMin) * 60000;
+    let told = false;
     for (;;) {
       if (stopped) return;
       const c = await checks(l);
+      const hole = c.blackholed || !cfg.requireBlackhole;
       if (c.reasons.length) {
         pending.delete(l.k);
         return say(`⛔ Skip ${l.name}: ${c.reasons.join(', ')}`);
       }
-      if (c.blackholed || !cfg.requireBlackhole) {
+      if (hole && !c.small) {
         pending.delete(l.k);
         return buy(l, c.pool);
       }
-      if (now() > deadline) {
+      if (!hole && now() > holeBy) {
         pending.delete(l.k);
         return say(`⛔ Skip ${l.name}: issuer not blackholed after ${cfg.blackholeWaitS}s (can mint more)`);
       }
-      await new Promise((r) => setTimeout(r, 4000));
+      if (c.small && now() >= poolBy) {
+        pending.delete(l.k);
+        return say(`⛔ Skip ${l.name}: ${c.small} (min ${l.minPool ?? cfg.minPoolXrp})`);
+      }
+      if (c.small && !told) { told = true; say(`⏳ ${l.name}: ${c.small} – watching for ${l.poolWait ?? cfg.poolWaitMin} min`); }
+      // poll fast while it is fresh, then slower so many waiting launches don't flood the server
+      await new Promise((r) => setTimeout(r, now() - l.at < 120000 ? 4000 : 15000));
     }
   }
 
@@ -273,21 +354,22 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
 
   async function buyNow(l, p) {
     if (S.day !== day()) { S.day = day(); S.buysToday = 0; }
-    const open = Object.keys(S.positions).length;
+    const open = Object.values(S.positions).filter((x) => !x.tp1Done).length; // moonbags don't count
     if (open >= cfg.maxOpen) return say(`⏸ ${l.name}: ${open} positions open (max ${cfg.maxOpen})`);
+    const stake = l.buyXrp ?? cfg.buyXrp;
     if (S.buysToday >= cfg.maxBuysPerDay) return say(`⏸ ${l.name}: daily buy limit reached`);
     p = (await pool(l.currency, l.issuer)) || p; // fresh price, the queue may have waited
     const free = await spendable();
-    if (free - reserves.inc - cfg.buyXrp < cfg.minBalanceXrp) {
+    if (free - reserves.inc - stake < cfg.minBalanceXrp) {
       return say(`⏸ ${l.name}: only ${free.toFixed(2)} XRP free – keeping ${cfg.minBalanceXrp} XRP floor`);
     }
-    const expect = swapOut(cfg.buyXrp, p.xrp, p.tok, p.fee);
+    const expect = swapOut(stake, p.xrp, p.tok, p.fee);
     const min = expect * (1 - cfg.buySlippage / 100);
     S.buysToday++;
     if (cfg.dryRun) {
-      S.positions[l.k] = position(l, cfg.buyXrp, expect, p);
+      S.positions[l.k] = position(l, stake, expect, p);
       save();
-      return say(`🧪 DRY buy ${l.name}: ${cfg.buyXrp} XRP → ${expect.toPrecision(6)}`);
+      return say(`🧪 DRY buy ${l.name}: ${stake} XRP → ${expect.toPrecision(6)}`);
     }
     const ts = await submit({
       TransactionType: 'TrustSet', Account: me, Flags: TF_SET_NO_RIPPLE,
@@ -297,7 +379,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     const r = await submit({
       TransactionType: 'Payment', Account: me, Destination: me, Flags: TF_PARTIAL,
       Amount: { currency: l.currency, issuer: l.issuer, value: iouValue(expect * 1.5) },
-      SendMax: toDrops(cfg.buyXrp),
+      SendMax: toDrops(stake),
       DeliverMin: { currency: l.currency, issuer: l.issuer, value: iouValue(min) },
     });
     if (!okResult(r)) {
@@ -306,24 +388,25 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     }
     const fx = txEffects(r.meta, me, l.currency, l.issuer);
     const got = Number(r.meta.delivered_amount?.value ?? fx.tokDelta);
-    const cost = Math.max(0, -fx.xrpDelta) || cfg.buyXrp;
+    const cost = Math.max(0, -fx.xrpDelta) || stake;
     S.positions[l.k] = position(l, cost, got, p);
     save();
-    say(`🟢 Bought ${l.name}: ${cost.toFixed(4)} XRP → ${got.toPrecision(6)} tokens`);
+    say(`🟢 Bought ${l.name}${l.copy ? ` (copy ${l.copy})` : ''}: ${cost.toFixed(4)} XRP → ${got.toPrecision(6)} tokens`);
   }
 
   function position(l, cost, amount, p) {
     return {
       k: l.k, currency: l.currency, issuer: l.issuer, name: l.name, cost, amount, sold: 0, proceeds: 0,
-      entryPoolXrp: p.xrp, peak: cost, value: cost, tp1Done: false, at: now(), fails: 0,
+      entryPoolXrp: p.xrp, peak: cost, value: cost, tp1Done: false, at: now(), fails: 0, copy: l.copy || '',
     };
   }
 
   // ---------- sell ----------
-  async function sell(pos, part, why) {
+  // part = share of the bag; opt.tokens = exact amount; opt.minXrp = never accept less than this
+  async function sell(pos, part, why, opt = {}) {
     const p = await pool(pos.currency, pos.issuer);
     if (!p) return close(pos, 'pool deleted – tokens worthless');
-    let amount = pos.amount * part;
+    let amount = opt.tokens ?? pos.amount * part;
     let exact = null; // the ledger's own balance string, so a full sale leaves no dust
     if (!cfg.dryRun && part >= 0.999) {
       // sell the exact balance so the trust line can be removed afterwards
@@ -335,14 +418,16 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     }
     const expect = swapOut(amount, p.tok, p.xrp, p.fee);
     const slip = Math.min(90, cfg.sellSlippage + pos.fails * 15); // widen on repeated misses
+    const min = opt.minXrp ?? expect * (1 - slip / 100);
     if (cfg.dryRun) return booked(pos, amount, expect, why, part);
     const r = await submit({
       TransactionType: 'Payment', Account: me, Destination: me, Flags: TF_PARTIAL,
       Amount: toDrops(expect * 1.5),
       SendMax: { currency: pos.currency, issuer: pos.issuer, value: exact || iouValue(amount, true) },
-      DeliverMin: toDrops(expect * (1 - slip / 100)),
+      DeliverMin: toDrops(min),
     }, true);
     if (!okResult(r)) {
+      if (opt.minXrp) return say(`⚠️ ${pos.name}: price moved, stake not back yet – trying again`);
       pos.fails++;
       save();
       return say(`⚠️ Sell ${pos.name} failed (${r?.meta?.TransactionResult}), retrying with ${Math.min(90, slip + 15)}% slippage`);
@@ -360,7 +445,8 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (part >= 0.999 || pos.amount <= 0) return close(pos, why);
     pos.tp1Done = true; // the only partial sale is the first take profit
     save();
-    say(`🟡 Sold ${Math.round(part * 100)}% ${pos.name} for ${got.toFixed(4)} XRP (${why})`);
+    const pct = Math.round((amount / (amount + pos.amount)) * 100);
+    say(`🟡 Sold ${pct}% ${pos.name} for ${got.toFixed(4)} XRP (${why})${pos.proceeds >= pos.cost ? ` – stake back, ${100 - pct}% rides free 🌙` : ''}`);
   }
 
   async function close(pos, why) {
@@ -400,11 +486,30 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     pos.peak = Math.max(pos.peak, pos.value);
     const gain = (pos.value / pos.cost - 1) * 100;
     const ageH = (now() - pos.at) / 3.6e6;
-    if (p.xrp < pos.entryPoolXrp * (1 - cfg.rugDrop / 100)) return sell(pos, 1, `rug: pool XRP down ${Math.round((1 - p.xrp / pos.entryPoolXrp) * 100)}%`);
-    if (!pos.tp1Done && gain >= cfg.tp1) return sell(pos, cfg.tp1Part / 100, `take profit +${gain.toFixed(0)}%`);
-    if (pos.tp1Done && pos.value < pos.peak * (1 - cfg.trail / 100)) return sell(pos, 1, `trailing stop (peak ${pos.peak.toFixed(3)} XRP)`);
-    if (!pos.tp1Done && gain <= -cfg.stopLoss) return sell(pos, 1, `stop loss ${gain.toFixed(0)}%`);
-    if (ageH >= cfg.maxHoldH) return sell(pos, 1, `max hold ${cfg.maxHoldH}h`);
+    const poolDrop = (1 - p.xrp / pos.entryPoolXrp) * 100;
+
+    if (pos.tp1Done) {
+      // moonbag: rides for free. Only a dead pool is cleared (the trust line reserve is worth more).
+      if (cfg.deadPoolDrop && poolDrop >= cfg.deadPoolDrop) return sell(pos, 1, `moonbag dead: pool XRP down ${Math.round(poolDrop)}%`);
+      if (cfg.trail && pos.value < pos.peak * (1 - cfg.trail / 100)) return sell(pos, 1, `trailing stop (peak ${pos.peak.toFixed(3)} XRP)`);
+      return;
+    }
+    if (cfg.rugDrop && poolDrop >= cfg.rugDrop) return sell(pos, 1, `rug: pool XRP down ${Math.round(poolDrop)}%`);
+    if (gain >= cfg.tp1) {
+      if (cfg.tp1Part !== 'auto') return sell(pos, cfg.tp1Part / 100, `take profit +${gain.toFixed(0)}%`);
+      // sell just enough to get the stake back; the rest becomes the moonbag
+      const need = (pos.cost - pos.proceeds) * (1 + cfg.recoverBuffer / 100);
+      const tokens = Math.min(pos.amount * 0.95, tokensFor(need, p));
+      return sell(pos, tokens / pos.amount, `stake back at +${gain.toFixed(0)}%`, { tokens, minXrp: Math.min(need, swapOut(tokens, p.tok, p.xrp, p.fee)) * 0.98 });
+    }
+    if (cfg.stopLoss && gain <= -cfg.stopLoss) return sell(pos, 1, `stop loss ${gain.toFixed(0)}%`);
+    if (cfg.maxHoldH && ageH >= cfg.maxHoldH) return sell(pos, 1, `max hold ${cfg.maxHoldH}h, stake not back`);
+  }
+
+  // Tokens to sell into the pool to receive `out` XRP (inverse of swapOut).
+  function tokensFor(out, p) {
+    if (out >= p.xrp) return Infinity;
+    return (p.tok * out) / ((p.xrp - out) * (1 - p.fee / 100));
   }
 
   // ---------- lifecycle ----------
@@ -424,9 +529,13 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
 
   function status() {
     const open = Object.values(S.positions);
+    const all = [...open, ...S.history];
     return {
       wallet: me, dryRun: cfg.dryRun, realized: S.realized,
       unrealized: open.reduce((s, p) => s + (p.value - p.cost), 0),
+      cash: all.reduce((s, p) => s + p.proceeds - p.cost, 0), // XRP in minus XRP out, all trades
+      moonValue: open.filter((p) => p.tp1Done).reduce((s, p) => s + (p.value - p.proceeds), 0),
+      tracking: [...cfg.track.values()],
       buysToday: S.buysToday, open, history: S.history.slice(0, 50),
       wins: S.history.filter((h) => h.pnl > 0).length, losses: S.history.filter((h) => h.pnl <= 0).length,
     };
