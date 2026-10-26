@@ -38,6 +38,10 @@ Kauft neue Memecoins auf der XRPL direkt beim Launch und verkauft nach festen Re
      Auf der Statusseite gibt es dafür die Buttons „Hälfte verkaufen", „Alles verkaufen" und „Wieder automatisch".
    - Auf der Karte stehen Links zum Prüfen: die Website des Issuers (falls hinterlegt), XRPScan,
      FirstLedger und eine X-Suche nach dem Token-Namen. Socials prüfen kann der Bot nicht selbst, das machst du.
+   - **Runner:** Startet ein Launch mit **mindestens 300 XRP** im Pool und verdoppelt sich das XRP im Pool
+     innerhalb von **60 Minuten**, markiert der Bot ihn als 🚀 Runner. Ab dann fragt er bei **jedem**
+     Verkauf nach, egal wie hoch die Market Cap gerade ist. Das gilt nur für Launch-Käufe, nicht für Copy-Käufe
+     (bei denen kennt der Bot den Start nicht). Einstellbar mit `RUNNER_START_XRP`, `RUNNER_GROWTH`, `RUNNER_WINDOW_MIN`.
    - **Ein Rug wird nie abgewartet:** Fällt das XRP im Pool um 40 %, verkauft er sofort, auch ohne Genehmigung.
    - Market Cap = alle ausgegebenen Tokens × aktueller Pool-Preis. Den Dollarkurs von XRP liest der Bot
      aus dem XRP/RLUSD-Pool im Ledger. Kann er den Kurs nicht lesen, fragt er sicherheitshalber.
@@ -120,6 +124,7 @@ Alle Werte stehen mit Erklärung in `.env.example`. Die wichtigsten:
 | `TRAILING_STOP` | 0 | Moonbag nie verkaufen (z. B. `50` = Rest bei −50 % vom Hoch verkaufen) |
 | `STOP_LOSS` | 50 | bei −50 % alles verkaufen, solange der Einsatz noch nicht zurück ist (`0` = aus) |
 | `MCAP_APPROVAL` | 100000 | ab dieser Market Cap (USD) nur mit deinem OK verkaufen (`0` = aus) |
+| `RUNNER_START_XRP` / `RUNNER_GROWTH` / `RUNNER_WINDOW_MIN` | 300 / 100 / 60 | Start ab 300 XRP + Pool-XRP verdoppelt in 60 Min. → jeder Verkauf nur mit OK |
 | `TRACK_WALLETS` | leer | `rAdresse:Name,rAdresse2:Name2` – deren Käufe werden mitgemacht |
 | `COPY_BUY_XRP` / `COPY_MIN_XRP` | 1 / 5 | Einsatz pro Copy-Kauf / erst ab so großen Käufen der Wallet |
 | `COPY_TAKE_PROFIT` / `_PART` / `COPY_TRAILING_STOP` / `COPY_STOP_LOSS` / `COPY_RUG_POOL_DROP` / `COPY_MAX_HOLD_H` | 100 / 50 / 30 / 50 / 40 / 24 | Verkaufsregeln nur für Copy-Käufe |
@@ -128,6 +133,6 @@ Alle Werte stehen mit Erklärung in `.env.example`. Die wichtigsten:
 
 ## Test
 
-`npm test` spielt im simulierten Ledger 15 Szenarien durch (Genehmigung ab Market Cap / Behalten / Rug trotzdem, Einsatz raus + Moonbag, kleiner Pool wächst,
+`npm test` spielt im simulierten Ledger 16 Szenarien durch (Genehmigung ab Market Cap / Runner / Behalten / Rug trotzdem, Einsatz raus + Moonbag, kleiner Pool wächst,
 Copy-Trade mit Hälfte/Trailing-Stop/Haltezeit, Rug, Clawback, Blackhole spät/nie, Stop-Loss, gelöschter Pool, Guthabengrenze, weggelaufener Preis). `node test/txcheck.mjs` prüft,
 dass alle Transaktionen gültig sind und signiert werden können.

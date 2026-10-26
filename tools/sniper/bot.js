@@ -78,6 +78,11 @@ export function readConfig(env = process.env) {
     // (rug exits stay automatic). 0 = off
     mcapApproval: num('MCAP_APPROVAL', 100000),
     mcapCurrency: /^xrp$/i.test(env.MCAP_CURRENCY || '') ? 'XRP' : 'USD',
+    // runners: launched with at least RUNNER_START_XRP in the pool and the pool's XRP grew by
+    // RUNNER_GROWTH percent within RUNNER_WINDOW_MIN → every sell (except a rug) waits for your OK
+    runnerStartXrp: num('RUNNER_START_XRP', 300), // 0 = off
+    runnerGrowth: num('RUNNER_GROWTH', 100),
+    runnerWindowMin: num('RUNNER_WINDOW_MIN', 60),
     xrpUsd: num('XRP_USD', 0), // fallback price if the XRP/RLUSD pool can't be read
     publicUrl: (env.PUBLIC_URL || '').replace(/\/$/, ''), // status page address for the Discord link
   };
@@ -416,6 +421,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     return {
       k: l.k, currency: l.currency, issuer: l.issuer, name: l.name, cost, amount, sold: 0, proceeds: 0,
       entryPoolXrp: p.xrp, peak: cost, value: cost, tp1Done: false, at: now(), fails: 0, copy: l.copy || '',
+      startPoolXrp: l.copy ? null : l.poolXrp, launchedAt: l.at, // pool size at launch (unknown for copies)
     };
   }
 
@@ -513,6 +519,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     pos.value = swapOut(pos.amount, p.tok, p.xrp, p.fee) + pos.proceeds; // what the trade is worth now
     pos.peak = Math.max(pos.peak, pos.value);
     pos.mcap = await marketCap(pos, p);
+    runnerCheck(pos, p);
     const d = decide(pos, p);
     if (!d) return;
     if (d.rug) { delete pos.ask; return sell(pos, d.part, d.why, d.opt); } // never wait on a rug
@@ -591,7 +598,17 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     const px = await xrpUsd();
     return px ? mcapXrp * px : NaN; // unknown → ask, to be safe
   }
-  const needsOk = (pos) => cfg.mcapApproval > 0 && !(pos.mcap < cfg.mcapApproval);
+  const needsOk = (pos) => pos.runner || (cfg.mcapApproval > 0 && !(pos.mcap < cfg.mcapApproval));
+
+  // Big start + fast growth = possible runner. The mark stays for the life of the position.
+  function runnerCheck(pos, p) {
+    if (pos.runner || !cfg.runnerStartXrp || !(pos.startPoolXrp >= cfg.runnerStartXrp)) return;
+    if (now() - (pos.launchedAt || pos.at) > cfg.runnerWindowMin * 60000) return;
+    if (p.xrp < pos.startPoolXrp * (1 + cfg.runnerGrowth / 100)) return;
+    pos.runner = true;
+    save();
+    say(`🚀 ${pos.name} looks like a runner: pool ${pos.startPoolXrp.toFixed(0)} → ${p.xrp.toFixed(0)} XRP in ${Math.round((now() - (pos.launchedAt || pos.at)) / 60000)} min. Sells now wait for your OK.`);
+  }
   const fmtCap = (v) => (isNaN(v) ? '?' : `${cfg.mcapCurrency === 'USD' ? '$' : ''}${v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : (v / 1e3).toFixed(0) + 'k'}${cfg.mcapCurrency === 'XRP' ? ' XRP' : ''}`);
 
   async function ask(pos, d) {
@@ -604,7 +621,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     }
     save();
     const link = cfg.publicUrl ? `\n➡️ ${cfg.publicUrl}/` : '';
-    say(`🙋 ${pos.name} has a market cap of ${fmtCap(pos.mcap)} – the bot wants to sell ${Math.round(d.part * 100)}% (${d.why}). Waiting for your OK.${pos.domain ? `\n🌐 ${pos.domain}` : ''}\n🔎 https://xrpscan.com/account/${pos.issuer}${link}`);
+    say(`🙋 ${pos.name}${pos.runner ? ' 🚀 runner,' : ''} market cap ${fmtCap(pos.mcap)} – the bot wants to sell ${Math.round(d.part * 100)}% (${d.why}). Waiting for your OK.${pos.domain ? `\n🌐 ${pos.domain}` : ''}\n🔎 https://xrpscan.com/account/${pos.issuer}${link}`);
   }
 
   // Your answers from the status page.

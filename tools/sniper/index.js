@@ -103,7 +103,7 @@ function page(st, key) {
   const t = (d) => new Date(d).toISOString().slice(5, 16).replace('T', ' ');
   const cap = (v) => (!v && v !== 0 ? '' : isNaN(v) ? '?' : (st.mcapCurrency === 'USD' ? '$' : '') + (v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(0) + 'k' : v.toFixed(0)) + (st.mcapCurrency === 'XRP' ? ' XRP' : ''));
   const btn = (k, what, label, cls = '') => `<form method="post" action="/act?key=${encodeURIComponent(key)}"><input type="hidden" name="k" value="${esc(k)}"><input type="hidden" name="do" value="${what}"><button class="${cls}">${label}</button></form>`;
-  const name = (p) => `${esc(p.name)}${p.copy ? ` <small>👀 ${esc(p.copy)}</small>` : ''}${p.manual ? ' <small>✋ manuell</small>' : ''}`;
+  const name = (p) => `${esc(p.name)}${p.copy ? ` <small>👀 ${esc(p.copy)}</small>` : ''}${p.manual ? ' <small>✋ manuell</small>' : ''}${p.runner ? ' <small>🚀 Runner</small>' : ''}`;
   const manualBtns = (p) => (p.manual ? btn(p.k, 'sellhalf', 'Hälfte verkaufen') + btn(p.k, 'sellall', 'Alles verkaufen', 'no') + btn(p.k, 'auto', 'Wieder automatisch') : '');
   const asks = st.open.filter((p) => p.ask);
   const live = st.open.filter((p) => !p.ask && !(p.tp1Done && !p.copy));

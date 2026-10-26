@@ -392,6 +392,25 @@ await test('"hold" makes it manual: no rule sells, a rug still does, buttons sel
   bot.stop();
 });
 
+await test('runner: big start + pool doubles fast → sale waits for OK; a small start does not', async () => {
+  const { sim, bot } = setup(50);
+  await bot.start();
+  const big = sim.launch({ name: 'RUNR', issuer: 'rRun', poolXrp: 350, poolTok: 1e9 });
+  const small = sim.launch({ name: 'SMLL', issuer: 'rSml', poolXrp: 150, poolTok: 1e9 });
+  await settle(bot);
+  sim.trade(big, 'rRun', 400); // 350 → 750 XRP
+  sim.trade(small, 'rSml', 200); // 150 → 350 XRP, but started below 300
+  await settle(bot);
+  const r = bot.state().positions[`${big}.rRun`];
+  assert.ok(r.runner, 'marked as runner');
+  assert.ok(r.mcap < 100000, 'market cap alone would not ask: $' + r.mcap.toFixed(0));
+  assert.ok(r.ask && !r.tp1Done, 'waits for OK');
+  assert.ok(logs.join('\n').includes('looks like a runner'));
+  const s = bot.state().positions[`${small}.rSml`];
+  assert.ok(!s.runner && s.tp1Done, 'small start sells by itself');
+  bot.stop();
+});
+
 await test('no USD price available: asks to be safe; under the limit: sells by itself', async () => {
   const { sim, bot } = setup(50, { MCAP_APPROVAL: '1000' }, false);
   await bot.start();
