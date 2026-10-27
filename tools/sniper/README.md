@@ -266,6 +266,17 @@ Only the tokens that matter are traded and get trust lines up front (so a found 
 hype, top) up to `ARB_MAX_LINES` (50); a token that left it gives
 its line back once the balance is zero. The page shows the focus list with liquidity, growth and trades.
 
+## Live mode (speed)
+
+`ARB_LIVE` (on): the bot subscribes to `transactions_proposed`, which shows every transaction when it enters
+the open ledger – measured on s2.ripple.com ≈ 5.7 s (median) before it arrives validated. When one touches a
+list or bridge token, the bot reads the live reserves of the pools it can have moved (`amm_info` on the
+`current` ledger, at most `ARB_LIVE_MAX_PER_LEDGER` = 15 reads per ledger), searches on that state and sends at
+once, valid for this open ledger and the next. Before, it only reacted to validated ledgers and its batches
+landed two ledgers after the state they were computed on – one ledger after the bwif bots. Validated updates
+from an older ledger never overwrite a pool read live from a newer one. A miss is "beaten … (late)" when our
+pool was moved in a ledger between our view and the one we landed in.
+
 ## Fees and sequence numbers
 
 A busy ledger costs more than the minimum: the bot reads the open-ledger fee level every ledger and pays what

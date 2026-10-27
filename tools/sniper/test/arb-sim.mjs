@@ -695,6 +695,58 @@ await test('bridge: a loop may pass through a big token off the list – held is
   t2.bot.stop();
 });
 
+await test('live: a trade entering the open ledger → live pool state read → batch for this ledger, wins; an older validated update does not undo it', async () => {
+  const { L, bot } = setup();
+  const subs = [];
+  const orig = L.request.bind(L);
+  L.request = async (r) => { if (r.command === 'subscribe') subs.push(...r.streams); return orig(r); };
+  await bot.start();
+  assert.deepEqual(subs, ['transactions_proposed'], 'one stream: proposed + validated');
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(300); // issuers checked
+  await bot._manageLines();
+  const sent0 = L.sent.length;
+  // someone dumps BBB for AAA in the OPEN ledger: the pool moved, nothing validated yet
+  const p = L.pools.get('rPoolAB');
+  const out = swapOut(1e6, p.rb, p.ra, p.fee); p.rb += 1e6; p.ra -= out;
+  const open = L.index + 1;
+  L.applyDelay = 600; // our batch lands a bit later
+  L.emit('transaction', { validated: false, ledger_current_index: open, engine_result: 'tesSUCCESS', tx_json: { TransactionType: 'Payment', Account: 'rDumper', Amount: { currency: 'AAA', issuer: IA, value: '1' }, SendMax: { currency: 'BBB', issuer: IB, value: '1000000' } } });
+  await wait(120);
+  const now = L.sent.slice(sent0);
+  assert.equal(now.length, 1, 'sent straight from the open ledger');
+  assert.equal(now[0].LastLedgerSequence, open + 1, 'valid for this open ledger and the next');
+  assert.ok(bot.status().stats.liveSeen >= 1 && bot.status().stats.liveReads >= 1);
+  // a validated update from an older ledger must not put the old reserves back
+  const ra = bot.graph.pools.get('rPoolAB').ra;
+  L.emit('transaction', { validated: true, ledger_index: open - 1, hash: 'OLD1', tx_json: { TransactionType: 'Payment', Account: 'rOld' }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [{ ModifiedNode: { LedgerEntryType: 'RippleState', FinalFields: { Balance: { currency: 'AAA', value: String(-5e6) }, LowLimit: { issuer: IA }, HighLimit: { issuer: 'rPoolAB' } }, PreviousFields: { Balance: { currency: 'AAA', value: '0' } } } }] } });
+  assert.ok(Math.abs(bot.graph.pools.get('rPoolAB').ra - ra) < 1e-6, 'live state kept');
+  await wait(700); L.applyDelay = 0;
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  const st = bot.status();
+  assert.ok(st.stats.wins >= 1, JSON.stringify(st.stats));
+  assert.ok(st.trades.find((t) => t.applied).live, 'marked live');
+  bot.stop();
+});
+
+await test('late: our pool was moved in a ledger between our view and ours → "beaten", flagged late', async () => {
+  const { L, bot } = setup({ ARB_LIVE: '0' });
+  await bot.start();
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(300);
+  await bot._manageLines();
+  L.applyDelay = 400; // our batch takes one more ledger …
+  L.trade('rPoolAB', B, 1e6); await wait(200);
+  L.trade('rPoolAB', A, 1.3e6, RIVAL); // … and the rival fixes the price in the ledger between
+  await wait(400);
+  L.applyDelay = 0;
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  const miss = bot.status().trades.find((t) => !t.applied);
+  assert.ok(miss && miss.why === 'beaten' && miss.late && miss.by === 'Rival', JSON.stringify(bot.status().trades));
+  assert.ok(bot.status().stats.missLate >= 1);
+  bot.stop();
+});
+
 await test('default list: 38 FirstLedger top tokens, settings field parses back', async () => {
   const { DEFAULT_TOKENS, parseTokens } = await import('../arb/bot.mjs');
   const t = parseTokens(DEFAULT_TOKENS);

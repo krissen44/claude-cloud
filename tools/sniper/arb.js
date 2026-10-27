@@ -44,6 +44,8 @@ export const ARB_GROUPS = [
   ['📋 Token list', [
     ['ARB_LIST_ONLY', 'Trade only the list', 'bool', '1', 'Only these tokens, no others – loops, trust lines, everything. Other lines that hold nothing are given back'],
     ['ARB_TOKENS', 'The list', 'tokens', DEFAULT_TOKENS, 'One per line: NAME.rIssuer – suggestions to add are on the arb page'],
+    ['ARB_LIVE', 'Live mode (react to the open ledger)', 'bool', '1', 'Sees trades ≈ 5 s before they are validated and sends into the same / next ledger'],
+    ['ARB_LIVE_MAX_PER_LEDGER', 'Live pool reads per ledger', 'num', '15', 'server load', 1, 200],
     ['ARB_BRIDGE', 'Loops may pass through big tokens', 'bool', '1', 'Inside the same all-or-nothing batch only – never held, no trust line (e.g. FUZZY → WIND → DROP). Off = only list tokens in a loop'],
     ['ARB_BRIDGE_MIN_XRP', 'Bridge token: min. XRP in its pool', 'num', '1000', 'bwif’s bridges (WIND, CRAP, CABAL, POOL) have ≈ 1,400', 0, 1e8],
   ]],
