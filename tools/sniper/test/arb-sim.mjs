@@ -84,6 +84,7 @@ class Ledger {
     if (c === 'subscribe') return ok({});
     if (c === 'fee') { if (!this.openLevel) throw new Error('no fee info'); return ok({ drops: { base_fee: '10' }, levels: { open_ledger_level: String(this.openLevel), reference_level: '256' } }); }
     if (c === 'server_info') return ok({ info: { validated_ledger: { reserve_base_xrp: 1, reserve_inc_xrp: 0.2, seq: this.index } } });
+    if (c === 'account_info' && this.rivalBal?.[r.account]) return ok({ account_data: { Account: r.account, Balance: String(Math.round(this.rivalBal[r.account][r.ledger_index] * D)) } });
     if (c === 'account_info' && r.account !== this.me) return ok({ account_data: { Account: r.account, Flags: 0, ...(this.issuerFee?.[r.account] ? { TransferRate: 1e9 * (1 + this.issuerFee[r.account]) } : {}) } });
     if (c === 'account_info') return ok({ account_data: { Account: this.me, Balance: String(Math.round(this.acct.balance * D)), Sequence: this.acct.seq, OwnerCount: this.acct.owners } });
     if (c === 'account_lines') return ok({ lines: [...this.lines.keys()].map((k) => ({ currency: k.split('.')[0], account: k.split('.')[1], balance: String(this.lines.get(k)) })) });
@@ -92,9 +93,10 @@ class Ledger {
       return ok({ state: [...this.pools.values()].map((p) => ({ LedgerEntryType: 'AMM', Account: p.id, Asset: as(p.a), Asset2: as(p.b), TradingFee: Math.round(p.fee * 1e5) })) });
     }
     if (c === 'amm_info') {
-      const p = this.pools.get(r.amm_account);
+      const p = r.amm_account ? this.pools.get(r.amm_account) : this.find(key(r.asset), key(r.asset2));
+      if (!p) throw Object.assign(new Error('ammNotFound'), { data: { error: 'actNotFound' } });
       const amt = (k, v) => (k === 'XRP' ? String(Math.round(v * D)) : { currency: k.split('.')[0], issuer: k.split('.')[1], value: String(v) });
-      return ok({ amm: { amount: amt(p.a, p.ra), amount2: amt(p.b, p.rb), trading_fee: Math.round(p.fee * 1e5) } });
+      return ok({ amm: { account: p.id, amount: amt(p.a, p.ra), amount2: amt(p.b, p.rb), trading_fee: Math.round(p.fee * 1e5) } });
     }
     if (c === 'submit') return ok(this.submit(r.tx_blob));
     throw new Error('unknown ' + c);
@@ -124,7 +126,7 @@ class Ledger {
       const have = src === 'XRP' ? xrp : lines.get(src) ?? -1;
       if (dst !== 'XRP' && !lines.has(dst)) { ok = false; break; }
       const r = partial
-        ? this.pay(clone, route, { partialIn: Math.min(val(p.SendMax), have), minOut: val(p.DeliverMin) })
+        ? this.pay(clone, route, { partialIn: Math.min(val(p.SendMax), have), minOut: p.DeliverMin != null ? val(p.DeliverMin) : null })
         : this.pay(clone, route, { exactOut: val(p.Amount), maxIn: Math.min(val(p.SendMax), have) });
       if (!r.ok) { ok = false; break; }
       r.touched.forEach((q) => touched.add(q.id));
@@ -144,7 +146,7 @@ class Ledger {
     }
     this.emit('transaction', { validated: true, ledger_index: this.index, hash: this.outerHash, tx_json: { TransactionType: 'Batch', Account: this.me }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [meNode(xrp)] } });
     if (ok) {
-      for (const id of touched) this.emit('transaction', { validated: true, ledger_index: this.index, hash: 'I' + id + this.index, tx_json: { TransactionType: 'Payment', Account: this.me, ParentBatchID: this.outerHash }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: this.nodesFor(this.pools.get(id)) } });
+      for (const id of touched) this.emit('transaction', { validated: true, ledger_index: this.index, hash: 'I' + id + this.index, tx_json: { TransactionType: 'Payment', Account: this.me }, meta: { TransactionResult: 'tesSUCCESS', ParentBatchID: this.outerHash, AffectedNodes: this.nodesFor(this.pools.get(id)) } });
     }
     this.acct.balance = xrp;
   }
@@ -308,7 +310,7 @@ await test('rival batches are recorded with their profit; their held token gets 
     { RawTransaction: { TransactionType: 'Payment', SendMax: '1000000', Amount: { currency: 'AAA', issuer: IA, value: '9000' } } },
     { RawTransaction: { TransactionType: 'Payment', SendMax: { currency: 'AAA', issuer: IA, value: '9000' }, Amount: '1100000', Paths: [[{ currency: 'BBB', issuer: IB }]] } },
   ] }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [] } });
-  L.emit('transaction', { validated: true, ledger_index: 2000, hash: 'RIVi', tx_json: { TransactionType: 'Payment', Account: RIVAL, ParentBatchID: 'RIV1' }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [{ ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: RIVAL, Balance: '10100000' }, PreviousFields: { Balance: '10000000' } } }] } });
+  L.emit('transaction', { validated: true, ledger_index: 2000, hash: 'RIVi', tx_json: { TransactionType: 'Payment', Account: RIVAL }, meta: { TransactionResult: 'tesSUCCESS', ParentBatchID: 'RIV1', AffectedNodes: [{ ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: RIVAL, Balance: '10100000' }, PreviousFields: { Balance: '10000000' } } }] } });
   await wait(10200);
   const st = bot.status();
   assert.equal(st.rivals.length, 1);
@@ -411,6 +413,45 @@ await test('ARB_TOKENS: names and hex codes are understood', async () => {
   assert.equal(t.length, 3);
   assert.equal(t[0], `${Buffer.from('FUZZY').toString('hex').toUpperCase().padEnd(40, '0')}.${iss}`);
   assert.equal(t[1], `USD.${iss}`);
+});
+
+await test('rival without inner payments in the stream: result from the balance, route checked against our pools', async () => {
+  const { L, bot } = setup();
+  await bot.start();
+  await ready(bot);
+  L.rivalBal = { [RIVAL]: { 4999: 100, 5000: 100.3 } };
+  const amt = (k, v) => ({ currency: k.split('.')[0], issuer: k.split('.')[1], value: v });
+  L.emit('transaction', { validated: true, ledger_index: 5000, hash: 'RIV3', tx_json: { TransactionType: 'Batch', Account: RIVAL, Fee: '50', RawTransactions: [
+    { RawTransaction: { TransactionType: 'Payment', SendMax: '1000000', Amount: amt(B, '9000'), Paths: [[{ currency: 'AAA', issuer: IA }]] } },
+    { RawTransaction: { TransactionType: 'Payment', SendMax: amt(B, '9000'), Amount: '1100000' } },
+  ] }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [] } });
+  const IZ = Wallet.generate().address;
+  L.emit('transaction', { validated: true, ledger_index: 5000, hash: 'RIV4', tx_json: { TransactionType: 'Batch', Account: RIVAL, Fee: '50', RawTransactions: [
+    { RawTransaction: { TransactionType: 'Payment', SendMax: '1000000', Amount: { currency: 'ZZZ', issuer: IZ, value: '5' } } },
+    { RawTransaction: { TransactionType: 'Payment', SendMax: { currency: 'ZZZ', issuer: IZ, value: '5' }, Amount: '1100000' } },
+  ] }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [] } });
+  await wait(10300);
+  const rs = bot.status().rivals;
+  const r3 = rs.find((r) => r.route === 'XRP → AAA → BBB → XRP');
+  assert.ok(r3.applied && r3.byBalance, JSON.stringify(r3));
+  assert.ok(r3.ammOnly && r3.hops === 3 && r3.ourRateAfter > 0);
+  const r4 = rs.find((r) => r.route.includes('ZZZ'));
+  assert.equal(r4.ammOnly, false); assert.match(r4.missingAmm, /XRP\/ZZZ/);
+  bot.stop();
+});
+
+await test('token/token pools unknown to the stream are found by asking for focus pairs', async () => {
+  const { L, bot } = setup();
+  const orig = L.request.bind(L);
+  // the pool list only shows the XRP pools – the AAA/BBB pool must be found by its pair
+  L.request = async (r) => { if (r.command === 'ledger_data') { const res = await orig(r); res.result.state = res.result.state.filter((o) => o.Account !== 'rPoolAB'); return res; } return orig(r); };
+  await bot.start();
+  for (let i = 0; i < 50 && bot.status().poolsReady < 2; i++) await wait(20);
+  bot._refocus();
+  for (let i = 0; i < 50 && bot.status().poolsReady < 3; i++) await wait(20);
+  assert.equal(bot.status().poolsReady, 3, 'AAA/BBB pool found via amm_info by pair');
+  assert.equal(bot.status().stats.poolsFromPairs, 1);
+  bot.stop();
 });
 
 console.log(`\n${passed} arb scenarios passed`);

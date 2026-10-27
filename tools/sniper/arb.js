@@ -27,13 +27,14 @@ export const ARB_GROUPS = [
     ['ARB_PAUSE', 'Pause trading', 'bool', '0', 'Keeps watching and recording, sends nothing'],
   ]],
   ['💰 Size & profit', [
-    ['ARB_MIN_PROFIT', 'Min. profit per cycle after fees (XRP)', 'num', '0.002', '', 0, 100],
+    ['ARB_MIN_PROFIT', 'Min. profit per cycle after fees (XRP)', 'num', '0.0005', '', 0, 100],
     ['ARB_MIN_SIZE', 'Min. size (XRP)', 'num', '0.1', '', 0.01, 1000],
     ['ARB_MAX_SIZE', 'Max. size (XRP)', 'num', '25', '', 0.1, 100000],
     ['ARB_FLOOR', 'Balance never used (XRP)', 'num', '5', '', 0, 1e6],
   ]],
   ['🎯 Focus', [
-    ['ARB_FOCUS', 'Focus mode', 'bool', '1', 'Only trade the top tokens + hyped ones + the rivals’ + your list (off = every pool)'],
+    ['ARB_FOCUS', 'Focus mode', 'bool', '1', 'Trust lines for the top tokens + hyped ones + the rivals’ + your list'],
+    ['ARB_FOCUS_ONLY', 'Search only focus tokens', 'bool', '0', 'Off = loops may run through any token; only the held one needs a line'],
     ['ARB_TOP_N', 'Top tokens by XRP liquidity', 'num', '30', '', 0, 500],
     ['ARB_HOT_GROWTH', 'Hype: pool XRP growth (%)', 'num', '30', '', 1, 10000],
     ['ARB_HOT_WINDOW_H', 'Hype: within (hours)', 'num', '6', '', 1, 72],
@@ -42,7 +43,7 @@ export const ARB_GROUPS = [
     ['ARB_TOKENS', 'Always include', 'text', '', 'e.g. FUZZY.rhCAT4hRdi2Y9puNdkpMzxrdKa5wkppR62, comma-separated'],
   ]],
   ['🔎 Search', [
-    ['ARB_MAX_HOPS', 'Max. pools per cycle', 'num', '4', '3–5; more = more loops, slower', 2, 5],
+    ['ARB_MAX_HOPS', 'Max. pools per cycle', 'num', '5', '3–5; more = more loops, slower', 2, 5],
     ['ARB_MIN_POOL_XRP', 'Min. pool depth (XRP, both sides)', 'num', '20', '', 0, 1e7],
     ['ARB_SLIP', 'Safety margin on the first leg (%)', 'num', '0.15', '', 0, 5],
   ]],
@@ -72,7 +73,8 @@ try {
 if (!wallet && !cfg.dryRun) { console.error('No ARB_WALLET_* key in .env – run setup-arb.sh (or set ARB_DRY_RUN=1).'); process.exit(1); }
 
 // ---------- connection (same fallback logic as the sniper) ----------
-const servers = (process.env.ARB_XRPL_WS || process.env.XRPL_WS || 'wss://xrplcluster.com,wss://s1.ripple.com,wss://s2.ripple.com').split(',').map((s) => s.trim()).filter(Boolean);
+// Ripple's servers first: xrplcluster.com rate-limits heavy use (amm_info lookups)
+const servers = (process.env.ARB_XRPL_WS || 'wss://s2.ripple.com,wss://s1.ripple.com,wss://xrplcluster.com').split(',').map((s) => s.trim()).filter(Boolean);
 let si = 0;
 let client = new Client(servers[si], { connectionTimeout: 15000 });
 const handlers = [];

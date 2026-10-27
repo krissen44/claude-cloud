@@ -56,11 +56,11 @@ export function readArbConfig(env = process.env) {
   return {
     dryRun: bool('ARB_DRY_RUN', false),
     paused: bool('ARB_PAUSE', false),
-    minProfit: num('ARB_MIN_PROFIT', 0.002), // XRP after fees
+    minProfit: num('ARB_MIN_PROFIT', 0.0005), // XRP after fees (bwif takes cycles of 0.0001–0.001 too)
     minSize: num('ARB_MIN_SIZE', 0.1),
     maxSize: num('ARB_MAX_SIZE', 25),
     floor: num('ARB_FLOOR', 5), // XRP never used
-    maxHops: num('ARB_MAX_HOPS', 4),
+    maxHops: num('ARB_MAX_HOPS', 5),
     minPoolXrp: num('ARB_MIN_POOL_XRP', 20), // pool depth (both sides, in XRP)
     slip: num('ARB_SLIP', 0.15), // % under the expected amount for the first payment
     feeDrops: num('ARB_FEE_DROPS', 50), // minimum fee per batch
@@ -68,7 +68,8 @@ export function readArbConfig(env = process.env) {
     maxFeesDay: num('ARB_MAX_FEES_DAY', 2), // XRP of fees per day, then pause until tomorrow
     maxLines: num('ARB_MAX_LINES', 20),
     // focus: only trade the top tokens by XRP liquidity + hyped ones + the rivals' + your own list
-    focus: bool('ARB_FOCUS', true),
+    focus: bool('ARB_FOCUS', true), // focus decides the trust lines
+    focusOnly: bool('ARB_FOCUS_ONLY', false), // … and, if on, also limits the search to focus tokens
     topN: num('ARB_TOP_N', 30),
     hotGrowth: num('ARB_HOT_GROWTH', 30), // % more XRP in the pool …
     hotWindowH: num('ARB_HOT_WINDOW_H', 6), // … within these hours …
@@ -76,8 +77,8 @@ export function readArbConfig(env = process.env) {
     hotKeepH: num('ARB_HOT_KEEP_H', 24), // stays in focus this long after it last qualified
     tokens: parseTokens(env.ARB_TOKENS),
     lineMinScore: num('ARB_LINE_MIN_SCORE', 0.01),
-    lastLedgers: num('ARB_LAST_LEDGERS', 3),
-    fetchPerSec: num('ARB_FETCH_PER_SEC', 8),
+    lastLedgers: num('ARB_LAST_LEDGERS', 1), // valid for the next ledger only (like bwif) – no stale tries
+    fetchPerSec: num('ARB_FETCH_PER_SEC', 5),
     watch,
     dataDir: env.ARB_DATA_DIR || path.join(process.env.HOME || '.', 'xrpl-arb-data'),
     discord: env.ARB_DISCORD_WEBHOOK || '',
@@ -101,7 +102,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
 
   const g = createGraph();
   const uni = createUniverse(g, cfg);
-  const allow = (a) => !cfg.focus || uni.has(a);
+  const allow = (a) => !(cfg.focus && cfg.focusOnly) || uni.has(a);
   const lines = new Set(S.lines);
   let reserves = { base: 1, inc: 0.2 };
   let acct = { balance: 0, seq: 0, owners: 0 };
@@ -184,7 +185,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
         if (o.LedgerEntryType && o.LedgerEntryType !== 'AMM') continue;
         const id = o.Account;
         const a = assetKey(o.Asset), b = assetKey(o.Asset2);
-        if (!g.pools.has(id) && (!cfg.focus || a === XRP || b === XRP)) want(id, a === XRP || b === XRP);
+        if (!g.pools.has(id)) want(id, a === XRP || b === XRP);
         g.upsert({ id, a, b, fee: (o.TradingFee || 0) / 1e5 });
         n++;
       }
@@ -202,25 +203,45 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   }
 
   // read pool balances in the background, XRP pools first
+  // Pools between two tokens never show up as AMMs in the stream (no XRP balance moves), and the
+  // full pool list can't be read from public servers – so token pairs are asked for directly:
+  // the pairs of every rival route and all pairs inside the focus.
+  const pairChecked = new Map(); // "a|b" → time of the last lookup
+  function wantPair(a, b) {
+    if (a === b) return;
+    const k = a < b ? `${a}|${b}` : `${b}|${a}`;
+    if (now() - (pairChecked.get(k) || 0) < 6 * 3600e3) return;
+    for (const id of g.adj.get(a) || []) if (g.other(g.pools.get(id), a) === b) return; // known
+    pairChecked.set(k, now());
+    want('pair:' + k);
+  }
   async function fetchLoop() {
     while (!stopped) {
       const id = queue.shift();
       if (!id) { await new Promise((r) => setTimeout(r, 500)); continue; }
       queued.delete(id);
       try {
-        const r = await req('amm_info', { amm_account: id, ledger_index: 'validated' });
+        const pair = id.startsWith('pair:') ? id.slice(5).split('|') : null;
+        const r = await req('amm_info', pair ? { asset: assetObj(pair[0]), asset2: assetObj(pair[1]), ledger_index: 'validated' } : { amm_account: id, ledger_index: 'validated' });
         const am = r.amm;
         const val = (x) => (typeof x === 'string' ? Number(x) / DROPS : Number(x.value));
         const k1 = assetKey(typeof am.amount === 'string' ? XRP : am.amount);
         const k2 = assetKey(typeof am.amount2 === 'string' ? XRP : am.amount2);
         const v1 = val(am.amount), v2 = val(am.amount2);
         const fee = (am.trading_fee || 0) / 1e5;
-        const p = g.pools.get(id);
-        if (!p) { g.upsert({ id, a: k1, b: k2, ra: v1, rb: v2, fee }); stat('poolsFromStream'); } // learned from the stream
-        else g.upsert(k1 === p.a ? { id, ra: v1, rb: v2, fee } : { id, ra: v2, rb: v1, fee });
+        const pid = pair ? am.account : id;
+        const p = g.pools.get(pid);
+        if (!p) { g.upsert({ id: pid, a: k1, b: k2, ra: v1, rb: v2, fee }); stat(pair ? 'poolsFromPairs' : 'poolsFromStream'); }
+        else g.upsert(k1 === p.a ? { id: pid, ra: v1, rb: v2, fee } : { id: pid, ra: v2, rb: v1, fee });
         stat('poolsFetched');
       } catch (e) {
-        if (/actNotFound|ammNotFound/i.test(String(e?.data?.error || e?.message))) g.remove(id);
+        const err = String(e?.data?.error || e?.message);
+        if (/tooBusy|slowDown|rate limit/i.test(err)) { // server says slow down: put it back and wait
+          stat('rateLimited');
+          if (id.startsWith('pair:')) pairChecked.delete(id.slice(5));
+          want(id);
+          await new Promise((r) => setTimeout(r, 15000));
+        } else if (!id.startsWith('pair:') && /actNotFound|ammNotFound/i.test(err)) g.remove(id);
       }
       await new Promise((r) => setTimeout(r, 1000 / cfg.fetchPerSec));
     }
@@ -262,7 +283,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     // our batch: the outer tx and its inner payments come through the stream
     if (inFlight) {
       if (hash === inFlight.hash) inFlight.outer = ev.meta.TransactionResult;
-      if (tx.Account === me && tx.ParentBatchID === inFlight.hash) inFlight.inner++;
+      if (tx.Account === me && (ev.meta.ParentBatchID || tx.ParentBatchID) === inFlight.hash) inFlight.inner++;
     }
     if (cfg.watch.has(tx.Account)) watchRival(tx, ev, hash);
     clearTimeout(timer);
@@ -322,24 +343,25 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     const T = o.assets[i];
     const first = o.hops.slice(0, i + 1);
     const second = o.hops.slice(i + 1);
-    const q1Exp = cycleOut(g, first, o.x);
-    const q1 = q1Exp * (1 - cfg.slip / 100);
-    const outExp = cycleOut(g, second, q1);
+    const outExp = cycleOut(g, second, cycleOut(g, first, o.x));
     const feeXrp = feeDrops / DROPS;
     const minBack = o.x + feeXrp + cfg.minProfit;
     if (outExp < minBack) return null;
     const pathOf = (hops) => hops.slice(0, -1).map((h) => assetObj(h.to));
     const tok = assetObj(T);
+    // Like the bwif bots: leg 1 spends exactly the stake and takes whatever T it buys (partial
+    // payment, no amount to guess); leg 2 sells all T and must bring back stake + fee + min profit,
+    // else the whole batch does nothing.
     const p1 = {
       TransactionType: 'Payment', Account: me, Destination: me,
-      Amount: { ...tok, value: iou(q1) }, SendMax: drops(o.x),
-      Flags: TF_INNER | (first.length > 1 ? TF_NO_DIRECT : 0),
+      Amount: { ...tok, value: '9999999999999999e80' }, SendMax: drops(o.x),
+      Flags: TF_INNER | TF_PARTIAL | (first.length > 1 ? TF_NO_DIRECT : 0),
       ...(first.length > 1 ? { Paths: [pathOf(first)] } : {}),
       Sequence: acct.seq + 1, Fee: '0', SigningPubKey: '',
     };
     const p2 = {
       TransactionType: 'Payment', Account: me, Destination: me,
-      Amount: drops(outExp * 1.2), DeliverMin: drops(minBack), SendMax: { ...tok, value: iou(q1) },
+      Amount: '999999999999999', DeliverMin: drops(minBack), SendMax: { ...tok, value: '9999999999999999e80' },
       Flags: TF_INNER | TF_PARTIAL | (second.length > 1 ? TF_NO_DIRECT : 0),
       ...(second.length > 1 ? { Paths: [pathOf(second)] } : {}),
       Sequence: acct.seq + 2, Fee: '0', SigningPubKey: '',
@@ -406,11 +428,12 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       const inner = (tx.RawTransactions || []).map((r) => r.RawTransaction);
       const pays = inner.filter((t) => t.TransactionType === 'Payment');
       const route = [];
+      const keys = [];
       for (const p of pays) {
-        const from = typeof p.SendMax === 'string' ? 'XRP' : name(assetKey(p.SendMax));
-        if (!route.length) route.push(from);
-        for (const step of p.Paths?.[0] || []) route.push(step.currency ? name(assetKey(step)) : '?');
-        route.push(typeof p.Amount === 'string' ? 'XRP' : name(assetKey(p.Amount)));
+        const from = typeof p.SendMax === 'string' ? XRP : assetKey(p.SendMax);
+        if (!keys.length) keys.push(from);
+        for (const step of p.Paths?.[0] || []) if (step.currency) keys.push(assetKey(step));
+        keys.push(typeof p.Amount === 'string' ? XRP : assetKey(p.Amount));
         // the token they hold between the two payments deserves a trust line here too
         if (typeof p.Amount !== 'string') S.hot[assetKey(p.Amount)] = (S.hot[assetKey(p.Amount)] || 0) + 0.02;
         if (typeof p.Amount !== 'string') uni.noteRival(assetKey(p.Amount));
@@ -418,12 +441,15 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       }
       const early = innerEarly.get(hash);
       innerEarly.delete(hash);
-      rivalBatches.set(hash, { t: now(), who, ledger: ev.ledger_index, route: route.join(' → '), pnl: early ? early.d : 0, applied: !!early, fee: Number(tx.Fee) / DROPS });
+      for (const k of keys) route.push(name(k));
+      for (let i = 0; i < keys.length - 1; i++) wantPair(keys[i], keys[i + 1]);
+      rivalBatches.set(hash, { t: now(), who, acct: tx.Account, ledger: ev.ledger_index, route: route.join(' → '), pnl: early ? early.d : 0, applied: !!early, inner: !!early, fee: Number(tx.Fee) / DROPS, ...ourView(keys) });
       setTimeout(() => closeRival(hash), 10000);
       stat('rivalBatches');
       return;
     }
-    if (!tx.ParentBatchID) return;
+    const parent = ev.meta.ParentBatchID || tx.ParentBatchID; // the ledger puts it in the metadata
+    if (!parent) return;
     let d = 0;
     for (const n of ev.meta.AffectedNodes || []) {
       const node = n.ModifiedNode;
@@ -431,18 +457,50 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
         d += (Number(node.FinalFields.Balance) - Number(node.PreviousFields.Balance)) / DROPS;
       }
     }
-    const r = rivalBatches.get(tx.ParentBatchID);
-    if (r) { r.applied = true; r.pnl += d; return; }
+    const r = rivalBatches.get(parent);
+    if (r) { r.applied = true; r.inner = true; r.pnl += d; return; }
     // inner payments can arrive before their batch – keep them until it does
-    const b = innerEarly.get(tx.ParentBatchID) || { d: 0, n: 0, at: now() };
+    const b = innerEarly.get(parent) || { d: 0, n: 0, at: now() };
     b.d += d; b.n++;
-    innerEarly.set(tx.ParentBatchID, b);
+    innerEarly.set(parent, b);
     for (const [k, v] of innerEarly) if (now() - v.at > 30000) innerEarly.delete(k);
   }
-  function closeRival(hash) {
+  // Does our model know the rival's route? Each step needs an AMM pool (else they used an order
+  // book), and the tokens/hops must be inside our limits – this tells why we miss their cycles.
+  function ourView(keys) {
+    const missing = [];
+    const outFocus = [];
+    let rate = 1;
+    for (let i = 0; i < keys.length - 1; i++) {
+      const a = keys[i], b = keys[i + 1];
+      let best = null;
+      for (const id of g.adj.get(a) || []) {
+        const p = g.pools.get(id);
+        if (p?.ready && g.other(p, a) === b && (!best || g.depth(p) > g.depth(best))) best = p;
+      }
+      if (!best) { missing.push(`${name(a)}/${name(b)}`); continue; }
+      rate *= (g.resOf(best, b) / g.resOf(best, a)) * (1 - best.fee);
+      if (b !== XRP && !uni.has(b)) outFocus.push(name(b));
+    }
+    return {
+      hops: keys.length - 1,
+      ammOnly: missing.length === 0,
+      missingAmm: missing.join(' '),
+      ourRateAfter: missing.length ? null : +rate.toFixed(5), // after their trade: ≈1 or below means they took it
+      notInFocus: [...new Set(outFocus)].join(' '),
+      tooLong: keys.length - 1 > cfg.maxHops,
+    };
+  }
+  const balAt = async (acct, l) => Number((await req('account_info', { account: acct, ledger_index: l })).account_data.Balance) / DROPS;
+  async function closeRival(hash) {
     const r = rivalBatches.get(hash);
     if (!r) return;
     rivalBatches.delete(hash);
+    // the stream may not carry the inner payments: then the balance change in that ledger tells
+    if (!r.inner && r.acct && r.ledger) {
+      try { r.pnl = (await balAt(r.acct, r.ledger)) - (await balAt(r.acct, r.ledger - 1)) + r.fee; r.applied = r.pnl > 1e-9; r.byBalance = true; } catch {}
+    }
+    delete r.acct;
     r.pnl = +(r.pnl - r.fee).toFixed(6);
     if (r.applied) { stat('rivalWins'); S.stats.rivalProfit = (S.stats.rivalProfit || 0) + r.pnl; }
     S.rivals.unshift(r);
@@ -457,6 +515,8 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   function refocus() {
     uni.recompute();
     if (!cfg.focus) return;
+    const f = [...uni.set()];
+    for (let i = 0; i < f.length; i++) for (let j = i + 1; j < f.length; j++) wantPair(f[i], f[j]);
     // token/token pools between two focus tokens are read now (XRP pools were read first)
     for (const tok of uni.set()) {
       for (const id of g.adj.get(tok) || []) {
