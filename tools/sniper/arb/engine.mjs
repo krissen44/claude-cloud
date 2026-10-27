@@ -175,8 +175,8 @@ function pathsFrom(g, source, maxLen, ok) {
 }
 
 // All cycles of up to maxHops pools that use at least one of the `changed` pools.
-export function findCycles(g, changed, { maxHops = 4, minDepthXrp = 0, minRate = 1, maxPairs = 200000 } = {}) {
-  const ok = (p) => p?.ready && (!minDepthXrp || g.depth(p) >= minDepthXrp);
+export function findCycles(g, changed, { maxHops = 4, minDepthXrp = 0, minRate = 1, maxPairs = 200000, allow = null } = {}) {
+  const ok = (p) => p?.ready && (!minDepthXrp || g.depth(p) >= minDepthXrp) && (!allow || (allow(p.a) && allow(p.b)));
   const found = new Map();
   for (const id of changed) {
     const p = g.pools.get(id);

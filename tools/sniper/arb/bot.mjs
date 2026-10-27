@@ -9,6 +9,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { XRP, assetKey, assetObj, createGraph, applyMeta, findCycles, bestSize, cycleOut } from './engine.mjs';
+import { createUniverse } from './universe.mjs';
+
+// "FUZZY.rhCAT…" / "4655…(hex).rhCAT…" → asset key with the ledger's currency code
+export function parseTokens(s) {
+  const out = [];
+  for (const part of String(s || '').split(/[\s,]+/).filter(Boolean)) {
+    const [cur, iss] = part.split(/[.:]/);
+    if (!cur || !/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(iss || '')) continue;
+    const code = cur.length === 3 || /^[0-9A-F]{40}$/i.test(cur) ? cur.toUpperCase() : Buffer.from(cur, 'utf8').toString('hex').toUpperCase().padEnd(40, '0');
+    out.push(`${code}.${iss}`);
+  }
+  return out;
+}
 
 const TF_INNER = 0x40000000;
 const TF_ALL_OR_NOTHING = 0x00010000;
@@ -50,11 +63,20 @@ export function readArbConfig(env = process.env) {
     maxHops: num('ARB_MAX_HOPS', 4),
     minPoolXrp: num('ARB_MIN_POOL_XRP', 20), // pool depth (both sides, in XRP)
     slip: num('ARB_SLIP', 0.15), // % under the expected amount for the first payment
-    feeDrops: num('ARB_FEE_DROPS', 50),
+    feeDrops: num('ARB_FEE_DROPS', 50), // minimum fee per batch
+    maxFeeDrops: num('ARB_MAX_FEE_DROPS', 2000), // never pay more than this per batch (busy ledgers cost more)
     maxFeesDay: num('ARB_MAX_FEES_DAY', 2), // XRP of fees per day, then pause until tomorrow
-    maxLines: num('ARB_MAX_LINES', 25),
+    maxLines: num('ARB_MAX_LINES', 20),
+    // focus: only trade the top tokens by XRP liquidity + hyped ones + the rivals' + your own list
+    focus: bool('ARB_FOCUS', true),
+    topN: num('ARB_TOP_N', 30),
+    hotGrowth: num('ARB_HOT_GROWTH', 30), // % more XRP in the pool …
+    hotWindowH: num('ARB_HOT_WINDOW_H', 6), // … within these hours …
+    hotMinTrades: num('ARB_HOT_MIN_TRADES', 20), // … with at least this many trades
+    hotKeepH: num('ARB_HOT_KEEP_H', 24), // stays in focus this long after it last qualified
+    tokens: parseTokens(env.ARB_TOKENS),
     lineMinScore: num('ARB_LINE_MIN_SCORE', 0.01),
-    lastLedgers: num('ARB_LAST_LEDGERS', 2),
+    lastLedgers: num('ARB_LAST_LEDGERS', 3),
     fetchPerSec: num('ARB_FETCH_PER_SEC', 8),
     watch,
     dataDir: env.ARB_DATA_DIR || path.join(process.env.HOME || '.', 'xrpl-arb-data'),
@@ -78,11 +100,26 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   const append = (file, obj) => { try { fs.appendFileSync(path.join(cfg.dataDir, `${file}-${month()}.jsonl`), JSON.stringify(obj) + '\n'); } catch {} };
 
   const g = createGraph();
+  const uni = createUniverse(g, cfg);
+  const allow = (a) => !cfg.focus || uni.has(a);
   const lines = new Set(S.lines);
   let reserves = { base: 1, inc: 0.2 };
   let acct = { balance: 0, seq: 0, owners: 0 };
   let ledger = 0;
   let inFlight = null;
+  // Fees: a busy ledger needs more than the minimum, or the batch is refused (telCAN_NOT_QUEUE).
+  // The open-ledger fee level is read every ledger; a batch (2 inner payments) costs 4 × base.
+  let feeLvl = { base: 10, open: 256, ref: 256, at: 0 };
+  async function updateFee() {
+    try {
+      const r = await req('fee');
+      feeLvl = { base: Number(r.drops?.base_fee || 10), open: Number(r.levels?.open_ledger_level || 256), ref: Number(r.levels?.reference_level || 256), at: now() };
+    } catch {}
+  }
+  const batchFee = () => Math.ceil(Math.max(cfg.feeDrops, feeLvl.base * 4 * (feeLvl.open / feeLvl.ref) * 1.25));
+  // Sequence numbers: a trust line or a refused batch makes our cached sequence stale.
+  let seqDirty = true;
+  let lineBusy = false;
   let activated = null;
   let stopped = false;
 
@@ -147,7 +184,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
         if (o.LedgerEntryType && o.LedgerEntryType !== 'AMM') continue;
         const id = o.Account;
         const a = assetKey(o.Asset), b = assetKey(o.Asset2);
-        if (!g.pools.has(id)) want(id, a === XRP || b === XRP);
+        if (!g.pools.has(id) && (!cfg.focus || a === XRP || b === XRP)) want(id, a === XRP || b === XRP);
         g.upsert({ id, a, b, fee: (o.TradingFee || 0) / 1e5 });
         n++;
       }
@@ -158,6 +195,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     savePools();
     discovering = false;
     say(`🗺️ ${n} AMM pools on the ledger`);
+    uni.snapshot(); refocus();
   }
   function savePools() {
     try { fs.writeFileSync(poolFile, JSON.stringify([...g.pools.values()].map((p) => ({ id: p.id, a: p.a, b: p.b, fee: p.fee })))); } catch {}
@@ -200,7 +238,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     lines.clear();
     do {
       const r = await req('account_lines', { account: me, ledger_index: 'validated', limit: 400, ...(marker ? { marker } : {}) });
-      for (const l of r.lines || []) lines.add(`${l.currency}.${l.account}`);
+      for (const l of r.lines || []) { lines.add(`${l.currency}.${l.account}`); lineBal.set(`${l.currency}.${l.account}`, Math.abs(Number(l.balance))); }
       marker = r.marker;
     } while (marker);
     S.lines = [...lines];
@@ -211,13 +249,16 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   let changed = new Set();
   let timer = null;
   const rivalBatches = new Map(); // parent hash → record
+  const innerEarly = new Map(); // parent hash → inner payments seen before their batch
 
   function onTransaction(ev) {
     const tx = ev.tx_json || ev.transaction;
     if (!tx || !ev.validated || !ev.meta) return;
     if (ev.ledger_index > ledger) ledger = ev.ledger_index;
     const hash = ev.hash || tx.hash;
-    for (const id of applyMeta(g, ev.meta, (nid) => want(nid, true))) changed.add(id);
+    const moved = applyMeta(g, ev.meta, (nid) => want(nid, true));
+    for (const id of moved) changed.add(id);
+    uni.noteChanged(moved);
     // our batch: the outer tx and its inner payments come through the stream
     if (inFlight) {
       if (hash === inFlight.hash) inFlight.outer = ev.meta.TransactionResult;
@@ -233,13 +274,16 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (stopped) return;
     stat('ledgers');
     if (inFlight) await settle();
+    updateFee(); // for the next ledger
     const ch = changed;
     changed = new Set();
     if (!ch.size) return;
     const t0 = now();
-    const cycles = findCycles(g, ch, { maxHops: cfg.maxHops, minDepthXrp: cfg.minPoolXrp, minRate: 1.0005 });
+    const cycles = findCycles(g, ch, { maxHops: cfg.maxHops, minDepthXrp: cfg.minPoolXrp, minRate: 1.0005, allow });
     stat('cyclesSeen', cycles.length);
-    const feeXrp = cfg.feeDrops / DROPS;
+    const feeDrops = batchFee();
+    const feeXrp = feeDrops / DROPS;
+    if (feeDrops > cfg.maxFeeDrops) { stat('skippedFeeHigh'); }
     const room = Math.min(cfg.maxSize, Math.max(0, available()));
     const opps = [];
     for (const c of cycles) {
@@ -268,11 +312,12 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (cfg.paused || cfg.dryRun || room < cfg.minSize) { stat(cfg.paused ? 'skippedPaused' : room < cfg.minSize ? 'skippedNoRoom' : 'dryRunOpps'); return; }
     if (S.day !== day()) { S.day = day(); S.dayFees = 0; }
     if (S.dayFees >= cfg.maxFeesDay) { stat('skippedFeeCap'); return; }
-    if (inFlight) { stat('skippedBusy'); return; } // one batch at a time (sequence numbers)
-    await execute(best);
+    if (inFlight || lineBusy) { stat('skippedBusy'); return; } // one transaction at a time (sequence numbers)
+    if (feeDrops > cfg.maxFeeDrops) return;
+    await execute(best, feeDrops);
   }
 
-  function buildBatch(o) {
+  function buildBatch(o, feeDrops) {
     const i = o.held;
     const T = o.assets[i];
     const first = o.hops.slice(0, i + 1);
@@ -280,7 +325,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     const q1Exp = cycleOut(g, first, o.x);
     const q1 = q1Exp * (1 - cfg.slip / 100);
     const outExp = cycleOut(g, second, q1);
-    const feeXrp = cfg.feeDrops / DROPS;
+    const feeXrp = feeDrops / DROPS;
     const minBack = o.x + feeXrp + cfg.minProfit;
     if (outExp < minBack) return null;
     const pathOf = (hops) => hops.slice(0, -1).map((h) => assetObj(h.to));
@@ -302,27 +347,29 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     return {
       TransactionType: 'Batch', Account: me, Flags: TF_ALL_OR_NOTHING,
       RawTransactions: [{ RawTransaction: p1 }, { RawTransaction: p2 }],
-      Sequence: acct.seq, Fee: String(cfg.feeDrops), LastLedgerSequence: ledger + 1 + cfg.lastLedgers,
+      Sequence: acct.seq, Fee: String(feeDrops), LastLedgerSequence: ledger + 1 + cfg.lastLedgers,
     };
   }
 
-  async function execute(o) {
+  async function execute(o, feeDrops = cfg.feeDrops) {
     if (!acct.seq) return; // wallet not activated yet
-    const tx = buildBatch(o);
+    if (seqDirty) { try { await refreshAccount(); seqDirty = false; } catch { return; } }
+    const tx = buildBatch(o, feeDrops);
     if (!tx) return;
     let signed;
     try { signed = wallet.sign(tx); } catch (e) { say(`⚠️ sign failed: ${e.message}`); return; }
     const route = ['XRP', ...o.assets.map(name), 'XRP'].join(' → ');
-    inFlight = { hash: signed.hash, o, route, at: now(), sentLedger: ledger, last: tx.LastLedgerSequence, balance: acct.balance, inner: 0, outer: null };
+    inFlight = { hash: signed.hash, o, route, at: now(), sentLedger: ledger, last: tx.LastLedgerSequence, balance: acct.balance, inner: 0, outer: null, fee: feeDrops };
     stat('attempts');
-    S.dayFees += cfg.feeDrops / DROPS;
+    S.dayFees += feeDrops / DROPS;
     try {
       const r = await req('submit', { tx_blob: signed.tx_blob });
       inFlight.prelim = r.engine_result;
       if (!/^(tesSUCCESS|terQUEUED)$/.test(r.engine_result)) {
         stat('rejected');
         append('trades', { t: now(), route, x: o.x, expected: o.net, result: r.engine_result, applied: false });
-        if (/^tef|^ter|^tel/.test(r.engine_result)) await refreshAccount().catch(() => {});
+        S.dayFees -= feeDrops / DROPS; // refused = not charged
+        seqDirty = true;
         inFlight = null;
       }
     } catch (e) {
@@ -342,7 +389,8 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     stat(applied ? 'wins' : f.outer ? 'notApplied' : 'expired');
     if (!applied) failed(f.o);
     if (applied) S.stats.profit = (S.stats.profit || 0) + pnl;
-    S.stats.fees = (S.stats.fees || 0) + (f.outer ? cfg.feeDrops / DROPS : 0);
+    S.stats.fees = (S.stats.fees || 0) + (f.outer ? f.fee / DROPS : 0);
+    seqDirty = false; // refreshAccount above read the current sequence
     const rec = { t: now(), route: f.route, hops: f.o.hops.length, x: +f.o.x.toFixed(4), expected: +f.o.net.toFixed(6), pnl: +pnl.toFixed(6), applied, result: f.outer || 'expired', ledgers: ledger - f.sentLedger, held: name(f.o.assets[f.o.held]) };
     S.trades.unshift(rec);
     S.trades = S.trades.slice(0, 100);
@@ -365,21 +413,31 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
         route.push(typeof p.Amount === 'string' ? 'XRP' : name(assetKey(p.Amount)));
         // the token they hold between the two payments deserves a trust line here too
         if (typeof p.Amount !== 'string') S.hot[assetKey(p.Amount)] = (S.hot[assetKey(p.Amount)] || 0) + 0.02;
+        if (typeof p.Amount !== 'string') uni.noteRival(assetKey(p.Amount));
+        for (const step of p.Paths?.[0] || []) if (step.currency) uni.noteRival(assetKey(step));
       }
-      rivalBatches.set(hash, { t: now(), who, ledger: ev.ledger_index, route: route.join(' → '), pnl: 0, applied: false, fee: Number(tx.Fee) / DROPS });
+      const early = innerEarly.get(hash);
+      innerEarly.delete(hash);
+      rivalBatches.set(hash, { t: now(), who, ledger: ev.ledger_index, route: route.join(' → '), pnl: early ? early.d : 0, applied: !!early, fee: Number(tx.Fee) / DROPS });
       setTimeout(() => closeRival(hash), 10000);
       stat('rivalBatches');
       return;
     }
-    const r = rivalBatches.get(tx.ParentBatchID);
-    if (!r) return;
-    r.applied = true;
+    if (!tx.ParentBatchID) return;
+    let d = 0;
     for (const n of ev.meta.AffectedNodes || []) {
       const node = n.ModifiedNode;
       if (node?.LedgerEntryType === 'AccountRoot' && node.FinalFields?.Account === tx.Account && node.PreviousFields?.Balance != null) {
-        r.pnl += (Number(node.FinalFields.Balance) - Number(node.PreviousFields.Balance)) / DROPS;
+        d += (Number(node.FinalFields.Balance) - Number(node.PreviousFields.Balance)) / DROPS;
       }
     }
+    const r = rivalBatches.get(tx.ParentBatchID);
+    if (r) { r.applied = true; r.pnl += d; return; }
+    // inner payments can arrive before their batch – keep them until it does
+    const b = innerEarly.get(tx.ParentBatchID) || { d: 0, n: 0, at: now() };
+    b.d += d; b.n++;
+    innerEarly.set(tx.ParentBatchID, b);
+    for (const [k, v] of innerEarly) if (now() - v.at > 30000) innerEarly.delete(k);
   }
   function closeRival(hash) {
     const r = rivalBatches.get(hash);
@@ -392,23 +450,53 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     append('rivals', r);
   }
 
-  // ---------- trust lines for the hottest tokens ----------
-  async function manageLines() {
-    if (inFlight || cfg.dryRun || stopped) return;
-    for (const k of Object.keys(S.hot)) { S.hot[k] *= 0.97; if (S.hot[k] < 1e-4) delete S.hot[k]; }
-    const cand = Object.entries(S.hot).filter(([k]) => !lines.has(k) && k !== XRP).sort((a, b) => b[1] - a[1])[0];
-    if (!cand || cand[1] < cfg.lineMinScore) return;
-    if (lines.size >= cfg.maxLines) return;
-    if (available() < reserves.inc + cfg.minSize) return;
-    try {
-      const r = await client.submitAndWait({ TransactionType: 'TrustSet', Account: me, Flags: TF_SET_NO_RIPPLE, LimitAmount: { ...assetObj(cand[0]), value: '9999999999999999e80' } }, { wallet, autofill: true });
-      if (r.result.meta?.TransactionResult === 'tesSUCCESS') {
-        lines.add(cand[0]);
-        S.lines = [...lines];
-        stat('linesAdded');
-        say(`🔗 trust line for ${name(cand[0])} (score ${cand[1].toFixed(3)})`);
+  // ---------- focus set + trust lines ----------
+  // The token held between the two payments needs a trust line, so lines are kept for the focus
+  // tokens up front (in priority order, up to ARB_MAX_LINES); tokens that left the focus give
+  // their line back (0.2 XRP reserve) once its balance is zero.
+  function refocus() {
+    uni.recompute();
+    if (!cfg.focus) return;
+    // token/token pools between two focus tokens are read now (XRP pools were read first)
+    for (const tok of uni.set()) {
+      for (const id of g.adj.get(tok) || []) {
+        const p = g.pools.get(id);
+        if (p && !p.ready && uni.has(p.a) && uni.has(p.b)) want(id, true);
       }
-    } catch (e) { say(`⚠️ trust line ${name(cand[0])}: ${e.message}`); }
+    }
+  }
+  const lineBal = new Map();
+  async function trustSet(asset, limit) {
+    lineBusy = true;
+    try {
+      const r = await client.submitAndWait({ TransactionType: 'TrustSet', Account: me, Flags: TF_SET_NO_RIPPLE, LimitAmount: { ...assetObj(asset), value: limit } }, { wallet, autofill: true });
+      return r.result.meta?.TransactionResult === 'tesSUCCESS';
+    } catch (e) { say(`⚠️ trust line ${name(asset)}: ${e.message}`); return false; }
+    finally { seqDirty = true; lineBusy = false; }
+  }
+  async function manageLines() {
+    if (inFlight || lineBusy || cfg.dryRun || stopped || !acct.seq) return;
+    for (const k of Object.keys(S.hot)) { S.hot[k] *= 0.97; if (S.hot[k] < 1e-4) delete S.hot[k]; }
+    const wantList = cfg.focus
+      ? uni.priority().filter((k) => g.xrpPool.has(k)).slice(0, cfg.maxLines)
+      : Object.entries(S.hot).filter(([k, v]) => k !== XRP && v >= cfg.lineMinScore).sort((a, b) => b[1] - a[1]).map(([k]) => k).slice(0, cfg.maxLines);
+    const next = wantList.find((k) => !lines.has(k));
+    if (!next) return;
+    if (lines.size >= cfg.maxLines) {
+      // make room: give back a line that left the focus and holds nothing
+      const drop = [...lines].find((k) => !wantList.includes(k) && !(lineBal.get(k) > 0));
+      if (!drop) return;
+      if (await trustSet(drop, '0')) { lines.delete(drop); S.lines = [...lines]; stat('linesRemoved'); say(`✂️ trust line ${name(drop)} removed (left the focus)`); }
+      await refreshAccount().catch(() => {});
+      return;
+    }
+    if (available() < reserves.inc + cfg.minSize) return;
+    if (await trustSet(next, '9999999999999999e80')) {
+      lines.add(next);
+      S.lines = [...lines];
+      stat('linesAdded');
+      say(`🔗 trust line for ${name(next)}`);
+    }
     await refreshAccount().catch(() => {});
     save();
   }
@@ -439,7 +527,11 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     await client.request({ command: 'subscribe', streams: ['transactions'] });
     fetchLoop();
     discover().catch((e) => { discovering = false; say(`⚠️ pool discovery: ${e.message}`); });
-    timers.push(setInterval(() => manageLines(), 60000));
+    timers.push(setInterval(() => manageLines(), 15000));
+    timers.push(setInterval(() => uni.snapshot(), 300000));
+    timers.push(setInterval(() => refocus(), 120000));
+    timers.push(setInterval(() => refreshLines().catch(() => {}), 600000));
+    setTimeout(() => { uni.snapshot(); refocus(); }, 20000);
     timers.push(setInterval(() => { save(); savePools(); }, 600000));
     say(`🤖 Arb bot running${cfg.dryRun ? ' (DRY RUN)' : ''} – wallet ${me}, ${acct.balance.toFixed(2)} XRP, ${lines.size} trust lines`);
   }
@@ -453,6 +545,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       available: Math.max(0, available()), ledger, pools: g.pools.size, poolsReady: ready, queue: queue.length, discovering,
       stats: S.stats, dayFees: S.dayFees, maxFeesDay: cfg.maxFeesDay, trades: S.trades.slice(0, 50), rivals: S.rivals.slice(0, 40),
       lines: [...lines].map(name), hot: Object.entries(S.hot).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k, v]) => ({ token: name(k), score: +v.toFixed(4), line: lines.has(k) })),
+      focus: cfg.focus, focusList: uni.list().slice(0, 60).map((x) => ({ ...x, token: name(x.tok), line: lines.has(x.tok) })),
       watching: [...cfg.watch.values()], inFlight: inFlight ? inFlight.route : null, activated: activated !== false,
     };
   }
@@ -464,5 +557,5 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     return out;
   };
 
-  return { start, stop, resubscribe, status, onTransaction, onLedgerDone, readJsonl, graph: g, say, _manageLines: manageLines, _loadWallet: loadWallet, _state: () => S, _lines: lines, _acct: () => acct };
+  return { start, stop, resubscribe, status, onTransaction, onLedgerDone, readJsonl, graph: g, say, _manageLines: manageLines, _loadWallet: loadWallet, _refocus: refocus, _uni: uni, _state: () => S, _lines: lines, _acct: () => acct };
 }

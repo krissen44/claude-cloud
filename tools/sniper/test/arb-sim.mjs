@@ -82,6 +82,7 @@ class Ledger {
     const c = r.command;
     const ok = (result) => ({ result });
     if (c === 'subscribe') return ok({});
+    if (c === 'fee') { if (!this.openLevel) throw new Error('no fee info'); return ok({ drops: { base_fee: '10' }, levels: { open_ledger_level: String(this.openLevel), reference_level: '256' } }); }
     if (c === 'server_info') return ok({ info: { validated_ledger: { reserve_base_xrp: 1, reserve_inc_xrp: 0.2, seq: this.index } } });
     if (c === 'account_info' && r.account !== this.me) return ok({ account_data: { Account: r.account, Flags: 0, ...(this.issuerFee?.[r.account] ? { TransferRate: 1e9 * (1 + this.issuerFee[r.account]) } : {}) } });
     if (c === 'account_info') return ok({ account_data: { Account: this.me, Balance: String(Math.round(this.acct.balance * D)), Sequence: this.acct.seq, OwnerCount: this.acct.owners } });
@@ -102,7 +103,8 @@ class Ledger {
   submit(blob) {
     const tx = decode(blob);
     this.sent.push(tx);
-    if (tx.Sequence !== this.acct.seq) return { engine_result: 'tefPAST_SEQ' };
+    if (tx.Sequence !== this.acct.seq) { this.pastSeq = (this.pastSeq || 0) + 1; return { engine_result: 'tefPAST_SEQ' }; }
+    if (this.refuseNext) { this.refuseNext--; return { engine_result: 'telCAN_NOT_QUEUE' }; }
     if (this.beforeApply) this.beforeApply(tx);
     // apply in the next ledger
     setTimeout(() => this.applyBatch(tx), 30);
@@ -177,7 +179,12 @@ function setup(env = {}) {
   wallet.sign = (tx) => { const s = sign(tx); L.outerHash = s.hash; return s; };
   return { L, bot, cfg, logs, wallet };
 }
-const ready = async (bot) => { for (let i = 0; i < 50 && bot.status().poolsReady < 3; i++) await wait(20); };
+const ready = async (bot) => {
+  for (let i = 0; i < 50 && bot.status().poolsReady < 2; i++) await wait(20); // XRP pools first
+  bot._refocus(); // focus known → the AAA/BBB pool between two focus tokens is read too
+  for (let i = 0; i < 50 && bot.status().poolsReady < 3; i++) await wait(20);
+  bot._refocus();
+};
 
 await test('discovers pools, reads balances, finds a loop after a trade moves a pool', async () => {
   const { L, bot } = setup();
@@ -326,6 +333,84 @@ await test('fee cap and pause stop sending but keep recording', async () => {
   assert.ok(bot.status().stats.skippedPaused >= 1);
   assert.ok(bot.readJsonl('opps').length >= 2, 'opportunities recorded');
   bot.stop();
+});
+
+await test('busy ledger: fee follows the open-ledger level, too expensive = skipped', async () => {
+  const { L, bot } = setup({ ARB_MAX_FEE_DROPS: '500' });
+  L.openLevel = 256 * 5; // ledger is busy: 5× the normal cost
+  await bot.start();
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(250);
+  await bot._manageLines(); await bot._manageLines();
+  L.trade('rPoolAB', B, 1e6); await wait(400);
+  assert.ok(L.sent.length >= 1);
+  assert.equal(Number(L.sent[0].Fee), Math.ceil(10 * 4 * 5 * 1.25), 'fee raised to get into the open ledger');
+  L.openLevel = 256 * 50; // way too busy
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  const sentBefore = L.sent.length;
+  L.trade('rPoolAB', B, 1e6); await wait(300);
+  L.trade('rPoolAB', B, 1e6); await wait(300);
+  assert.ok(bot.status().stats.skippedFeeHigh >= 1);
+  assert.equal(L.sent.length, sentBefore, 'nothing sent while the fee is above the max');
+  bot.stop();
+});
+
+await test('refused batch / trust line → sequence re-read, never tefPAST_SEQ', async () => {
+  const { L, bot } = setup();
+  await bot.start();
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(250);
+  await bot._manageLines(); // trust line uses a sequence number
+  L.refuseNext = 1;
+  L.trade('rPoolAB', B, 1e6); await wait(300); // refused (telCAN_NOT_QUEUE)
+  await bot._manageLines(); // second trust line
+  L.trade('rPoolAB', B, 1e6); await wait(400);
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  assert.equal(L.pastSeq || 0, 0, 'no stale sequence');
+  assert.ok(bot.status().stats.rejected === 1);
+  assert.ok(bot.status().stats.wins >= 1, JSON.stringify(bot.status().stats));
+  bot.stop();
+});
+
+await test('rival: inner payments arriving before the batch still count', async () => {
+  const { L, bot } = setup();
+  await bot.start();
+  L.emit('transaction', { validated: true, ledger_index: 2001, hash: 'RIVi2', tx_json: { TransactionType: 'Payment', Account: RIVAL, ParentBatchID: 'RIV2' }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [{ ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: RIVAL, Balance: '10200000' }, PreviousFields: { Balance: '10000000' } } }] } });
+  L.emit('transaction', { validated: true, ledger_index: 2001, hash: 'RIV2', tx_json: { TransactionType: 'Batch', Account: RIVAL, Fee: '50', RawTransactions: [] }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [] } });
+  await wait(10200);
+  const r = bot.status().rivals[0];
+  assert.ok(r.applied && Math.abs(r.pnl - 0.19995) < 1e-6, JSON.stringify(r));
+  bot.stop();
+});
+
+await test('focus: top by liquidity, hype detection, other tokens ignored, lines follow the focus', async () => {
+  const { L, bot } = setup({ ARB_TOP_N: '2', ARB_HOT_MIN_TRADES: '3', ARB_MAX_LINES: '2' });
+  const IC = Wallet.generate().address;
+  const C = `CCC.${IC}`;
+  L.pool('rPoolXC', 'XRP', C, 50, 1e6); // small pool, not top 2
+  await bot.start();
+  for (let i = 0; i < 50 && bot.status().poolsReady < 3; i++) await wait(20);
+  bot._uni.snapshot(); bot._refocus();
+  let list = bot.status().focusList.map((x) => x.token);
+  assert.deepEqual(list.sort(), ['AAA', 'BBB'], 'top 2 by XRP liquidity');
+  // CCC gets hyped: lots of buying, pool XRP +100 %
+  for (let i = 0; i < 5; i++) L.trade('rPoolXC', 'XRP', 10);
+  await wait(200);
+  bot._uni.snapshot(); bot._refocus();
+  const hot = bot.status().focusList.find((x) => x.token === 'CCC');
+  assert.ok(hot && /liquidity/.test(hot.why), 'CCC is hot: ' + JSON.stringify(bot.status().focusList));
+  await bot._manageLines(); await bot._manageLines();
+  assert.ok(L.lines.has(C), 'line for the hot token first');
+  bot.stop();
+});
+
+await test('ARB_TOKENS: names and hex codes are understood', async () => {
+  const { parseTokens } = await import('../arb/bot.mjs');
+  const iss = Wallet.generate().address;
+  const t = parseTokens(`FUZZY.${iss}, USD:${iss} 4655A5A5A5000000000000000000000000000000.${iss} junk`);
+  assert.equal(t.length, 3);
+  assert.equal(t[0], `${Buffer.from('FUZZY').toString('hex').toUpperCase().padEnd(40, '0')}.${iss}`);
+  assert.equal(t[1], `USD.${iss}`);
 });
 
 console.log(`\n${passed} arb scenarios passed`);

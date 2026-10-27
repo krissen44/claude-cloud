@@ -211,6 +211,23 @@ A second bot in the same folder, with **its own wallet** and its own pm2 process
   automatically for the tokens that show up most in good loops and in the rivals' batches (`ARB_MAX_LINES`,
   0.2 XRP reserve each).
 
+## Focus mode (default on)
+
+Only the tokens that matter are traded and get trust lines up front (so a found loop can run at once):
+- **top** – the `ARB_TOP_N` (30) tokens with the most XRP in their pool,
+- **hype** – pools whose XRP grew `ARB_HOT_GROWTH` % (30) within `ARB_HOT_WINDOW_H` (6 h) with at least
+  `ARB_HOT_MIN_TRADES` (20) trades – fresh launches included; they stay `ARB_HOT_KEEP_H` (24 h),
+- **rivals** – tokens the bwif bots just used,
+- **yours** – `ARB_TOKENS` (e.g. `FUZZY.rhCAT4hRdi2Y9puNdkpMzxrdKa5wkppR62`).
+Lines follow the focus (priority: yours, rivals, hype, top) up to `ARB_MAX_LINES`; a token that left it gives
+its line back once the balance is zero. The page shows the focus list with liquidity, growth and trades.
+
+## Fees and sequence numbers
+
+A busy ledger costs more than the minimum: the bot reads the open-ledger fee level every ledger and pays what
+gets the batch into the ledger directly (×1.25), between `ARB_FEE_DROPS` and `ARB_MAX_FEE_DROPS`; above that it
+skips. After a refused batch or a trust line it re-reads its sequence number before the next batch.
+
 ## Improvements over the bwif bots
 
 - Exact reserves from the stream instead of polling; optimal size per cycle; any token of the loop can be

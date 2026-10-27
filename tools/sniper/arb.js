@@ -32,15 +32,25 @@ export const ARB_GROUPS = [
     ['ARB_MAX_SIZE', 'Max. size (XRP)', 'num', '25', '', 0.1, 100000],
     ['ARB_FLOOR', 'Balance never used (XRP)', 'num', '5', '', 0, 1e6],
   ]],
+  ['🎯 Focus', [
+    ['ARB_FOCUS', 'Focus mode', 'bool', '1', 'Only trade the top tokens + hyped ones + the rivals’ + your list (off = every pool)'],
+    ['ARB_TOP_N', 'Top tokens by XRP liquidity', 'num', '30', '', 0, 500],
+    ['ARB_HOT_GROWTH', 'Hype: pool XRP growth (%)', 'num', '30', '', 1, 10000],
+    ['ARB_HOT_WINDOW_H', 'Hype: within (hours)', 'num', '6', '', 1, 72],
+    ['ARB_HOT_MIN_TRADES', 'Hype: min. trades in that time', 'num', '20', '', 0, 100000],
+    ['ARB_HOT_KEEP_H', 'Keep a hyped / rival token for (hours)', 'num', '24', '', 1, 720],
+    ['ARB_TOKENS', 'Always include', 'text', '', 'e.g. FUZZY.rhCAT4hRdi2Y9puNdkpMzxrdKa5wkppR62, comma-separated'],
+  ]],
   ['🔎 Search', [
     ['ARB_MAX_HOPS', 'Max. pools per cycle', 'num', '4', '3–5; more = more loops, slower', 2, 5],
     ['ARB_MIN_POOL_XRP', 'Min. pool depth (XRP, both sides)', 'num', '20', '', 0, 1e7],
     ['ARB_SLIP', 'Safety margin on the first leg (%)', 'num', '0.15', '', 0, 5],
   ]],
   ['⛽ Fees & lines', [
-    ['ARB_FEE_DROPS', 'Fee per batch (drops)', 'num', '50', '1 XRP = 1,000,000 drops', 40, 100000],
+    ['ARB_FEE_DROPS', 'Min. fee per batch (drops)', 'num', '50', 'raised automatically when the ledger is busy; 1 XRP = 1,000,000 drops', 40, 100000],
+    ['ARB_MAX_FEE_DROPS', 'Max. fee per batch (drops)', 'num', '2000', '', 40, 1000000],
     ['ARB_MAX_FEES_DAY', 'Max. fees per day (XRP)', 'num', '2', 'then it pauses until tomorrow', 0, 1000],
-    ['ARB_MAX_LINES', 'Max. trust lines', 'num', '25', 'each locks 0.2 XRP', 0, 500],
+    ['ARB_MAX_LINES', 'Max. trust lines', 'num', '20', 'each locks 0.2 XRP', 0, 500],
   ]],
   ['👀 Watch', [
     ['ARB_WATCH', 'Rival bots to learn from', 'wallets', DEFAULT_WATCH, 'One per line: rAddress:Name'],
