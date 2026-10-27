@@ -41,14 +41,14 @@ class Ledger {
     return nodes;
   }
   // someone else trades `amount` of asset `from` into pool p
-  trade(id, from, amount) {
+  trade(id, from, amount, acct = 'rSomeone', sameLedger = false) {
     const p = this.pools.get(id);
     const to = p.a === from ? 'b' : 'a';
     const fr = p.a === from ? 'a' : 'b';
     const out = swapOut(amount, p['r' + fr], p['r' + to], p.fee);
     p['r' + fr] += amount; p['r' + to] -= out;
-    this.index++;
-    this.emit('transaction', { validated: true, ledger_index: this.index, hash: 'T' + this.index, tx_json: { TransactionType: 'Payment', Account: 'rSomeone' }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: this.nodesFor(p) } });
+    const li = sameLedger ? this.index + 1 : ++this.index;
+    this.emit('transaction', { validated: true, ledger_index: li, hash: 'T' + li + acct + amount, tx_json: { TransactionType: 'Payment', Account: acct }, meta: { TransactionResult: 'tesSUCCESS', TransactionIndex: 0, AffectedNodes: this.nodesFor(p) } });
   }
 
   // run a path payment on a copy of the pools; returns {ok, spent, got, touched}
@@ -123,6 +123,8 @@ class Ledger {
     return { engine_result: 'tesSUCCESS' };
   }
   applyBatch(tx) {
+    // a rival's trade lands in the same ledger just before our batch
+    if (this.rivalFirst) { const r = this.rivalFirst; this.rivalFirst = null; this.trade(r.pool, r.from, r.amount, r.acct, true); }
     const clone = new Map([...this.pools].map(([k, p]) => [k, { ...p }]));
     const lines = new Map(this.lines);
     let xrp = this.acct.balance - Number(tx.Fee) / D;
@@ -160,7 +162,7 @@ class Ledger {
       xrp = afterFee;
       if (!tks) this.acct.seq += 1;
     }
-    this.emit('transaction', { validated: true, ledger_index: this.index, hash, tx_json: { TransactionType: 'Batch', Account: this.me }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [meNode(this.acct.balance, afterFee)] } });
+    this.emit('transaction', { validated: true, ledger_index: this.index, hash, tx_json: { TransactionType: 'Batch', Account: this.me }, meta: { TransactionResult: 'tesSUCCESS', TransactionIndex: 5, AffectedNodes: [meNode(this.acct.balance, afterFee)] } });
     if (ok) {
       let first = true;
       for (const id of touched) {
@@ -576,6 +578,57 @@ await test('inner payments missing from the stream: result read from the ledger'
   assert.ok(st.stats.wins >= 1 && st.stats.innerFromLedger >= 1, JSON.stringify(st.stats));
   assert.ok(st.trades[0].applied && st.trades[0].pnl > 0, JSON.stringify(st.trades[0]));
   bot.stop();
+});
+
+await test('miss analysis: a rival moved our pool first in the same ledger → "beaten" by Rival; silent miss → "model"', async () => {
+  const { L, bot } = setup();
+  await bot.start();
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(250);
+  await bot._manageLines();
+  // the rival fixes the mispricing in the same ledger, before our batch
+  L.rivalFirst = { pool: 'rPoolAB', from: A, amount: 1.2e6, acct: RIVAL };
+  L.trade('rPoolAB', B, 1e6); await wait(400);
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  const st = bot.status();
+  const miss = st.trades.find((t) => !t.applied);
+  assert.ok(miss, JSON.stringify(st.trades));
+  assert.equal(miss.why, 'beaten');
+  assert.equal(miss.by, 'Rival');
+  assert.equal(st.stats.missBeaten, 1);
+  assert.equal(st.learn.why.beaten, 1);
+  assert.ok(st.learn.classes.length >= 1, 'margin class learned');
+  bot.stop();
+});
+
+await test('learner: wins make a margin class confident, a contested pool and a broken route are avoided', async () => {
+  const { createLearner } = await import('../arb/learn.mjs');
+  let t = 0;
+  const cfg = { targetWin: 0.9, learnMinTries: 6, learnHalfLifeH: 72 };
+  const lr = createLearner({}, cfg, () => t);
+  const mk = (key, pools, net = 0.002, x = 0.5) => ({ key, hops: pools.map((pool) => ({ pool })), assets: ['TOK'], held: 0, net, x });
+  const fee = 0.00005;
+  const good = mk('good', ['p1', 'p2', 'p3']);
+  assert.equal(lr.decide(good, fee, 10), 'explore', 'unknown → explore');
+  assert.equal(lr.decide(good, fee, 0), 'lowChance', 'no exploration budget left → not sent');
+  for (let i = 0; i < 30; i++) lr.record(good, 'win');
+  assert.equal(lr.decide(good, fee, 0), 'go', 'p=' + good.p);
+  // a route through a contested pool: someone is faster there every time
+  const hot = mk('hot', ['p1', 'pX', 'p3']);
+  for (let i = 0; i < 8; i++) { hot.beatenPools = ['pX']; lr.record(hot, 'miss', 'beaten'); }
+  const other = mk('other', ['p9', 'pX', 'p8']);
+  assert.notEqual(lr.decide(other, fee, 0), 'go', 'another route through the contested pool is not confident: p=' + other.p);
+  // same margin class, clean pools → still confident
+  assert.equal(lr.decide(mk('fresh', ['p1', 'p2', 'p7']), fee, 0), 'go');
+  // a route our math gets wrong
+  const broken = mk('broken', ['p1', 'p2', 'p3']);
+  for (let i = 0; i < 6; i++) lr.record(broken, 'miss', 'model');
+  assert.notEqual(lr.decide(broken, fee, 0), 'go', 'broken route p=' + broken.p);
+  // old results fade: after 3 weeks the contested pool is unknown again
+  t += 21 * 24 * 3600e3;
+  assert.equal(lr.decide(mk('other2', ['p9', 'pX', 'p8']), fee, 5), 'explore');
+  // a loop whose expected value is negative is never sent
+  assert.equal(lr.decide(mk('tiny', ['q1', 'q2'], -0.0001), fee, 10), 'negativeEv');
 });
 
 console.log(`\n${passed} arb scenarios passed`);

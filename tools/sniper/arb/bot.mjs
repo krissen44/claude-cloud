@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { XRP, assetKey, assetObj, createGraph, applyMeta, findCycles, bestSize, cycleOut } from './engine.mjs';
 import { createUniverse } from './universe.mjs';
+import { createLearner } from './learn.mjs';
 
 // "FUZZY.rhCAT…" / "4655…(hex).rhCAT…" → asset key with the ledger's currency code
 export function parseTokens(s) {
@@ -64,6 +65,12 @@ export function readArbConfig(env = process.env) {
     lockProfit: num('ARB_LOCK_PROFIT', 0), // must come back on top of stake + fee, else nothing happens (0 = break-even)
     minSize: num('ARB_MIN_SIZE', 0.1),
     maxSize: num('ARB_MAX_SIZE', 2), // small: bwif's small bot mostly uses 0.1–0.4 XRP
+    // learning: only loops whose estimated chance (from our own results) reaches the target are sent;
+    // unknown ones are tried within a daily exploration budget (costs only fees)
+    targetWin: num('ARB_TARGET_WIN', 90) / 100,
+    exploreDay: num('ARB_EXPLORE_DAY', 100),
+    learnMinTries: num('ARB_LEARN_MIN_TRIES', 6),
+    learnHalfLifeH: num('ARB_LEARN_HALF_LIFE_H', 72),
     parallel: num('ARB_PARALLEL', 5), // batches per ledger (0 = one at a time, no tickets)
     tickets: num('ARB_TICKETS', 0), // tickets kept ready (0 = 3 per parallel batch + 3)
     floor: num('ARB_FLOOR', 5), // XRP never used
@@ -109,6 +116,9 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
 
   const g = createGraph();
   const uni = createUniverse(g, cfg);
+  const learn = createLearner(S, cfg);
+  // who moved which pool in the last ledgers (to tell "someone was faster" from "our math was off")
+  const touches = new Map(); // pool → [{l, i, a}]
   const allow = (a) => !(cfg.focus && cfg.focusOnly) || uni.has(a);
   const lines = new Set(S.lines);
   let reserves = { base: 1, inc: 0.2 };
@@ -171,8 +181,11 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   const cool = new Map(); // cycle key → ledger until which it is not tried again
   const tokFails = new Map(); // token → {n, until}
   const blocked = (o) => (cool.get(o.key) || 0) > ledger || o.assets.some((a) => (tokFails.get(a)?.until || 0) > now());
-  function failed(o) {
-    cool.set(o.key, ledger + 10);
+  function failed(o, why = 'model') {
+    // beaten = the loop was real, someone was faster: try again soon. model = our math is off for
+    // this route: block it for a long time and count it against its tokens
+    if (why === 'beaten') { cool.set(o.key, ledger + 3); return; }
+    cool.set(o.key, ledger + (why === 'model' ? 300 : 10));
     for (const a of o.assets) {
       const t = tokFails.get(a) || { n: 0, until: 0 };
       t.n = t.until && t.until < now() ? 1 : t.n + 1;
@@ -296,11 +309,19 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     const hash = ev.hash || tx.hash;
     const moved = applyMeta(g, ev.meta, (nid) => want(nid, true));
     for (const id of moved) changed.add(id);
+    if (tx.Account !== me) {
+      for (const id of moved) {
+        const list = (touches.get(id) || []).filter((x) => x.l >= ev.ledger_index - 3);
+        list.push({ l: ev.ledger_index, i: ev.meta.TransactionIndex, a: tx.Account });
+        touches.set(id, list);
+      }
+      if (touches.size > 5000) for (const [id, list] of touches) if (list.at(-1).l < ev.ledger_index - 3) touches.delete(id);
+    }
     uni.noteChanged(moved);
     // our batches: the outer tx and its inner payments come through the stream
     if (flights.size) {
       const f = flights.get(hash);
-      if (f) { f.outer = ev.meta.TransactionResult; f.vLedger = ev.ledger_index; }
+      if (f) { f.outer = ev.meta.TransactionResult; f.vLedger = ev.ledger_index; f.vIdx = ev.meta.TransactionIndex; }
       const pf = tx.Account === me && flights.get(ev.meta.ParentBatchID || tx.ParentBatchID);
       if (pf) { pf.inner++; pf.got += myDelta(ev.meta); }
     }
@@ -362,10 +383,22 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (!usable.length) { stat('skippedCooldown'); return; }
     const clean = usable.filter((o) => tokensOk(o.assets));
     if (!clean.length) { stat('skippedIssuerCheck'); return; }
-    const best = clean.find((o) => o.held >= 0);
-    if (!best) { stat('missedNoLine'); return; }
+    if (!clean.some((o) => o.held >= 0)) { stat('missedNoLine'); return; }
+    if (S.day !== day()) { S.day = day(); S.dayFees = 0; S.dayExplore = 0; }
+    // learning: send what our own results say goes through (≥ target win rate), explore the unknown
+    let budget = cfg.exploreDay - (S.dayExplore || 0);
+    const cand = [];
+    for (const o of clean) {
+      if (o.held < 0) continue;
+      o.mode = learn.decide(o, feeXrp, budget);
+      if (o.mode === 'explore') budget--;
+      if (o.mode === 'go' || o.mode === 'explore') cand.push(o);
+      else stat(o.mode === 'lowChance' ? 'skippedLowChance' : 'skippedNegativeEv');
+    }
+    if (!cand.length) return;
+    cand.sort((a, b) => (a.mode === 'go') === (b.mode === 'go') ? b.ev - a.ev : a.mode === 'go' ? -1 : 1);
+    const best = cand[0];
     if (cfg.paused || cfg.dryRun || room < cfg.minSize) { stat(cfg.paused ? 'skippedPaused' : room < cfg.minSize ? 'skippedNoRoom' : 'dryRunOpps'); return; }
-    if (S.day !== day()) { S.day = day(); S.dayFees = 0; }
     if (S.dayFees >= cfg.maxFeesDay) { stat('skippedFeeCap'); return; }
     if (feeDrops > cfg.maxFeeDrops) return;
     if (!useTickets()) {
@@ -381,7 +414,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (slots <= 0) { stat(tickets.size < 3 ? 'skippedNoTickets' : 'skippedBusy'); return; }
     let left = free;
     let sent = 0;
-    for (const o of clean) {
+    for (const o of cand) {
       if (slots <= 0 || S.dayFees >= cfg.maxFeesDay) break;
       if (o.held < 0 || o.x > left || o.hops.some((h) => usedPools.has(h.pool))) continue;
       for (const h of o.hops) usedPools.add(h.pool);
@@ -439,7 +472,8 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     let signed;
     try { signed = wallet.sign(tx); } catch (e) { release(tk); say(`⚠️ sign failed: ${e.message}`); return false; }
     const route = ['XRP', ...o.assets.map(name), 'XRP'].join(' → ');
-    const f = { hash: signed.hash, o, route, at: now(), sentLedger: ledger, last: tx.LastLedgerSequence, inner: 0, got: 0, outer: null, fee: feeDrops, tk };
+    const f = { hash: signed.hash, o, route, at: now(), sentLedger: ledger, last: tx.LastLedgerSequence, inner: 0, got: 0, outer: null, fee: feeDrops, tk, mode: o.mode || 'go' };
+    if (f.mode === 'explore') S.dayExplore = (S.dayExplore || 0) + 1;
     flights.set(f.hash, f);
     stat('attempts');
     S.dayFees += feeDrops / DROPS;
@@ -494,10 +528,30 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       const feeXrp = f.outer ? f.fee / DROPS : 0;
       const pnl = (applied ? f.got : 0) - feeXrp;
       stat(applied ? 'wins' : f.outer ? 'notApplied' : 'expired');
-      if (!applied) failed(f.o);
+      // why did it miss? someone moved one of our pools earlier in that ledger → beaten
+      let why = '';
+      let by = '';
+      if (!applied && f.outer) {
+        const beat = [];
+        for (const h of f.o.hops) {
+          const t = (touches.get(h.pool) || []).find((x) => x.l === f.vLedger && (x.i == null || f.vIdx == null || x.i < f.vIdx));
+          if (t) { beat.push(h.pool); by ||= cfg.watch.get(t.a) || t.a.slice(0, 8); }
+        }
+        why = beat.length ? 'beaten' : 'model';
+        f.o.beatenPools = beat;
+        stat(why === 'beaten' ? 'missBeaten' : 'missModel');
+      }
+      if (applied || f.outer) {
+        learn.record(f.o, applied ? 'win' : 'miss', why);
+        const m = f.mode === 'explore' ? 'explore' : 'go';
+        stat(m + 'Tries');
+        if (applied) stat(m + 'Wins');
+      }
+      if (!applied && f.outer) failed(f.o, why);
+      else if (!applied) failed(f.o, 'expired');
       if (applied) S.stats.profit = (S.stats.profit || 0) + pnl;
       S.stats.fees = (S.stats.fees || 0) + feeXrp;
-      const rec = { t: now(), route: f.route, hops: f.o.hops.length, x: +f.o.x.toFixed(4), expected: +f.o.net.toFixed(6), pnl: +pnl.toFixed(6), applied, result: f.outer || 'expired', ledgers: ledger - f.sentLedger, held: name(f.o.assets[f.o.held]), ticket: !!f.tk };
+      const rec = { t: now(), route: f.route, hops: f.o.hops.length, x: +f.o.x.toFixed(4), expected: +f.o.net.toFixed(6), pnl: +pnl.toFixed(6), applied, result: f.outer || 'expired', ledgers: ledger - f.sentLedger, held: name(f.o.assets[f.o.held]), ticket: !!f.tk, mode: f.mode, p: f.o.p, why, by };
       S.trades.unshift(rec);
       append('trades', rec);
       if (applied) say(`✅ ${f.route}: ${pnl >= 0 ? '+' : ''}${pnl.toFixed(6)} XRP (size ${f.o.x.toFixed(2)}, expected +${f.o.net.toFixed(6)})`);
@@ -720,6 +774,8 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   async function resubscribe() { await client.request({ command: 'subscribe', streams: ['transactions'] }); }
   function stop() { stopped = true; timers.forEach(clearInterval); clearTimeout(timer); save(); savePools(); }
 
+  const poolName = (id) => { const p = g.pools.get(id); return p ? `${name(p.a)}/${name(p.b)}` : id.slice(0, 8); };
+  const routeName = (key) => 'XRP → ' + key.split('>').map((s) => name(s.slice(s.indexOf(':') + 1))).join(' → ');
   function status() {
     const ready = [...g.pools.values()].filter((p) => p.ready).length;
     return {
@@ -730,6 +786,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       focus: cfg.focus, focusList: uni.list().slice(0, 60).map((x) => ({ ...x, token: name(x.tok), line: lines.has(x.tok) })),
       watching: [...cfg.watch.values()], inFlight: [...flights.values()].map((f) => f.route), activated: activated !== false,
       parallel: useTickets() ? cfg.parallel : 1, tickets: { free: tickets.size, busy: busyTickets.size, target: useTickets() ? ticketTarget() : 0 },
+      learn: { target: cfg.targetWin, exploreDay: cfg.exploreDay, exploredToday: S.dayExplore || 0, classes: learn.table(), why: learn.why(), worstRoutes: learn.worst('r:').map((r) => ({ ...r, key: routeName(r.key) })), worstTokens: learn.worst('t:').map((r) => ({ ...r, key: name(r.key) })), worstPools: learn.worst('p:').map((r) => ({ ...r, key: poolName(r.key) })) },
       sizes: { min: cfg.minSize, max: cfg.maxSize }, minProfit: cfg.minProfit, topN: cfg.topN, focusOnly: cfg.focusOnly,
     };
   }

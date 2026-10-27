@@ -218,6 +218,22 @@ A second bot in the same folder, with **its own wallet** and its own pm2 process
   automatically for the tokens that show up most in good loops and in the rivals' batches (`ARB_MAX_LINES`,
   0.2 XRP reserve each).
 
+## Learning (target win rate)
+
+Every batch that lands is a win or a miss, and every miss is explained:
+- **beaten** – someone else moved one of our pools earlier in the same ledger (they were faster; the pool is
+  contested). The loop may be tried again after 3 ledgers.
+- **math off** – nothing got in the way and it still failed (our model is wrong for that route, e.g. a hidden
+  fee). The route is blocked for ~20 minutes and the miss counts against its token.
+
+From these results (older ones fade with `ARB_LEARN_HALF_LIFE_H`, 72 h) the bot estimates for every new loop
+the chance that it goes through = (no pool of it gets moved first) × (our math is right for it), per pool,
+route, held token and margin class (how far above break-even it looked). Only loops at or above
+`ARB_TARGET_WIN` (90 %) are sent as sure trades. Routes it hasn't tried `ARB_LEARN_MIN_TRIES` (6) times yet
+are tried up to `ARB_EXPLORE_DAY` (100) times a day to learn – cheap, a miss costs only the fee. The page shows
+the win rate of the sure trades separately from the learning tries, the misses by reason, the rate per margin
+class and the weakest routes, pools and tokens.
+
 ## Focus mode (default on)
 
 Only the tokens that matter are traded and get trust lines up front (so a found loop can run at once):

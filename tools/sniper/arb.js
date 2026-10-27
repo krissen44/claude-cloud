@@ -35,6 +35,12 @@ export const ARB_GROUPS = [
     ['ARB_TICKETS', 'Tickets kept ready', 'num', '0', '0 = 3 per batch + 3; each locks 0.2 XRP until used', 0, 240],
     ['ARB_FLOOR', 'Balance never used (XRP)', 'num', '5', '', 0, 1e6],
   ]],
+  ['🧠 Learning', [
+    ['ARB_TARGET_WIN', 'Target win rate (%)', 'num', '90', 'only loops the bot expects to win this often are sent – higher = fewer but surer trades', 10, 99],
+    ['ARB_EXPLORE_DAY', 'Learning tries per day', 'num', '100', 'routes it can’t judge yet are tried this often (each miss costs only the fee, ≈ 0.00005 XRP)', 0, 10000],
+    ['ARB_LEARN_MIN_TRIES', 'Tries before a route is judged', 'num', '6', '', 1, 100],
+    ['ARB_LEARN_HALF_LIFE_H', 'Results fade after (hours, half-life)', 'num', '72', 'the market changes – old results count less', 1, 2000],
+  ]],
   ['🎯 Focus', [
     ['ARB_FOCUS', 'Focus mode', 'bool', '1', 'Trust lines for the top tokens + hyped ones + the rivals’ + your list'],
     ['ARB_FOCUS_ONLY', 'Search only focus tokens', 'bool', '1', 'Off = loops may run through any token; only the held one needs a line'],
