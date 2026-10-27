@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Wallet, decode } from 'xrpl';
+import { Wallet, decode, hashes } from 'xrpl';
 import { createArb, readArbConfig } from '../arb/bot.mjs';
 import { swapOut } from '../arb/engine.mjs';
 
@@ -23,6 +23,8 @@ class Ledger {
     this.index = 1000;
     this.sent = [];
     this.beforeApply = null;
+    this.tickets = new Set();
+    this.ticketErrors = 0;
   }
   on(ev, fn) { (this.handlers[ev] ||= []).push(fn); }
   emit(ev, x) { for (const fn of this.handlers[ev] || []) fn(x); }
@@ -99,17 +101,25 @@ class Ledger {
       return ok({ amm: { account: p.id, amount: amt(p.a, p.ra), amount2: amt(p.b, p.rb), trading_fee: Math.round(p.fee * 1e5) } });
     }
     if (c === 'submit') return ok(this.submit(r.tx_blob));
+    if (c === 'account_tx') return ok({ transactions: (this.history || []).filter((e) => e.ledger_index === r.ledger_index_min).map((e) => ({ tx: e.tx_json, meta: e.meta })) });
+    if (c === 'account_objects') return ok({ account_objects: r.type === 'ticket' ? [...this.tickets].map((t) => ({ LedgerEntryType: 'Ticket', TicketSequence: t })) : [] });
     throw new Error('unknown ' + c);
   }
 
   submit(blob) {
     const tx = decode(blob);
+    tx.hash = hashes.hashSignedTx(blob);
     this.sent.push(tx);
-    if (tx.Sequence !== this.acct.seq) { this.pastSeq = (this.pastSeq || 0) + 1; return { engine_result: 'tefPAST_SEQ' }; }
-    if (this.refuseNext) { this.refuseNext--; return { engine_result: 'telCAN_NOT_QUEUE' }; }
+    if (tx.TicketSequence) {
+      const all = [tx, ...tx.RawTransactions.map((r) => r.RawTransaction)];
+      if (all.some((t) => !t.TicketSequence || t.Sequence !== 0 || !this.tickets.has(t.TicketSequence)) || new Set(all.map((t) => t.TicketSequence)).size !== all.length) { this.ticketErrors++; return { engine_result: 'tefNO_TICKET' }; }
+      if (this.pending?.some((p) => all.some((t) => p.includes(t.TicketSequence)))) { this.ticketErrors++; return { engine_result: 'tefNO_TICKET' }; }
+      (this.pending ||= []).push(all.map((t) => t.TicketSequence));
+    } else if (tx.Sequence !== this.acct.seq) { this.pastSeq = (this.pastSeq || 0) + 1; return { engine_result: 'tefPAST_SEQ' }; }
+    if (this.refuseNext) { this.refuseNext--; if (this.pending) this.pending.pop(); return { engine_result: 'telCAN_NOT_QUEUE' }; }
     if (this.beforeApply) this.beforeApply(tx);
     // apply in the next ledger
-    setTimeout(() => this.applyBatch(tx), 30);
+    setTimeout(() => this.applyBatch(tx), this.applyDelay || 30);
     return { engine_result: 'tesSUCCESS' };
   }
   applyBatch(tx) {
@@ -134,19 +144,31 @@ class Ledger {
       if (dst === 'XRP') xrp += Math.min(r.got, val(p.Amount)); else lines.set(dst, (lines.get(dst) || 0) + r.got);
     }
     this.index++;
-    const hash = tx.hash || 'B' + this.index;
+    const hash = tx.hash;
     this.lastHash = hash;
-    const meNode = (bal) => ({ ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: this.me, Balance: String(Math.round(bal * D)) }, PreviousFields: { Balance: String(Math.round(this.acct.balance * D)) } } });
+    const meNode = (from, to) => ({ ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: this.me, Balance: String(Math.round(to * D)) }, PreviousFields: { Balance: String(Math.round(from * D)) } } });
+    const afterFee = this.acct.balance - Number(tx.Fee) / D;
+    const tks = tx.TicketSequence ? [tx.TicketSequence, ...tx.RawTransactions.map((r) => r.RawTransaction.TicketSequence)] : null;
+    if (tks) this.pending = this.pending.filter((p) => p[0] !== tks[0]);
+    const used = tks ? (ok ? tks : tks.slice(0, 1)) : [];
+    for (const t of used) this.tickets.delete(t);
+    this.acct.owners -= used.length;
     if (ok) {
       this.pools = clone; this.lines = lines;
-      this.acct.seq += 1 + tx.RawTransactions.length;
+      if (!tks) this.acct.seq += 1 + tx.RawTransactions.length;
     } else {
-      xrp = this.acct.balance - Number(tx.Fee) / D;
-      this.acct.seq += 1;
+      xrp = afterFee;
+      if (!tks) this.acct.seq += 1;
     }
-    this.emit('transaction', { validated: true, ledger_index: this.index, hash: this.outerHash, tx_json: { TransactionType: 'Batch', Account: this.me }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [meNode(xrp)] } });
+    this.emit('transaction', { validated: true, ledger_index: this.index, hash, tx_json: { TransactionType: 'Batch', Account: this.me }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [meNode(this.acct.balance, afterFee)] } });
     if (ok) {
-      for (const id of touched) this.emit('transaction', { validated: true, ledger_index: this.index, hash: 'I' + id + this.index, tx_json: { TransactionType: 'Payment', Account: this.me }, meta: { TransactionResult: 'tesSUCCESS', ParentBatchID: this.outerHash, AffectedNodes: this.nodesFor(this.pools.get(id)) } });
+      let first = true;
+      for (const id of touched) {
+        const ev = { validated: true, ledger_index: this.index, hash: 'I' + id + this.index, tx_json: { TransactionType: 'Payment', Account: this.me }, meta: { TransactionResult: 'tesSUCCESS', ParentBatchID: hash, AffectedNodes: [...this.nodesFor(this.pools.get(id)), ...(first ? [meNode(afterFee, xrp)] : [])] } };
+        (this.history ||= []).push(ev);
+        if (!this.hideInner) this.emit('transaction', ev);
+        first = false;
+      }
     }
     this.acct.balance = xrp;
   }
@@ -155,6 +177,14 @@ class Ledger {
       this.lines.set(key(tx.LimitAmount), 0);
       this.acct.owners++; this.acct.seq++;
       this.acct.balance -= 12 / D;
+      return { result: { meta: { TransactionResult: 'tesSUCCESS' } } };
+    }
+    if (tx.TransactionType === 'TicketCreate') {
+      for (let i = 1; i <= tx.TicketCount; i++) this.tickets.add(this.acct.seq + i);
+      this.acct.seq += tx.TicketCount + 1;
+      this.acct.owners += tx.TicketCount;
+      this.acct.balance -= 12 / D;
+      this.ticketCreates = (this.ticketCreates || 0) + 1;
       return { result: { meta: { TransactionResult: 'tesSUCCESS' } } };
     }
     throw new Error('unexpected ' + tx.TransactionType);
@@ -219,7 +249,10 @@ await test('adds a trust line for the hot token, then runs the loop as one batch
   const st = bot.status();
   console.log('    trades:', st.trades.map((t) => `${t.route} x=${t.x} exp=${t.expected} pnl=${t.pnl} ${t.result}`).join(' | '), 'seqs', L.sent.map((t) => t.Sequence));
   assert.ok(L.sent.length >= 1, 'batch sent');
-  assert.deepEqual(L.sent.map((t) => t.Sequence), [...new Set(L.sent.map((t) => t.Sequence))], 'no sequence used twice');
+  assert.equal(L.ticketErrors, 0, 'tickets valid, never used twice');
+  assert.ok(L.sent.every((t) => t.Sequence === 0 && t.TicketSequence && t.RawTransactions.every((r) => r.RawTransaction.TicketSequence)), 'outer + inner on tickets');
+  assert.ok(L.sent.every((t) => Number(t.RawTransactions[0].RawTransaction.SendMax) <= 2e6), 'small size (max 2 XRP)');
+  assert.ok(st.trades.every((t) => !t.applied || Math.abs(t.pnl - t.expected) < 1e-5), 'profit read from the inner payments');
   const b = L.sent[0];
   assert.equal(b.TransactionType, 'Batch'); assert.equal(b.Flags & 0x00010000, 0x00010000, 'all-or-nothing');
   assert.equal(b.RawTransactions.length, 2);
@@ -244,6 +277,9 @@ await test('front-run: price fixed before our batch lands → nothing happens, o
   const st = bot.status();
   console.log('    sent', L.sent.length, 'trades', st.trades.map((t) => `${t.result} applied=${t.applied} pnl=${t.pnl}`).join(' | '), 'diff', (before - L.acct.balance).toFixed(8));
   assert.equal(L.sent.length, 1, 'cool-down: the dead loop is not sent again');
+  const tk = [L.sent[0].TicketSequence, ...L.sent[0].RawTransactions.map((r) => r.RawTransaction.TicketSequence)];
+  assert.ok(!L.tickets.has(tk[0]) && L.tickets.has(tk[1]) && L.tickets.has(tk[2]), 'failed loop used up only the outer ticket');
+  assert.equal(bot.status().tickets.free, L.tickets.size, 'bot knows its free tickets');
   assert.equal(st.stats.notApplied, 1, JSON.stringify(st.stats));
   assert.ok(Math.abs(before - L.acct.balance - 50 / D) < 1e-6, 'lost exactly the fee');
   bot.stop();
@@ -357,8 +393,8 @@ await test('busy ledger: fee follows the open-ledger level, too expensive = skip
   bot.stop();
 });
 
-await test('refused batch / trust line → sequence re-read, never tefPAST_SEQ', async () => {
-  const { L, bot } = setup();
+await test('one-at-a-time mode (no tickets): refused batch / trust line → sequence re-read, never tefPAST_SEQ', async () => {
+  const { L, bot } = setup({ ARB_PARALLEL: '0' });
   await bot.start();
   await ready(bot);
   L.trade('rPoolAB', B, 2e6); await wait(250);
@@ -451,6 +487,94 @@ await test('token/token pools unknown to the stream are found by asking for focu
   for (let i = 0; i < 50 && bot.status().poolsReady < 3; i++) await wait(20);
   assert.equal(bot.status().poolsReady, 3, 'AAA/BBB pool found via amm_info by pair');
   assert.equal(bot.status().stats.poolsFromPairs, 1);
+  bot.stop();
+});
+
+// a second, separate triangle XRP → CCC → DDD → XRP (no pool shared with AAA/BBB)
+function twoLoops(env = {}) {
+  const t = setup({ ARB_MAX_LINES: '4', ...env });
+  const IC = Wallet.generate().address, ID = Wallet.generate().address;
+  t.C = `CCC.${IC}`; t.Dk = `DDD.${ID}`;
+  t.L.pool('rPoolXC', 'XRP', t.C, 400, 4e6);
+  t.L.pool('rPoolCD', t.C, t.Dk, 4e6, 8e6);
+  t.L.pool('rPoolDX', t.Dk, 'XRP', 8e6, 400);
+  return t;
+}
+const ready6 = async (bot) => {
+  for (let i = 0; i < 80 && bot.status().poolsReady < 4; i++) await wait(20);
+  bot._uni.snapshot(); bot._refocus();
+  for (let i = 0; i < 80 && bot.status().poolsReady < 6; i++) await wait(20);
+  bot._refocus();
+};
+
+await test('tickets: two separate loops go into the same ledger, both win', async () => {
+  const { L, bot, C, Dk } = twoLoops();
+  await bot.start();
+  await ready6(bot);
+  assert.equal(bot.status().poolsReady, 6);
+  // issuers checked, lines + tickets ready
+  L.trade('rPoolAB', B, 2e6); L.trade('rPoolCD', Dk, 2e6); await wait(300);
+  for (let i = 0; i < 4; i++) await bot._manageLines();
+  assert.ok(L.lines.has(A) || L.lines.has(B)); assert.ok(L.lines.has(C) || L.lines.has(Dk));
+  assert.equal(L.tickets.size, 18, 'tickets created: 5 batches × 3 + 3');
+  const sent0 = L.sent.length;
+  L.trade('rPoolAB', B, 1e6); L.trade('rPoolCD', Dk, 1e6); // both in the same ledger
+  await wait(160);
+  const now = L.sent.slice(sent0);
+  console.log('    same ledger:', now.length, 'batches, tickets', now.map((t) => [t.TicketSequence, ...t.RawTransactions.map((r) => r.RawTransaction.TicketSequence)].join('/')).join(' '));
+  assert.equal(now.length, 2, 'two batches in one ledger');
+  const pools = now.map((t) => t.RawTransactions.map((r) => key(r.RawTransaction.Amount)).join());
+  assert.notEqual(pools[0], pools[1], 'different loops');
+  await wait(300);
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  const st = bot.status();
+  assert.equal(L.ticketErrors, 0);
+  assert.ok(st.stats.wins >= 2, JSON.stringify(st.stats));
+  assert.ok(st.stats.multiLedgers >= 1);
+  assert.ok(st.trades.filter((t) => t.applied).every((t) => t.pnl > 0));
+  bot.stop();
+});
+
+await test('tickets: a loop on a pool already in flight waits; tickets refill; a lost ticket is re-synced', async () => {
+  const { L, bot } = setup({ ARB_PARALLEL: '2' });
+  await bot.start();
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(300);
+  await bot._manageLines();
+  assert.equal(L.tickets.size, 9, '2 × 3 + 3 tickets');
+  // the ticket the bot would take next disappears (used by someone with the same key elsewhere)
+  const lowest = Math.min(...L.tickets); L.tickets.delete(lowest); L.acct.owners--;
+  L.beforeApply = null;
+  L.trade('rPoolAB', B, 1e6); await wait(200);
+  assert.equal(bot.status().stats.rejected, 1, 'tefNO_TICKET');
+  await wait(100);
+  assert.ok(!bot.status().tickets.free || !L.tickets.has(lowest), 're-synced');
+  L.applyDelay = 500; // our batch is slow to land
+  L.trade('rPoolAB', B, 1e6); await wait(160);
+  const n = L.sent.length;
+  L.trade('rPoolAB', B, 1e6); await wait(200); // next ledger: same pools, batch still on its way → not sent again
+  assert.equal(L.sent.length, n, 'no second batch on a pool that is in flight');
+  await wait(400); L.applyDelay = 0;
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  assert.ok(bot.status().stats.wins >= 1, JSON.stringify(bot.status().stats));
+  await bot._manageLines();
+  assert.ok(L.tickets.size >= 6, 'tickets topped up: ' + L.tickets.size);
+  assert.ok(n >= 2);
+  bot.stop();
+});
+
+await test('inner payments missing from the stream: result read from the ledger', async () => {
+  const { L, bot } = setup();
+  L.hideInner = true;
+  await bot.start();
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(250);
+  await bot._manageLines();
+  L.trade('rPoolAB', B, 1e6); await wait(300);
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  const st = bot.status();
+  assert.ok(st.stats.wins >= 1 && st.stats.innerFromLedger >= 1, JSON.stringify(st.stats));
+  assert.ok(st.trades[0].applied && st.trades[0].pnl > 0, JSON.stringify(st.trades[0]));
   bot.stop();
 });
 

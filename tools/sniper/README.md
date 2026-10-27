@@ -201,12 +201,19 @@ A second bot in the same folder, with **its own wallet** and its own pm2 process
 - **Pools:** reads the list of all AMM pools from the ledger once (`ledger_data type=amm`, cached), then the
   balances (`amm_info`, XRP pools first). After that every balance comes from the metadata of the live
   transaction stream – exact and without polling. Pools it didn't know are learned when they trade.
-- **Search after every ledger:** loops XRP → A → … → XRP of 2–4 pools (`ARB_MAX_HOPS`) that use at least one
+- **Search after every ledger:** loops XRP → A → … → XRP of 2–5 pools (`ARB_MAX_HOPS`) that use at least one
   pool that just moved, with the exact AMM math incl. fees, and the input size that earns most (between
   `ARB_MIN_SIZE` and `ARB_MAX_SIZE`, never touching `ARB_FLOOR`).
-- **One all-or-nothing Batch per cycle** (XLS-56, like the bwif bots): payment 1 XRP → … → T (exact amount of
-  T for at most the stake), payment 2 T → … → XRP with `DeliverMin` = stake + fee + `ARB_MIN_PROFIT`. If the
-  second can't deliver that, **nothing** happens and only the batch fee (≈ 0.00005 XRP) is spent.
+- **One all-or-nothing Batch per cycle** (XLS-56, like the bwif bots): payment 1 spends the stake XRP → … → T,
+  payment 2 sells all of T → … → XRP with `DeliverMin` = stake + fee + `ARB_LOCK_PROFIT` (0 = break-even).
+  If the second can't deliver that, **nothing** happens and only the batch fee (≈ 0.00005 XRP) is spent.
+  A loop is sent when it is expected to earn `ARB_MIN_PROFIT` (0.0002 XRP) after the fee.
+- **Small and parallel, on Tickets** (like bwif's small bot, which wins ~25 % of its tries with 0.1–0.4 XRP):
+  sizes `ARB_MIN_SIZE`–`ARB_MAX_SIZE` (0.1–2 XRP); up to `ARB_PARALLEL` (5) batches go into the same ledger,
+  each on a different loop with no shared pool. Every batch uses three Tickets (outer + 2 inner) instead of
+  sequence numbers; a loop that fails uses up only the outer one. The bot keeps `ARB_TICKETS` ready
+  (default 3 per batch + 3 = 18, 0.2 XRP reserve each until used) with `TicketCreate`. `ARB_PARALLEL=0` = the
+  old one-at-a-time mode on sequence numbers.
 - **Held token T:** any token of the loop the wallet has a trust line for. Trust lines are added
   automatically for the tokens that show up most in good loops and in the rivals' batches (`ARB_MAX_LINES`,
   0.2 XRP reserve each).
@@ -214,19 +221,21 @@ A second bot in the same folder, with **its own wallet** and its own pm2 process
 ## Focus mode (default on)
 
 Only the tokens that matter are traded and get trust lines up front (so a found loop can run at once):
-- **top** – the `ARB_TOP_N` (30) tokens with the most XRP in their pool,
+- **top** – the `ARB_TOP_N` (50) tokens with the most XRP in their pool,
 - **hype** – pools whose XRP grew `ARB_HOT_GROWTH` % (30) within `ARB_HOT_WINDOW_H` (6 h) with at least
   `ARB_HOT_MIN_TRADES` (20) trades – fresh launches included; they stay `ARB_HOT_KEEP_H` (24 h),
 - **rivals** – tokens the bwif bots just used,
 - **yours** – `ARB_TOKENS` (e.g. `FUZZY.rhCAT4hRdi2Y9puNdkpMzxrdKa5wkppR62`).
-Lines follow the focus (priority: yours, rivals, hype, top) up to `ARB_MAX_LINES`; a token that left it gives
+`ARB_FOCUS_ONLY` (on) limits the loops to focus tokens only. Lines follow the focus (priority: yours, rivals,
+hype, top) up to `ARB_MAX_LINES` (50); a token that left it gives
 its line back once the balance is zero. The page shows the focus list with liquidity, growth and trades.
 
 ## Fees and sequence numbers
 
 A busy ledger costs more than the minimum: the bot reads the open-ledger fee level every ledger and pays what
 gets the batch into the ledger directly (×1.25), between `ARB_FEE_DROPS` and `ARB_MAX_FEE_DROPS`; above that it
-skips. After a refused batch or a trust line it re-reads its sequence number before the next batch.
+skips. Batches run on Tickets, so trust lines and `TicketCreate` (sequence numbers) never clash with them; the
+free tickets are re-read from the ledger every ~50 ledgers and after any ticket error.
 
 ## Improvements over the bwif bots
 
@@ -236,7 +245,8 @@ skips. After a refused batch or a trust line it re-reads its sequence number bef
   trust lines for the tokens they hold.
 - **Safety:** tokens whose issuer charges a transfer fee or froze the token are never used (our math would be
   wrong → endless failed batches); a loop that didn't go through is cooled down for 10 ledgers, a token with 3
-  failures for 1 hour; a daily fee cap (`ARB_MAX_FEES_DAY`); one batch at a time.
+  failures for 1 hour; a daily fee cap (`ARB_MAX_FEES_DAY`); parallel batches never share a pool and together
+  stay within the free XRP.
 - **Data:** every opportunity (taken or not), every attempt, every rival cycle → `opportunities.csv`,
   `trades.csv`, `rivals.csv` on the page.
 

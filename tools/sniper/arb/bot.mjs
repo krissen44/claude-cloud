@@ -1,7 +1,11 @@
 // XRPL arbitrage bot: finds XRP → token → … → XRP loops through AMM pools after every ledger and
-// runs the best one as ONE all-or-nothing Batch transaction (two inner self-payments: XRP → … → T
-// and T → … → XRP). If the second payment can't return at least stake + min profit + fee, nothing
-// happens and only the batch fee (≈ 0.00005 XRP) is spent.
+// runs each as ONE all-or-nothing Batch transaction (two inner self-payments: XRP → … → T and
+// T → … → XRP). If the second payment can't bring back at least stake + fee, nothing happens and
+// only the batch fee (≈ 0.00005 XRP) is spent.
+//
+// Like bwif's small bot: Tickets instead of sequence numbers, so several small batches (different
+// loops, no shared pool) go into the same ledger; break-even DeliverMin, so a loop that is still
+// slightly positive when it lands is taken instead of failing.
 //
 // Pool reserves come from the metadata of every validated transaction (no polling); the pool list
 // is read once from the ledger (ledger_data type amm) and cached.
@@ -56,9 +60,12 @@ export function readArbConfig(env = process.env) {
   return {
     dryRun: bool('ARB_DRY_RUN', false),
     paused: bool('ARB_PAUSE', false),
-    minProfit: num('ARB_MIN_PROFIT', 0.0005), // XRP after fees (bwif takes cycles of 0.0001–0.001 too)
+    minProfit: num('ARB_MIN_PROFIT', 0.0002), // expected XRP after fees to send a loop (bwif's small bot wins 0.0002–0.001)
+    lockProfit: num('ARB_LOCK_PROFIT', 0), // must come back on top of stake + fee, else nothing happens (0 = break-even)
     minSize: num('ARB_MIN_SIZE', 0.1),
-    maxSize: num('ARB_MAX_SIZE', 25),
+    maxSize: num('ARB_MAX_SIZE', 2), // small: bwif's small bot mostly uses 0.1–0.4 XRP
+    parallel: num('ARB_PARALLEL', 5), // batches per ledger (0 = one at a time, no tickets)
+    tickets: num('ARB_TICKETS', 0), // tickets kept ready (0 = 3 per parallel batch + 3)
     floor: num('ARB_FLOOR', 5), // XRP never used
     maxHops: num('ARB_MAX_HOPS', 5),
     minPoolXrp: num('ARB_MIN_POOL_XRP', 20), // pool depth (both sides, in XRP)
@@ -66,11 +73,11 @@ export function readArbConfig(env = process.env) {
     feeDrops: num('ARB_FEE_DROPS', 50), // minimum fee per batch
     maxFeeDrops: num('ARB_MAX_FEE_DROPS', 2000), // never pay more than this per batch (busy ledgers cost more)
     maxFeesDay: num('ARB_MAX_FEES_DAY', 2), // XRP of fees per day, then pause until tomorrow
-    maxLines: num('ARB_MAX_LINES', 20),
+    maxLines: num('ARB_MAX_LINES', 50),
     // focus: only trade the top tokens by XRP liquidity + hyped ones + the rivals' + your own list
     focus: bool('ARB_FOCUS', true), // focus decides the trust lines
-    focusOnly: bool('ARB_FOCUS_ONLY', false), // … and, if on, also limits the search to focus tokens
-    topN: num('ARB_TOP_N', 30),
+    focusOnly: bool('ARB_FOCUS_ONLY', true), // … and, if on, also limits the search to focus tokens
+    topN: num('ARB_TOP_N', 50),
     hotGrowth: num('ARB_HOT_GROWTH', 30), // % more XRP in the pool …
     hotWindowH: num('ARB_HOT_WINDOW_H', 6), // … within these hours …
     hotMinTrades: num('ARB_HOT_MIN_TRADES', 20), // … with at least this many trades
@@ -107,7 +114,17 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   let reserves = { base: 1, inc: 0.2 };
   let acct = { balance: 0, seq: 0, owners: 0 };
   let ledger = 0;
-  let inFlight = null;
+  // batches on their way (outer hash → record). With tickets several per ledger, else one at a time.
+  const flights = new Map();
+  const committed = () => { let x = 0; for (const f of flights.values()) x += f.o.x; return x; };
+  // Tickets: every batch takes three (outer + 2 inner). A batch whose loop fails uses up only the
+  // outer one; the inner ones come back. A batch that never lands gives all three back.
+  const tickets = new Set(); // free
+  const busyTickets = new Set(); // in a batch on its way
+  let ticketsSynced = 0;
+  const useTickets = () => cfg.parallel > 0 && !cfg.dryRun;
+  const ticketTarget = () => Math.min(240, cfg.tickets || cfg.parallel * 3 + 3);
+  const release = (tk) => tk?.forEach((t) => { busyTickets.delete(t); tickets.add(t); });
   // Fees: a busy ledger needs more than the minimum, or the batch is refused (telCAN_NOT_QUEUE).
   // The open-ledger fee level is read every ledger; a batch (2 inner payments) costs 4 × base.
   let feeLvl = { base: 10, open: 256, ref: 256, at: 0 };
@@ -280,22 +297,38 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     const moved = applyMeta(g, ev.meta, (nid) => want(nid, true));
     for (const id of moved) changed.add(id);
     uni.noteChanged(moved);
-    // our batch: the outer tx and its inner payments come through the stream
-    if (inFlight) {
-      if (hash === inFlight.hash) inFlight.outer = ev.meta.TransactionResult;
-      if (tx.Account === me && (ev.meta.ParentBatchID || tx.ParentBatchID) === inFlight.hash) inFlight.inner++;
+    // our batches: the outer tx and its inner payments come through the stream
+    if (flights.size) {
+      const f = flights.get(hash);
+      if (f) { f.outer = ev.meta.TransactionResult; f.vLedger = ev.ledger_index; }
+      const pf = tx.Account === me && flights.get(ev.meta.ParentBatchID || tx.ParentBatchID);
+      if (pf) { pf.inner++; pf.got += myDelta(ev.meta); }
     }
     if (cfg.watch.has(tx.Account)) watchRival(tx, ev, hash);
     clearTimeout(timer);
     timer = setTimeout(onLedgerDone, 120); // run once the ledger's transactions are in
   }
 
+  // change of our XRP balance in one transaction (inner payments carry no fee)
+  function myDelta(meta) {
+    let d = 0;
+    for (const n of meta.AffectedNodes || []) {
+      const node = n.ModifiedNode;
+      if (node?.LedgerEntryType === 'AccountRoot' && node.FinalFields?.Account === me && node.PreviousFields?.Balance != null) d += (Number(node.FinalFields.Balance) - Number(node.PreviousFields.Balance)) / DROPS;
+    }
+    return d;
+  }
+
   // ---------- search + execute ----------
   async function onLedgerDone() {
     if (stopped) return;
     stat('ledgers');
-    if (inFlight) await settle();
+    if (flights.size) await settle();
     updateFee(); // for the next ledger
+    if (useTickets() && acct.seq && !lineBusy) {
+      if (tickets.size + busyTickets.size <= ticketTarget() - 3) ensureTickets();
+      else if (!flights.size && ledger - ticketsSynced > 50) syncTickets().catch(() => {});
+    }
     const ch = changed;
     changed = new Set();
     if (!ch.size) return;
@@ -305,7 +338,8 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     const feeDrops = batchFee();
     const feeXrp = feeDrops / DROPS;
     if (feeDrops > cfg.maxFeeDrops) { stat('skippedFeeHigh'); }
-    const room = Math.min(cfg.maxSize, Math.max(0, available()));
+    const free = Math.max(0, available() - committed());
+    const room = Math.min(cfg.maxSize, free);
     const opps = [];
     for (const c of cycles) {
       const hi = Math.max(cfg.minSize, Math.min(room || cfg.maxSize, cfg.maxSize));
@@ -333,19 +367,38 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (cfg.paused || cfg.dryRun || room < cfg.minSize) { stat(cfg.paused ? 'skippedPaused' : room < cfg.minSize ? 'skippedNoRoom' : 'dryRunOpps'); return; }
     if (S.day !== day()) { S.day = day(); S.dayFees = 0; }
     if (S.dayFees >= cfg.maxFeesDay) { stat('skippedFeeCap'); return; }
-    if (inFlight || lineBusy) { stat('skippedBusy'); return; } // one transaction at a time (sequence numbers)
     if (feeDrops > cfg.maxFeeDrops) return;
-    await execute(best, feeDrops);
+    if (!useTickets()) {
+      if (flights.size || lineBusy) { stat('skippedBusy'); return; } // one transaction at a time (sequence numbers)
+      await execute(best, feeDrops);
+      return;
+    }
+    // several loops into this ledger: no two share a pool (the second would see the price the
+    // first one left), each takes its own three tickets, together they stay within the free XRP
+    const usedPools = new Set();
+    for (const f of flights.values()) for (const h of f.o.hops) usedPools.add(h.pool);
+    let slots = Math.min(cfg.parallel - flights.size, Math.floor(tickets.size / 3));
+    if (slots <= 0) { stat(tickets.size < 3 ? 'skippedNoTickets' : 'skippedBusy'); return; }
+    let left = free;
+    let sent = 0;
+    for (const o of clean) {
+      if (slots <= 0 || S.dayFees >= cfg.maxFeesDay) break;
+      if (o.held < 0 || o.x > left || o.hops.some((h) => usedPools.has(h.pool))) continue;
+      for (const h of o.hops) usedPools.add(h.pool);
+      left -= o.x; slots--;
+      if (await execute(o, feeDrops)) sent++;
+    }
+    if (sent > 1) stat('multiLedgers');
   }
 
-  function buildBatch(o, feeDrops) {
+  function buildBatch(o, feeDrops, tk) {
     const i = o.held;
     const T = o.assets[i];
     const first = o.hops.slice(0, i + 1);
     const second = o.hops.slice(i + 1);
     const outExp = cycleOut(g, second, cycleOut(g, first, o.x));
     const feeXrp = feeDrops / DROPS;
-    const minBack = o.x + feeXrp + cfg.minProfit;
+    const minBack = o.x + feeXrp + cfg.lockProfit;
     if (outExp < minBack) return null;
     const pathOf = (hops) => hops.slice(0, -1).map((h) => assetObj(h.to));
     const tok = assetObj(T);
@@ -357,68 +410,135 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       Amount: { ...tok, value: '9999999999999999e80' }, SendMax: drops(o.x),
       Flags: TF_INNER | TF_PARTIAL | (first.length > 1 ? TF_NO_DIRECT : 0),
       ...(first.length > 1 ? { Paths: [pathOf(first)] } : {}),
-      Sequence: acct.seq + 1, Fee: '0', SigningPubKey: '',
+      ...(tk ? { Sequence: 0, TicketSequence: tk[1] } : { Sequence: acct.seq + 1 }), Fee: '0', SigningPubKey: '',
     };
     const p2 = {
       TransactionType: 'Payment', Account: me, Destination: me,
       Amount: '999999999999999', DeliverMin: drops(minBack), SendMax: { ...tok, value: '9999999999999999e80' },
       Flags: TF_INNER | TF_PARTIAL | (second.length > 1 ? TF_NO_DIRECT : 0),
       ...(second.length > 1 ? { Paths: [pathOf(second)] } : {}),
-      Sequence: acct.seq + 2, Fee: '0', SigningPubKey: '',
+      ...(tk ? { Sequence: 0, TicketSequence: tk[2] } : { Sequence: acct.seq + 2 }), Fee: '0', SigningPubKey: '',
     };
     return {
       TransactionType: 'Batch', Account: me, Flags: TF_ALL_OR_NOTHING,
       RawTransactions: [{ RawTransaction: p1 }, { RawTransaction: p2 }],
-      Sequence: acct.seq, Fee: String(feeDrops), LastLedgerSequence: ledger + 1 + cfg.lastLedgers,
+      ...(tk ? { Sequence: 0, TicketSequence: tk[0] } : { Sequence: acct.seq }), Fee: String(feeDrops), LastLedgerSequence: ledger + 1 + cfg.lastLedgers,
     };
   }
 
   async function execute(o, feeDrops = cfg.feeDrops) {
-    if (!acct.seq) return; // wallet not activated yet
-    if (seqDirty) { try { await refreshAccount(); seqDirty = false; } catch { return; } }
-    const tx = buildBatch(o, feeDrops);
-    if (!tx) return;
+    if (!acct.seq) return false; // wallet not activated yet
+    let tk = null;
+    if (useTickets()) {
+      tk = [...tickets].sort((x, y) => x - y).slice(0, 3);
+      if (tk.length < 3) return false;
+      for (const t of tk) { tickets.delete(t); busyTickets.add(t); }
+    } else if (seqDirty) { try { await refreshAccount(); seqDirty = false; } catch { return false; } }
+    const tx = buildBatch(o, feeDrops, tk);
+    if (!tx) { release(tk); return false; }
     let signed;
-    try { signed = wallet.sign(tx); } catch (e) { say(`⚠️ sign failed: ${e.message}`); return; }
+    try { signed = wallet.sign(tx); } catch (e) { release(tk); say(`⚠️ sign failed: ${e.message}`); return false; }
     const route = ['XRP', ...o.assets.map(name), 'XRP'].join(' → ');
-    inFlight = { hash: signed.hash, o, route, at: now(), sentLedger: ledger, last: tx.LastLedgerSequence, balance: acct.balance, inner: 0, outer: null, fee: feeDrops };
+    const f = { hash: signed.hash, o, route, at: now(), sentLedger: ledger, last: tx.LastLedgerSequence, inner: 0, got: 0, outer: null, fee: feeDrops, tk };
+    flights.set(f.hash, f);
     stat('attempts');
     S.dayFees += feeDrops / DROPS;
     try {
       const r = await req('submit', { tx_blob: signed.tx_blob });
-      inFlight.prelim = r.engine_result;
+      f.prelim = r.engine_result;
       if (!/^(tesSUCCESS|terQUEUED)$/.test(r.engine_result)) {
         stat('rejected');
         append('trades', { t: now(), route, x: o.x, expected: o.net, result: r.engine_result, applied: false });
         S.dayFees -= feeDrops / DROPS; // refused = not charged
-        seqDirty = true;
-        inFlight = null;
+        flights.delete(f.hash);
+        release(tk);
+        if (tk && /TICKET|PAST_SEQ/.test(r.engine_result)) syncTickets().catch(() => {});
+        if (!tk) seqDirty = true;
+        return false;
       }
+      return true;
     } catch (e) {
       say(`⚠️ submit failed: ${e.message}`);
-      inFlight = null;
+      flights.delete(f.hash);
+      release(tk);
+      return false;
     }
   }
 
-  // after the ledger: did our batch land, and what did it earn?
+  // after each ledger: which batches landed, and what did they earn? (from their inner payments)
   async function settle() {
-    const f = inFlight;
-    if (!f.outer && ledger <= f.last) return; // not validated yet, still possible
-    inFlight = null;
-    await refreshAccount().catch(() => {});
-    const applied = f.inner > 0;
-    const pnl = acct.balance - f.balance;
-    stat(applied ? 'wins' : f.outer ? 'notApplied' : 'expired');
-    if (!applied) failed(f.o);
-    if (applied) S.stats.profit = (S.stats.profit || 0) + pnl;
-    S.stats.fees = (S.stats.fees || 0) + (f.outer ? f.fee / DROPS : 0);
-    seqDirty = false; // refreshAccount above read the current sequence
-    const rec = { t: now(), route: f.route, hops: f.o.hops.length, x: +f.o.x.toFixed(4), expected: +f.o.net.toFixed(6), pnl: +pnl.toFixed(6), applied, result: f.outer || 'expired', ledgers: ledger - f.sentLedger, held: name(f.o.assets[f.o.held]) };
-    S.trades.unshift(rec);
+    let done = 0;
+    // landed, but no inner payment came through the stream: ask the ledger (once per ledger)
+    const ask = [...flights.values()].filter((f) => f.outer === 'tesSUCCESS' && !f.inner && f.vLedger && !f.asked);
+    for (const L of new Set(ask.map((f) => f.vLedger))) {
+      try {
+        const r = await req('account_tx', { account: me, ledger_index_min: L, ledger_index_max: L, limit: 200 });
+        for (const t of r.transactions || []) {
+          const pf = flights.get(t.meta?.ParentBatchID);
+          if (pf && !pf.inner) { pf.byLedger = true; }
+          if (pf?.byLedger) { pf.inner++; pf.got += myDelta(t.meta); }
+        }
+        stat('innerFromLedger');
+      } catch {}
+    }
+    for (const f of ask) f.asked = true;
+    for (const f of [...flights.values()]) {
+      if (!f.outer && ledger <= f.last) continue; // not validated yet, still possible
+      flights.delete(f.hash);
+      done++;
+      const applied = f.inner > 0;
+      if (f.tk) {
+        for (const t of f.tk) busyTickets.delete(t);
+        if (!applied) for (const t of f.outer ? f.tk.slice(1) : f.tk) tickets.add(t); // unused tickets come back
+      }
+      const feeXrp = f.outer ? f.fee / DROPS : 0;
+      const pnl = (applied ? f.got : 0) - feeXrp;
+      stat(applied ? 'wins' : f.outer ? 'notApplied' : 'expired');
+      if (!applied) failed(f.o);
+      if (applied) S.stats.profit = (S.stats.profit || 0) + pnl;
+      S.stats.fees = (S.stats.fees || 0) + feeXrp;
+      const rec = { t: now(), route: f.route, hops: f.o.hops.length, x: +f.o.x.toFixed(4), expected: +f.o.net.toFixed(6), pnl: +pnl.toFixed(6), applied, result: f.outer || 'expired', ledgers: ledger - f.sentLedger, held: name(f.o.assets[f.o.held]), ticket: !!f.tk };
+      S.trades.unshift(rec);
+      append('trades', rec);
+      if (applied) say(`✅ ${f.route}: ${pnl >= 0 ? '+' : ''}${pnl.toFixed(6)} XRP (size ${f.o.x.toFixed(2)}, expected +${f.o.net.toFixed(6)})`);
+    }
+    if (!done) return;
     S.trades = S.trades.slice(0, 100);
-    append('trades', rec);
+    await refreshAccount().catch(() => {});
+    if (!flights.size) seqDirty = false; // refreshAccount above read the current sequence
     save();
-    if (applied) say(`✅ ${f.route}: ${pnl >= 0 ? '+' : ''}${pnl.toFixed(6)} XRP (size ${f.o.x.toFixed(2)}, expected +${f.o.net.toFixed(6)})`);
+  }
+
+  // ---------- tickets ----------
+  async function syncTickets() {
+    if (!useTickets() || !acct.seq) return;
+    const all = new Set();
+    let marker;
+    do {
+      const r = await req('account_objects', { account: me, type: 'ticket', ledger_index: 'validated', limit: 400, ...(marker ? { marker } : {}) });
+      for (const o of r.account_objects || []) if (o.TicketSequence) all.add(o.TicketSequence);
+      marker = r.marker;
+    } while (marker);
+    tickets.clear();
+    for (const t of all) if (!busyTickets.has(t)) tickets.add(t);
+    ticketsSynced = ledger;
+  }
+  // keep enough tickets ready (each locks 0.2 XRP of reserve until it is used)
+  async function ensureTickets() {
+    if (!useTickets() || lineBusy || stopped || !acct.seq) return;
+    const have = tickets.size + busyTickets.size;
+    const n = Math.min(ticketTarget() - have, 250 - have);
+    if (n < 3) return;
+    if (available() - committed() < reserves.inc * n + cfg.minSize) { stat('skippedTicketReserve'); return; }
+    lineBusy = true;
+    try {
+      const r = await client.submitAndWait({ TransactionType: 'TicketCreate', Account: me, TicketCount: n }, { wallet, autofill: true });
+      if (r.result.meta?.TransactionResult === 'tesSUCCESS') stat('ticketsCreated', n);
+      else say(`⚠️ tickets: ${r.result.meta?.TransactionResult}`);
+    } catch (e) { say(`⚠️ tickets: ${e.message}`); }
+    finally { seqDirty = true; lineBusy = false; }
+    await syncTickets().catch(() => {});
+    await refreshAccount().catch(() => {});
   }
 
   // ---------- rivals ----------
@@ -535,7 +655,9 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     finally { seqDirty = true; lineBusy = false; }
   }
   async function manageLines() {
-    if (inFlight || lineBusy || cfg.dryRun || stopped || !acct.seq) return;
+    if ((!useTickets() && flights.size) || lineBusy || cfg.dryRun || stopped || !acct.seq) return;
+    if (useTickets() && tickets.size + busyTickets.size <= ticketTarget() - 3) await ensureTickets();
+    if (lineBusy) return;
     for (const k of Object.keys(S.hot)) { S.hot[k] *= 0.97; if (S.hot[k] < 1e-4) delete S.hot[k]; }
     const wantList = cfg.focus
       ? uni.priority().filter((k) => g.xrpPool.has(k)).slice(0, cfg.maxLines)
@@ -565,7 +687,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   async function loadWallet() {
     if (cfg.dryRun || acct.seq) return;
     try {
-      await refreshAccount(); await refreshLines();
+      await refreshAccount(); await refreshLines(); await syncTickets().catch(() => {});
       if (activated === false) say(`💰 Wallet activated: ${acct.balance.toFixed(2)} XRP – trading starts`);
       activated = true;
     } catch (e) {
@@ -606,7 +728,9 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       stats: S.stats, dayFees: S.dayFees, maxFeesDay: cfg.maxFeesDay, trades: S.trades.slice(0, 50), rivals: S.rivals.slice(0, 40),
       lines: [...lines].map(name), hot: Object.entries(S.hot).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k, v]) => ({ token: name(k), score: +v.toFixed(4), line: lines.has(k) })),
       focus: cfg.focus, focusList: uni.list().slice(0, 60).map((x) => ({ ...x, token: name(x.tok), line: lines.has(x.tok) })),
-      watching: [...cfg.watch.values()], inFlight: inFlight ? inFlight.route : null, activated: activated !== false,
+      watching: [...cfg.watch.values()], inFlight: [...flights.values()].map((f) => f.route), activated: activated !== false,
+      parallel: useTickets() ? cfg.parallel : 1, tickets: { free: tickets.size, busy: busyTickets.size, target: useTickets() ? ticketTarget() : 0 },
+      sizes: { min: cfg.minSize, max: cfg.maxSize }, minProfit: cfg.minProfit, topN: cfg.topN, focusOnly: cfg.focusOnly,
     };
   }
   const readJsonl = (prefix) => {
@@ -617,5 +741,5 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     return out;
   };
 
-  return { start, stop, resubscribe, status, onTransaction, onLedgerDone, readJsonl, graph: g, say, _manageLines: manageLines, _loadWallet: loadWallet, _refocus: refocus, _uni: uni, _state: () => S, _lines: lines, _acct: () => acct };
+  return { start, stop, resubscribe, status, onTransaction, onLedgerDone, readJsonl, graph: g, say, _manageLines: manageLines, _ensureTickets: ensureTickets, _loadWallet: loadWallet, _refocus: refocus, _uni: uni, _state: () => S, _lines: lines, _acct: () => acct };
 }
