@@ -218,6 +218,20 @@ A second bot in the same folder, with **its own wallet** and its own pm2 process
   automatically for the tokens that show up most in good loops and in the rivals' batches (`ARB_MAX_LINES`,
   0.2 XRP reserve each).
 
+## Token list (default: only the list)
+
+`ARB_LIST_ONLY` (on) = the bot trades **only** the tokens in `ARB_TOKENS` – loops, trust lines, everything.
+The default list is the owner's pick of the top memecoins on FirstLedger with big XRP pools (38 tokens,
+27 Oct 2026: FUZZY, ARMY, PHNIX, BCHAMP, DROP, ATM, SLT, PROFIT, FARM, 666, Teddy, GOAT, SEAL, 589, BERT,
+JELLY, Horizon, TOTO, PHX, GRIM, OLX, SCHWEPE, SIGMA, scrap, XRPM, XOX, DeepTide, CBIRD, SPY, Xmen, bwif,
+Laugh, UGA, TIME, SPC, HIYO, XYZ, LIHUA); for names with copies the issuer with the deepest XRP pool was
+taken. Edit it in ⚙️ Settings → The list (one `NAME.rIssuer` per line; empty = back to the default). Trust
+lines of other tokens that hold nothing are given back. The page suggests tokens to add (deep pools, hype,
+the rivals' tokens) – they are never traded until you add them.
+
+**Hard reset:** `bash reset-arb.sh` (in the sniper folder) stops the bot, deletes all its data (stats, trades,
+learning, pool cache, page settings) and starts it fresh. The wallet in `.env` stays.
+
 ## Learning (target win rate)
 
 Every batch that lands is a win or a miss, and every miss is explained:

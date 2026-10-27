@@ -47,6 +47,21 @@ const name = (k) => {
   return /^[\x20-\x7e]+$/.test(s) ? s : c.slice(0, 6);
 };
 
+// The owner's list: the top memecoins by market cap on FirstLedger with big XRP pools (27 Oct 2026).
+// Issuer = the one with the deepest XRP pool for that name (copies with the same name are ignored).
+export const DEFAULT_TOKENS = [
+  'FUZZY.rhCAT4hRdi2Y9puNdkpMzxrdKa5wkppR62', 'ARMY.rGG3wQ4kUzd7Jnmk1n5NWPZjjut62kCBfC', 'PHNIX.rDFXbW2ZZCG5WgPtqwNiA2xZokLMm9ivmN', 'BCHAMP.rhYhn7s6z4HAfuJm7ehuSE7wxepRoUPwpi',
+  'DROP.rszenFJoDdiGjyezQc8pME9KWDQH43Tswh', 'ATM.raDZ4t8WPXkmDfJWMLBcNZmmSHmBC523NZ', 'SLT.rfGCeDUdtbzKbXfgvrpG745qdC1hcZBz8S', 'PROFIT.rJwLNwaBUh9a7ajk9FeeLAuA791wVe3oyg',
+  'FARM.rPrAEfVATUNDTJm9CUa8tYeD7oJrVdEGhU', '666.rhvf9fe6PP3GC8Bku2Ug7iQPjPDxYZfrxN', 'Teddy.r9Qk4VGodriw2xKLG9sRbTXWgknkz9TkDd', 'GOAT.r96Ny5BTU3z4Aw4BfiMJ7RTgDa5iE17u9t',
+  'SEAL.r4pXXQzJ8soYSX4QKeeW4BzRQS1PCtVYLJ', '589.rfcasq9uRbvwcmLFvc4ti3j8Qt1CYCGgHz', 'BERT.rpwAnF1mMZRszxdinETFHwzGQiPgsv3jHR', 'JELLY.rKHsxmaqf2SfcyU9LRi3VyjpAtyg6ZrQMp',
+  'Horizon.rDKJWtrPqKiMBzK9FTVvebMVec7FJtJLx6', 'TOTO.r9sH6YEVRyg8uYaKfyk1EfH36Lfq7a8PUD', 'PHX.rskkPc3Eea3phZmzYqdoRFXeHg1GF7oVzG', 'GRIM.rHLRdLwXiBZSD53ZQz8ogGJz25LzNCCjSz',
+  'OLX.rswiX7wDL25Go4wGdLJK1ssSMpUsRGosJR', 'SCHWEPE.rUQXurByxmKni4aLpuWMYMxxV5GWT1Azw2', 'SIGMA.rfKYWZ84fm9eVEdoTcsQCo1WdqMPyaUF5z', 'scrap.rGHtYnnigyuaHehWGfAdoEhkoirkGNdZzo',
+  'XRPM.r9mZNnos1GLtc55tkmr21G9BgXxV7w9hT1', 'XOX.rGJbFqiLdh23e9WigQ5sxTfFqTENveLX21', 'DeepTide.rnHDzEH4xyW6u4LbXqDoX1uk36v5ovhbFi', 'CBIRD.rHcU3JWTp7fnea3xgvbV8pCbEp9S3HjSUz',
+  'SPY.rnmJEi7hzEL34R7x48e732qvSnmF5wsLtQ', 'Xmen.rMFL2KuFPMuiujdbVGbMzNNjj5QKyd6dZf', 'bwif.r33jHP8k9eFY9Vf1SLU2XKfoQ8A3SkXPEh', 'Laugh.r32nbPw6cyt3KdxinB4ua6WSLRrrF4SXAC',
+  'UGA.rBFJGmWj6YaabVCxfsjiCM8pfYXs8xFdeC', 'TIME.rExSpmk2PAqxKRTT3mhjCrCpqVasBra5v8', 'SPC.rhnvCzgjfeK6Qabq7iTYcJc2h23483nriX', 'HIYO.rU5wZyCbZ2WhT51SLDV12vUHtcsqJn9631',
+  'XYZ.rU5nUwkBUPx3MFPQSHmMnr9S9yg4g8cKLc', 'LIHUA.rnhtvpHsAgigmVemgtzt7pujj4gv6LVL2a',
+].join(',');
+
 // bwif's public bots – watched to learn routes and held tokens
 export const DEFAULT_WATCH = 'raRBYswSuyUpH7h51UmWuNCw6Cj1TmpKD:bwif 1,raRBY29mxKf8oADemdUg5618xL6m5RhMLP:bwif 2';
 
@@ -89,7 +104,8 @@ export function readArbConfig(env = process.env) {
     hotWindowH: num('ARB_HOT_WINDOW_H', 6), // … within these hours …
     hotMinTrades: num('ARB_HOT_MIN_TRADES', 20), // … with at least this many trades
     hotKeepH: num('ARB_HOT_KEEP_H', 24), // stays in focus this long after it last qualified
-    tokens: parseTokens(env.ARB_TOKENS),
+    tokens: parseTokens(env.ARB_TOKENS || DEFAULT_TOKENS),
+    listOnly: bool('ARB_LIST_ONLY', true), // trade only the tokens of the list – nothing else, no lines for others
     lineMinScore: num('ARB_LINE_MIN_SCORE', 0.01),
     lastLedgers: num('ARB_LAST_LEDGERS', 1), // valid for the next ledger only (like bwif) – no stale tries
     fetchPerSec: num('ARB_FETCH_PER_SEC', 5),
@@ -119,7 +135,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   const learn = createLearner(S, cfg);
   // who moved which pool in the last ledgers (to tell "someone was faster" from "our math was off")
   const touches = new Map(); // pool → [{l, i, a}]
-  const allow = (a) => !(cfg.focus && cfg.focusOnly) || uni.has(a);
+  const allow = (a) => (cfg.listOnly ? uni.has(a) : !(cfg.focus && cfg.focusOnly) || uni.has(a));
   const lines = new Set(S.lines);
   let reserves = { base: 1, inc: 0.2 };
   let acct = { balance: 0, seq: 0, owners: 0 };
@@ -688,8 +704,9 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   // their line back (0.2 XRP reserve) once its balance is zero.
   function refocus() {
     uni.recompute();
-    if (!cfg.focus) return;
+    if (!cfg.focus && !cfg.listOnly) return;
     const f = [...uni.set()];
+    for (const tok of f) if (!g.xrpPool.has(tok)) wantPair(XRP, tok);
     for (let i = 0; i < f.length; i++) for (let j = i + 1; j < f.length; j++) wantPair(f[i], f[j]);
     // token/token pools between two focus tokens are read now (XRP pools were read first)
     for (const tok of uni.set()) {
@@ -713,9 +730,18 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (useTickets() && tickets.size + busyTickets.size <= ticketTarget() - 3) await ensureTickets();
     if (lineBusy) return;
     for (const k of Object.keys(S.hot)) { S.hot[k] *= 0.97; if (S.hot[k] < 1e-4) delete S.hot[k]; }
-    const wantList = cfg.focus
+    const wantList = cfg.focus || cfg.listOnly
       ? uni.priority().filter((k) => g.xrpPool.has(k)).slice(0, cfg.maxLines)
       : Object.entries(S.hot).filter(([k, v]) => k !== XRP && v >= cfg.lineMinScore).sort((a, b) => b[1] - a[1]).map(([k]) => k).slice(0, cfg.maxLines);
+    if (cfg.listOnly) {
+      // list only: give back every other line that holds nothing (0.2 XRP reserve each)
+      const drop = [...lines].find((k) => !uni.has(k) && !(lineBal.get(k) > 0));
+      if (drop) {
+        if (await trustSet(drop, '0')) { lines.delete(drop); S.lines = [...lines]; lineBal.delete(drop); stat('linesRemoved'); say(`✂️ trust line ${name(drop)} removed (not on the list)`); }
+        await refreshAccount().catch(() => {});
+        return;
+      }
+    }
     const next = wantList.find((k) => !lines.has(k));
     if (!next) return;
     if (lines.size >= cfg.maxLines) {
@@ -783,7 +809,9 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       available: Math.max(0, available()), ledger, pools: g.pools.size, poolsReady: ready, queue: queue.length, discovering,
       stats: S.stats, dayFees: S.dayFees, maxFeesDay: cfg.maxFeesDay, trades: S.trades.slice(0, 50), rivals: S.rivals.slice(0, 40),
       lines: [...lines].map(name), hot: Object.entries(S.hot).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k, v]) => ({ token: name(k), score: +v.toFixed(4), line: lines.has(k) })),
-      focus: cfg.focus, focusList: uni.list().slice(0, 60).map((x) => ({ ...x, token: name(x.tok), line: lines.has(x.tok) })),
+      listOnly: cfg.listOnly, candidates: uni.candidates().slice(0, 15).map((x) => ({ ...x, token: name(x.tok), id: `${name(x.tok)}.${x.tok.split('.')[1]}` })),
+      otherLines: [...lines].filter((k) => !uni.has(k)).map((k) => `${name(k)}${lineBal.get(k) > 0 ? ' (holds ' + lineBal.get(k) + ')' : ''}`),
+      focus: cfg.focus || cfg.listOnly, focusList: uni.list().slice(0, 60).map((x) => ({ ...x, token: name(x.tok), line: lines.has(x.tok) })),
       watching: [...cfg.watch.values()], inFlight: [...flights.values()].map((f) => f.route), activated: activated !== false,
       parallel: useTickets() ? cfg.parallel : 1, tickets: { free: tickets.size, busy: busyTickets.size, target: useTickets() ? ticketTarget() : 0 },
       learn: { target: cfg.targetWin, exploreDay: cfg.exploreDay, exploredToday: S.dayExplore || 0, classes: learn.table(), why: learn.why(), worstRoutes: learn.worst('r:').map((r) => ({ ...r, key: routeName(r.key) })), worstTokens: learn.worst('t:').map((r) => ({ ...r, key: name(r.key) })), worstPools: learn.worst('p:').map((r) => ({ ...r, key: poolName(r.key) })) },

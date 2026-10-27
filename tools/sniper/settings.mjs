@@ -87,6 +87,11 @@ function clean(f, raw) {
     }
     return { v: parts.map((p) => p.split(':').map((x) => x.trim()).filter(Boolean).join(':')).join(',') };
   }
+  if (type === 'tokens') { // NAME.rIssuer, one per line (or comma-separated)
+    const parts = v.split(/[\s,]+/).filter(Boolean);
+    for (const p of parts) if (!/^[^.:\s]{1,40}[.:]r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(p)) return { err: `${label}: “${p.slice(0, 50)}” – write NAME.rIssuerAddress` };
+    return { v: parts.join(',') };
+  }
   if (k === 'DISCORD_WEBHOOK' && v && !/^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(v)) return { err: 'Discord webhook: must start with https://discord.com/api/webhooks/' };
   return { v };
 }
@@ -145,9 +150,10 @@ export function makeSettings(GROUPS, { file = 'settings.json', title = '⚙️ S
       let el;
       if (type === 'bool') el = `<label class="sw"><input type="checkbox" name="${k}" value="1"${v === '1' ? ' checked' : ''}> on</label>`;
       else if (type === 'cur') el = `<select name="${k}">${['USD', 'XRP'].map((c) => `<option${c === v ? ' selected' : ''}>${c}</option>`).join('')}</select>`;
+      else if (type === 'tokens') el = `<textarea name="${k}" rows="10" placeholder="FUZZY.rhCAT…">${esc(v.split(',').filter(Boolean).join('\n'))}</textarea>`;
       else if (type === 'wallets') el = `<textarea name="${k}" rows="4" placeholder="rAbc…:Name">${esc(v.split(',').filter(Boolean).join('\n'))}</textarea>`;
       else el = `<input name="${k}" value="${esc(v)}" ${type === 'num' ? 'inputmode="decimal"' : ''} autocomplete="off">`;
-      return `<div class="f"><div class="l">${esc(label)}${mark}${help ? `<small>${esc(help)}</small>` : ''}<small class="d">Default: ${esc(def === '' ? '–' : def)}</small></div><div class="i">${el}</div></div>`;
+      return `<div class="f"><div class="l">${esc(label)}${mark}${help ? `<small>${esc(help)}</small>` : ''}<small class="d">Default: ${esc(def === '' ? '–' : type === 'tokens' ? `${def.split(',').length} tokens (empty field = back to them)` : def)}</small></div><div class="i">${el}</div></div>`;
     };
     return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Settings</title>
   <style>body{font:14px system-ui;margin:16px;background:#0e1726;color:#e6edf6;max-width:760px}a{color:#6cb8ff}h3{margin:22px 0 6px}.f{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid #243247}.l{flex:1}.l small{display:block;color:#8aa0bb;font-size:12px}.l small.d{color:#5f7590}.ch{display:inline!important;color:#f5b942!important;margin-left:6px}.i{width:min(220px,45vw)}input,select,textarea{font:inherit;width:100%;box-sizing:border-box;padding:7px;border-radius:7px;border:1px solid #3a4d66;background:#152033;color:#e6edf6}.sw input{width:auto;margin-right:6px}button{font:inherit;padding:9px 16px;border-radius:8px;border:1px solid #2c9a5e;background:#1f6e43;color:#e6edf6;cursor:pointer}.bar{position:sticky;bottom:0;background:#0e1726;padding:12px 0;border-top:1px solid #243247;margin-top:16px}.ok{background:#173d2a;border:1px solid #2c9a5e;padding:8px 12px;border-radius:8px}.err{background:#4a1f1f;border:1px solid #9a3c3c;padding:8px 12px;border-radius:8px}@media(max-width:520px){.f{flex-direction:column}.i{width:100%}}</style>

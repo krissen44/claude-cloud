@@ -11,7 +11,7 @@ import { Client } from 'xrpl';
 import { loadWallet } from './wallet.mjs';
 import { makeSettings } from './settings.mjs';
 import { toCsv } from './recorder.mjs';
-import { createArb, readArbConfig, DEFAULT_WATCH } from './arb/bot.mjs';
+import { createArb, readArbConfig, DEFAULT_WATCH, DEFAULT_TOKENS } from './arb/bot.mjs';
 import { arbPage } from './arb/page.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -41,7 +41,11 @@ export const ARB_GROUPS = [
     ['ARB_LEARN_MIN_TRIES', 'Tries before a route is judged', 'num', '6', '', 1, 100],
     ['ARB_LEARN_HALF_LIFE_H', 'Results fade after (hours, half-life)', 'num', '72', 'the market changes – old results count less', 1, 2000],
   ]],
-  ['🎯 Focus', [
+  ['📋 Token list', [
+    ['ARB_LIST_ONLY', 'Trade only the list', 'bool', '1', 'Only these tokens, no others – loops, trust lines, everything. Other lines that hold nothing are given back'],
+    ['ARB_TOKENS', 'The list', 'tokens', DEFAULT_TOKENS, 'One per line: NAME.rIssuer – suggestions to add are on the arb page'],
+  ]],
+  ['🎯 Focus (only when “Trade only the list” is off)', [
     ['ARB_FOCUS', 'Focus mode', 'bool', '1', 'Trust lines for the top tokens + hyped ones + the rivals’ + your list'],
     ['ARB_FOCUS_ONLY', 'Search only focus tokens', 'bool', '1', 'Off = loops may run through any token; only the held one needs a line'],
     ['ARB_TOP_N', 'Top tokens by XRP liquidity', 'num', '50', '', 0, 500],
@@ -49,7 +53,6 @@ export const ARB_GROUPS = [
     ['ARB_HOT_WINDOW_H', 'Hype: within (hours)', 'num', '6', '', 1, 72],
     ['ARB_HOT_MIN_TRADES', 'Hype: min. trades in that time', 'num', '20', '', 0, 100000],
     ['ARB_HOT_KEEP_H', 'Keep a hyped / rival token for (hours)', 'num', '24', '', 1, 720],
-    ['ARB_TOKENS', 'Always include', 'text', '', 'e.g. FUZZY.rhCAT4hRdi2Y9puNdkpMzxrdKa5wkppR62, comma-separated'],
   ]],
   ['🔎 Search', [
     ['ARB_MAX_HOPS', 'Max. pools per cycle', 'num', '5', '3–5; more = more loops, slower', 2, 5],

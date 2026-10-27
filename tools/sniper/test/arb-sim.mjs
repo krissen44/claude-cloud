@@ -176,8 +176,8 @@ class Ledger {
   }
   async submitAndWait(tx) {
     if (tx.TransactionType === 'TrustSet') {
-      this.lines.set(key(tx.LimitAmount), 0);
-      this.acct.owners++; this.acct.seq++;
+      if (tx.LimitAmount.value === '0') { this.lines.delete(key(tx.LimitAmount)); this.acct.owners--; } else { this.lines.set(key(tx.LimitAmount), 0); this.acct.owners++; }
+      this.acct.seq++;
       this.acct.balance -= 12 / D;
       return { result: { meta: { TransactionResult: 'tesSUCCESS' } } };
     }
@@ -206,7 +206,7 @@ function setup(env = {}) {
   L.pool('rPoolAB', A, B, 5e6, 1e7);
   L.pool('rPoolBX', B, 'XRP', 1e7, 500);
   const logs = [];
-  const cfg = readArbConfig({ ARB_DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'arb-')), ARB_FETCH_PER_SEC: '200', ARB_WATCH: `${RIVAL}:Rival`, ...env });
+  const cfg = readArbConfig({ ARB_DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'arb-')), ARB_FETCH_PER_SEC: '200', ARB_WATCH: `${RIVAL}:Rival`, ARB_TOKENS: `AAA.${IA},BBB.${IB}`, ...env });
   const bot = createArb({ client: L, wallet, cfg, log: (m) => logs.push(m), fetchFn: null });
   // the ledger reports the hash of what the bot signed, like the real stream does
   const sign = wallet.sign.bind(wallet);
@@ -424,7 +424,7 @@ await test('rival: inner payments arriving before the batch still count', async 
 });
 
 await test('focus: top by liquidity, hype detection, other tokens ignored, lines follow the focus', async () => {
-  const { L, bot } = setup({ ARB_TOP_N: '2', ARB_HOT_MIN_TRADES: '3', ARB_MAX_LINES: '2' });
+  const { L, bot } = setup({ ARB_LIST_ONLY: '0', ARB_TOKENS: '-', ARB_TOP_N: '2', ARB_HOT_MIN_TRADES: '3', ARB_MAX_LINES: '2' });
   const IC = Wallet.generate().address;
   const C = `CCC.${IC}`;
   L.pool('rPoolXC', 'XRP', C, 50, 1e6); // small pool, not top 2
@@ -494,8 +494,8 @@ await test('token/token pools unknown to the stream are found by asking for focu
 
 // a second, separate triangle XRP → CCC → DDD → XRP (no pool shared with AAA/BBB)
 function twoLoops(env = {}) {
-  const t = setup({ ARB_MAX_LINES: '4', ...env });
   const IC = Wallet.generate().address, ID = Wallet.generate().address;
+  const t = setup({ ARB_MAX_LINES: '4', ARB_TOKENS: `AAA.${IA},BBB.${IB},CCC.${IC},DDD.${ID}`, ...env });
   t.C = `CCC.${IC}`; t.Dk = `DDD.${ID}`;
   t.L.pool('rPoolXC', 'XRP', t.C, 400, 4e6);
   t.L.pool('rPoolCD', t.C, t.Dk, 4e6, 8e6);
@@ -629,6 +629,37 @@ await test('learner: wins make a margin class confident, a contested pool and a 
   assert.equal(lr.decide(mk('other2', ['p9', 'pX', 'p8']), fee, 5), 'explore');
   // a loop whose expected value is negative is never sent
   assert.equal(lr.decide(mk('tiny', ['q1', 'q2'], -0.0001), fee, 10), 'negativeEv');
+});
+
+await test('list only: tokens off the list are never traded, their empty lines are given back, they show as suggestions', async () => {
+  const { L, bot } = setup({ ARB_TOKENS: `AAA.${IA}` }); // BBB is not on the list
+  const IZ = Wallet.generate().address;
+  L.lines.set(`ZZZ.${IZ}`, 0); L.acct.owners++; // an old line from before the wipe
+  L.pool('rPoolXZ', 'XRP', `ZZZ.${IZ}`, 900, 9e6);
+  await bot.start();
+  for (let i = 0; i < 80 && bot.status().poolsReady < 4; i++) await wait(20);
+  bot._uni.snapshot(); bot._refocus();
+  await wait(100);
+  assert.deepEqual(bot.status().focusList.map((x) => x.token), ['AAA']);
+  L.trade('rPoolAB', B, 2e6); await wait(300); // the loop needs BBB → not allowed
+  assert.equal(bot.status().stats.opportunities || 0, 0, 'no loop through BBB');
+  for (let i = 0; i < 3; i++) await bot._manageLines();
+  assert.ok(!L.lines.has(`ZZZ.${IZ}`), 'old line removed');
+  assert.ok(L.lines.has(A), 'line for the list token');
+  assert.ok(!L.lines.has(B), 'no line for BBB');
+  const cand = bot.status().candidates.map((x) => x.token);
+  assert.ok(cand.includes('ZZZ') && cand.includes('BBB'), 'suggestions: ' + cand);
+  bot.stop();
+});
+
+await test('default list: 38 FirstLedger top tokens, settings field parses back', async () => {
+  const { DEFAULT_TOKENS, parseTokens } = await import('../arb/bot.mjs');
+  const t = parseTokens(DEFAULT_TOKENS);
+  assert.equal(t.length, 38);
+  assert.ok(t.includes('46555A5A59000000000000000000000000000000.rhCAT4hRdi2Y9puNdkpMzxrdKa5wkppR62'), 'FUZZY');
+  assert.ok(t.includes('666.rhvf9fe6PP3GC8Bku2Ug7iQPjPDxYZfrxN'), '666 (deepest pool, not the copy)');
+  assert.equal(readArbConfig({ ARB_TOKENS: '' }).tokens.length, 38, 'empty value = the default list');
+  assert.equal(readArbConfig({}).listOnly, true);
 });
 
 console.log(`\n${passed} arb scenarios passed`);

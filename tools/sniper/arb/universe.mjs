@@ -74,13 +74,17 @@ export function createUniverse(g, cfg) {
     }
     for (const [tok, h] of hotSince) if (t - h.at > cfg.hotKeepH * H) hotSince.delete(tok);
     for (const [tok, at] of rivalAt) if (t - at > cfg.hotKeepH * H) rivalAt.delete(tok);
-    set = new Set([...cfg.tokens, ...top, ...hotSince.keys(), ...rivalAt.keys()]);
+    set = cfg.listOnly ? new Set(cfg.tokens) : new Set([...cfg.tokens, ...top, ...hotSince.keys(), ...rivalAt.keys()]);
     return set;
   }
 
   // order for trust lines: own list, rivals, hot, then top by liquidity
   function priority() {
     const out = [];
+    if (cfg.listOnly) { // the list, deepest XRP pool first
+      const x = (k) => { const p = g.pools.get(g.xrpPool.get(k)); return p?.ready ? g.xrpSide(p) : 0; };
+      return [...cfg.tokens].sort((a, b) => x(b) - x(a));
+    }
     const add = (k) => { if (!out.includes(k)) out.push(k); };
     cfg.tokens.forEach(add);
     [...rivalAt.entries()].sort((a, b) => b[1] - a[1]).forEach(([k]) => add(k));
@@ -89,11 +93,23 @@ export function createUniverse(g, cfg) {
     return out;
   }
 
+  // tokens worth adding to the list (shown on the page, never traded by themselves):
+  // deep pools, hype and the rivals' tokens that aren't on it yet
+  function candidates() {
+    const xrpOf = (tok) => { const p = g.pools.get(g.xrpPool.get(tok)); return p?.ready ? +g.xrpSide(p).toFixed(0) : 0; };
+    const out = new Map();
+    const add = (tok, why) => { if (cfg.tokens.includes(tok) || tok === XRP) return; const o = out.get(tok) || { tok, why: [] }; o.why.push(why); out.set(tok, o); };
+    top.slice(0, 15).forEach((tok, i) => add(tok, `top ${i + 1} by liquidity`));
+    for (const [tok, h] of hotSince) add(tok, h.why);
+    for (const [tok] of rivalAt) add(tok, 'used by the rivals');
+    return [...out.values()].map((o) => ({ tok: o.tok, xrp: xrpOf(o.tok), growth: growthOf(o.tok), trades1h: tradesIn(o.tok, H), why: o.why.join(' · ') })).sort((a, b) => b.xrp - a.xrp);
+  }
+
   function list() {
     const xrpOf = (tok) => { const p = g.pools.get(g.xrpPool.get(tok)); return p?.ready ? +g.xrpSide(p).toFixed(0) : null; };
-    const why = (tok) => [cfg.tokens.includes(tok) && 'yours', rivalAt.has(tok) && 'rival', hotSince.has(tok) && hotSince.get(tok).why, top.includes(tok) && `top ${top.indexOf(tok) + 1}`].filter(Boolean).join(' · ');
+    const why = (tok) => [cfg.tokens.includes(tok) && (cfg.listOnly ? 'list' : 'yours'), rivalAt.has(tok) && 'rival', hotSince.has(tok) && hotSince.get(tok).why, top.includes(tok) && `top ${top.indexOf(tok) + 1}`].filter(Boolean).join(' · ');
     return priority().map((tok) => ({ tok, xrp: xrpOf(tok), growth: growthOf(tok), trades1h: tradesIn(tok, H), why: why(tok) }));
   }
 
-  return { noteChanged, noteRival, snapshot, recompute, priority, list, has: (a) => a === XRP || set.has(a), size: () => set.size, set: () => set };
+  return { noteChanged, noteRival, snapshot, recompute, priority, list, candidates, has: (a) => a === XRP || set.has(a), size: () => set.size, set: () => set };
 }
