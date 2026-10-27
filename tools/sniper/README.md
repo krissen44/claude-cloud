@@ -229,6 +229,12 @@ taken. Edit it in ⚙️ Settings → The list (one `NAME.rIssuer` per line; emp
 lines of other tokens that hold nothing are given back. The page suggests tokens to add (deep pools, hype,
 the rivals' tokens) – they are never traded until you add them.
 
+**Bridges** (`ARB_BRIDGE`, on): a loop may pass through a token off the list whose XRP pool holds at least
+`ARB_BRIDGE_MIN_XRP` (1,000) XRP and whose issuer is clean – only inside the same all-or-nothing batch, never
+held, no trust line (e.g. FUZZY → WIND → DROP → PHNIX, the kind of loop the bwif bots win most). Off = only list
+tokens in a loop. Busy ledgers: up to `ARB_MAX_FEE_DROPS` (20,000 drops) per batch, but only for loops that
+still earn after that fee.
+
 **Hard reset:** `bash reset-arb.sh` (in the sniper folder) stops the bot, deletes all its data (stats, trades,
 learning, pool cache, page settings) and starts it fresh. The wallet in `.env` stays.
 

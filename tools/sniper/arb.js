@@ -44,6 +44,8 @@ export const ARB_GROUPS = [
   ['📋 Token list', [
     ['ARB_LIST_ONLY', 'Trade only the list', 'bool', '1', 'Only these tokens, no others – loops, trust lines, everything. Other lines that hold nothing are given back'],
     ['ARB_TOKENS', 'The list', 'tokens', DEFAULT_TOKENS, 'One per line: NAME.rIssuer – suggestions to add are on the arb page'],
+    ['ARB_BRIDGE', 'Loops may pass through big tokens', 'bool', '1', 'Inside the same all-or-nothing batch only – never held, no trust line (e.g. FUZZY → WIND → DROP). Off = only list tokens in a loop'],
+    ['ARB_BRIDGE_MIN_XRP', 'Bridge token: min. XRP in its pool', 'num', '1000', 'bwif’s bridges (WIND, CRAP, CABAL, POOL) have ≈ 1,400', 0, 1e8],
   ]],
   ['🎯 Focus (only when “Trade only the list” is off)', [
     ['ARB_FOCUS', 'Focus mode', 'bool', '1', 'Trust lines for the top tokens + hyped ones + the rivals’ + your list'],
@@ -61,7 +63,7 @@ export const ARB_GROUPS = [
   ]],
   ['⛽ Fees & lines', [
     ['ARB_FEE_DROPS', 'Min. fee per batch (drops)', 'num', '50', 'raised automatically when the ledger is busy; 1 XRP = 1,000,000 drops', 40, 100000],
-    ['ARB_MAX_FEE_DROPS', 'Max. fee per batch (drops)', 'num', '2000', '', 40, 1000000],
+    ['ARB_MAX_FEE_DROPS', 'Max. fee per batch (drops)', 'num', '20000', 'busy ledgers cost more – a loop is only sent if it still earns after the fee', 40, 1000000],
     ['ARB_MAX_FEES_DAY', 'Max. fees per day (XRP)', 'num', '2', 'then it pauses until tomorrow', 0, 1000],
     ['ARB_MAX_LINES', 'Max. trust lines', 'num', '50', 'each locks 0.2 XRP', 0, 500],
   ]],

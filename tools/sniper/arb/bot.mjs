@@ -93,7 +93,7 @@ export function readArbConfig(env = process.env) {
     minPoolXrp: num('ARB_MIN_POOL_XRP', 20), // pool depth (both sides, in XRP)
     slip: num('ARB_SLIP', 0.15), // % under the expected amount for the first payment
     feeDrops: num('ARB_FEE_DROPS', 50), // minimum fee per batch
-    maxFeeDrops: num('ARB_MAX_FEE_DROPS', 2000), // never pay more than this per batch (busy ledgers cost more)
+    maxFeeDrops: num('ARB_MAX_FEE_DROPS', 20000), // never pay more than this per batch; a loop must still earn after the fee
     maxFeesDay: num('ARB_MAX_FEES_DAY', 2), // XRP of fees per day, then pause until tomorrow
     maxLines: num('ARB_MAX_LINES', 50),
     // focus: only trade the top tokens by XRP liquidity + hyped ones + the rivals' + your own list
@@ -106,6 +106,10 @@ export function readArbConfig(env = process.env) {
     hotKeepH: num('ARB_HOT_KEEP_H', 24), // stays in focus this long after it last qualified
     tokens: parseTokens(env.ARB_TOKENS || DEFAULT_TOKENS),
     listOnly: bool('ARB_LIST_ONLY', true), // trade only the tokens of the list – nothing else, no lines for others
+    // bridges: a loop may pass through a very liquid token inside the same all-or-nothing batch
+    // (never held, no trust line), e.g. FUZZY → WIND → DROP – how the bwif bots win most of their loops
+    bridge: bool('ARB_BRIDGE', true),
+    bridgeMinXrp: num('ARB_BRIDGE_MIN_XRP', 1000), // XRP in the bridge token's own XRP pool
     lineMinScore: num('ARB_LINE_MIN_SCORE', 0.01),
     lastLedgers: num('ARB_LAST_LEDGERS', 1), // valid for the next ledger only (like bwif) – no stale tries
     fetchPerSec: num('ARB_FETCH_PER_SEC', 5),
@@ -135,7 +139,9 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   const learn = createLearner(S, cfg);
   // who moved which pool in the last ledgers (to tell "someone was faster" from "our math was off")
   const touches = new Map(); // pool → [{l, i, a}]
-  const allow = (a) => (cfg.listOnly ? uni.has(a) : !(cfg.focus && cfg.focusOnly) || uni.has(a));
+  const xrpDepth = (a) => { const p = g.pools.get(g.xrpPool.get(a)); return p?.ready ? g.xrpSide(p) : 0; };
+  const isBridge = (a) => cfg.bridge && a !== XRP && !uni.has(a) && xrpDepth(a) >= cfg.bridgeMinXrp && issuers.get(issuerOf(a))?.ok !== false;
+  const allow = (a) => (cfg.listOnly ? uni.has(a) || isBridge(a) : !(cfg.focus && cfg.focusOnly) || uni.has(a));
   const lines = new Set(S.lines);
   let reserves = { base: 1, inc: 0.2 };
   let acct = { balance: 0, seq: 0, owners: 0 };
@@ -681,14 +687,32 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       tooLong: keys.length - 1 > cfg.maxHops,
     };
   }
+  const rivalTx = new Map(); // "acct:ledger" → their transactions in that ledger (one request per ledger)
   const balAt = async (acct, l) => Number((await req('account_info', { account: acct, ledger_index: l })).account_data.Balance) / DROPS;
   async function closeRival(hash) {
     const r = rivalBatches.get(hash);
     if (!r) return;
     rivalBatches.delete(hash);
-    // the stream may not carry the inner payments: then the balance change in that ledger tells
+    // the stream may not carry the inner payments: read them from the ledger (exact per batch);
+    // only if that fails, the balance change of the whole ledger (shared by all their batches in it)
     if (!r.inner && r.acct && r.ledger) {
-      try { r.pnl = (await balAt(r.acct, r.ledger)) - (await balAt(r.acct, r.ledger - 1)) + r.fee; r.applied = r.pnl > 1e-9; r.byBalance = true; } catch {}
+      try {
+        const k = `${r.acct}:${r.ledger}`;
+        let txs = rivalTx.get(k);
+        if (!txs) { txs = req('account_tx', { account: r.acct, ledger_index_min: r.ledger, ledger_index_max: r.ledger, limit: 400 }).then((x) => x.transactions || []); rivalTx.set(k, txs); setTimeout(() => rivalTx.delete(k), 60000); }
+        let d = 0, n = 0;
+        for (const t of await txs) {
+          if (t.meta?.ParentBatchID !== hash) continue;
+          n++;
+          for (const nd of t.meta.AffectedNodes || []) {
+            const m = nd.ModifiedNode;
+            if (m?.LedgerEntryType === 'AccountRoot' && m.FinalFields?.Account === r.acct && m.PreviousFields?.Balance != null) d += (Number(m.FinalFields.Balance) - Number(m.PreviousFields.Balance)) / DROPS;
+          }
+        }
+        r.pnl = d; r.applied = n > 0; r.byLedger = true;
+      } catch {
+        try { r.pnl = (await balAt(r.acct, r.ledger)) - (await balAt(r.acct, r.ledger - 1)) + r.fee; r.applied = r.pnl > 1e-9; r.byBalance = true; } catch {}
+      }
     }
     delete r.acct;
     r.pnl = +(r.pnl - r.fee).toFixed(6);
@@ -708,11 +732,13 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     const f = [...uni.set()];
     for (const tok of f) if (!g.xrpPool.has(tok)) wantPair(XRP, tok);
     for (let i = 0; i < f.length; i++) for (let j = i + 1; j < f.length; j++) wantPair(f[i], f[j]);
-    // token/token pools between two focus tokens are read now (XRP pools were read first)
+    // bridge tokens: check their issuers up front, so a loop through them can run at first sight
+    if (cfg.listOnly && cfg.bridge) for (const [tok] of g.xrpPool) if (isBridge(tok) && !issuers.has(issuerOf(tok))) checkIssuer(issuerOf(tok));
+    // token/token pools between two focus tokens (or a focus token and a bridge) are read now
     for (const tok of uni.set()) {
       for (const id of g.adj.get(tok) || []) {
         const p = g.pools.get(id);
-        if (p && !p.ready && uni.has(p.a) && uni.has(p.b)) want(id, true);
+        if (p && !p.ready && allow(p.a) && allow(p.b)) want(id, true);
       }
     }
   }
@@ -809,7 +835,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       available: Math.max(0, available()), ledger, pools: g.pools.size, poolsReady: ready, queue: queue.length, discovering,
       stats: S.stats, dayFees: S.dayFees, maxFeesDay: cfg.maxFeesDay, trades: S.trades.slice(0, 50), rivals: S.rivals.slice(0, 40),
       lines: [...lines].map(name), hot: Object.entries(S.hot).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k, v]) => ({ token: name(k), score: +v.toFixed(4), line: lines.has(k) })),
-      listOnly: cfg.listOnly, candidates: uni.candidates().slice(0, 15).map((x) => ({ ...x, token: name(x.tok), id: `${name(x.tok)}.${x.tok.split('.')[1]}` })),
+      listOnly: cfg.listOnly, bridge: cfg.listOnly && cfg.bridge, bridges: cfg.listOnly && cfg.bridge ? [...g.xrpPool.keys()].filter(isBridge).map(name) : [], candidates: uni.candidates().slice(0, 15).map((x) => ({ ...x, token: name(x.tok), id: `${name(x.tok)}.${x.tok.split('.')[1]}` })),
       otherLines: [...lines].filter((k) => !uni.has(k)).map((k) => `${name(k)}${lineBal.get(k) > 0 ? ' (holds ' + lineBal.get(k) + ')' : ''}`),
       focus: cfg.focus || cfg.listOnly, focusList: uni.list().slice(0, 60).map((x) => ({ ...x, token: name(x.tok), line: lines.has(x.tok) })),
       watching: [...cfg.watch.values()], inFlight: [...flights.values()].map((f) => f.route), activated: activated !== false,

@@ -101,6 +101,7 @@ class Ledger {
       return ok({ amm: { account: p.id, amount: amt(p.a, p.ra), amount2: amt(p.b, p.rb), trading_fee: Math.round(p.fee * 1e5) } });
     }
     if (c === 'submit') return ok(this.submit(r.tx_blob));
+    if (c === 'account_tx' && r.account !== this.me) { if (this.rivalTxs?.[r.account]) return ok({ transactions: this.rivalTxs[r.account] }); throw new Error('no history'); }
     if (c === 'account_tx') return ok({ transactions: (this.history || []).filter((e) => e.ledger_index === r.ledger_index_min).map((e) => ({ tx: e.tx_json, meta: e.meta })) });
     if (c === 'account_objects') return ok({ account_objects: r.type === 'ticket' ? [...this.tickets].map((t) => ({ LedgerEntryType: 'Ticket', TicketSequence: t })) : [] });
     throw new Error('unknown ' + c);
@@ -478,6 +479,27 @@ await test('rival without inner payments in the stream: result from the balance,
   bot.stop();
 });
 
+await test('rival: two batches in one ledger, no inner payments in the stream → each gets its own result from the ledger', async () => {
+  const { L, bot } = setup();
+  await bot.start();
+  const node = (from, to) => ({ ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: RIVAL, Balance: String(to) }, PreviousFields: { Balance: String(from) } } });
+  L.rivalTxs = { [RIVAL]: [
+    { tx: { TransactionType: 'Payment' }, meta: { ParentBatchID: 'RB1', AffectedNodes: [node(10000000, 9000000)] } },
+    { tx: { TransactionType: 'Payment' }, meta: { ParentBatchID: 'RB1', AffectedNodes: [node(9000000, 10003000)] } },
+    { tx: { TransactionType: 'Payment' }, meta: { ParentBatchID: 'RB2', AffectedNodes: [node(10003000, 9503000)] } },
+    { tx: { TransactionType: 'Payment' }, meta: { ParentBatchID: 'RB2', AffectedNodes: [node(9503000, 10004000)] } },
+  ] };
+  const pay = { TransactionType: 'Payment', SendMax: '1000000', Amount: { currency: 'AAA', issuer: IA, value: '1' } };
+  for (const h of ['RB1', 'RB2', 'RB3']) L.emit('transaction', { validated: true, ledger_index: 6000, hash: h, tx_json: { TransactionType: 'Batch', Account: RIVAL, Fee: '50', RawTransactions: [{ RawTransaction: pay }] }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [] } });
+  await wait(10300);
+  const rs = bot.status().rivals;
+  const by = (h) => rs.find((r) => r.ledger === 6000 && Math.abs(r.pnl - h) < 1e-6);
+  assert.ok(by(0.003 - 0.00005), 'RB1 +0.003: ' + JSON.stringify(rs.map((r) => r.pnl)));
+  assert.ok(by(0.001 - 0.00005), 'RB2 +0.001');
+  assert.equal(rs.filter((r) => r.applied).length, 2, 'RB3 failed');
+  bot.stop();
+});
+
 await test('token/token pools unknown to the stream are found by asking for focus pairs', async () => {
   const { L, bot } = setup();
   const orig = L.request.bind(L);
@@ -650,6 +672,27 @@ await test('list only: tokens off the list are never traded, their empty lines a
   const cand = bot.status().candidates.map((x) => x.token);
   assert.ok(cand.includes('ZZZ') && cand.includes('BBB'), 'suggestions: ' + cand);
   bot.stop();
+});
+
+await test('bridge: a loop may pass through a big token off the list – held is always a list token, no line for the bridge', async () => {
+  const { L, bot } = setup({ ARB_TOKENS: `AAA.${IA}`, ARB_BRIDGE_MIN_XRP: '400' }); // BBB has 500 XRP in its pool
+  await bot.start();
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(300); // issuers checked
+  for (let i = 0; i < 3; i++) await bot._manageLines();
+  assert.ok(L.lines.has(A) && !L.lines.has(B), 'line only for the list token');
+  L.trade('rPoolAB', B, 1e6); await wait(400);
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  const st = bot.status();
+  assert.ok(st.bridges.includes('BBB'), 'BBB is a bridge');
+  assert.ok(st.stats.wins >= 1, JSON.stringify(st.stats));
+  assert.ok(st.trades.every((t) => t.held === 'AAA'));
+  bot.stop();
+  const t2 = setup({ ARB_TOKENS: `AAA.${IA}`, ARB_BRIDGE_MIN_XRP: '400', ARB_BRIDGE: '0' });
+  await t2.bot.start(); await ready(t2.bot);
+  t2.L.trade('rPoolAB', B, 2e6); await wait(300);
+  assert.equal(t2.bot.status().stats.opportunities || 0, 0, 'bridges off → no loop through BBB');
+  t2.bot.stop();
 });
 
 await test('default list: 38 FirstLedger top tokens, settings field parses back', async () => {
