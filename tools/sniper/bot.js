@@ -530,16 +530,16 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   }
 
   async function buyNow(l, p) {
-    if (cfg.pauseBuys) return stat(0, 'paused'), rec.decision(l.k, 'skipped', 'paused'), say(`⏸ ${l.name}: buying is paused`);
+    if (cfg.pauseBuys && !l.byHand) return stat(0, 'paused'), rec.decision(l.k, 'skipped', 'paused'), say(`⏸ ${l.name}: buying is paused`);
     if (S.day !== day()) { S.day = day(); S.buysToday = 0; }
     const open = Object.values(S.positions).filter((x) => !isMoonbag(x)).length; // moonbags don't count
-    if (open >= cfg.maxOpen) return stat(0, 'max open trades'), rec.decision(l.k, 'skipped', 'max open trades'), say(`⏸ ${l.name}: ${open} positions open (max ${cfg.maxOpen})`);
+    if (open >= cfg.maxOpen && !l.byHand) return stat(0, 'max open trades'), rec.decision(l.k, 'skipped', 'max open trades'), say(`⏸ ${l.name}: ${open} positions open (max ${cfg.maxOpen})`);
     let stake = l.buyXrp ?? cfg.buyXrp;
-    if (S.buysToday >= cfg.maxBuysPerDay) return stat(0, 'daily buy limit'), rec.decision(l.k, 'skipped', 'daily buy limit'), say(`⏸ ${l.name}: daily buy limit reached`);
+    if (S.buysToday >= cfg.maxBuysPerDay && !l.byHand) return stat(0, 'daily buy limit'), rec.decision(l.k, 'skipped', 'daily buy limit'), say(`⏸ ${l.name}: daily buy limit reached`);
     p = (await pool(l.currency, l.issuer, l.fast && !l.validated ? 'current' : 'validated')) || p; // fresh price, the queue may have waited
     if (!p) return stat(0, 'pool gone'), rec.decision(l.k, 'skipped', 'pool gone'), say(`⛔ ${l.name}: pool gone`);
     // size by share of the supply: XRP needed for BUY_SUPPLY_PCT % of all tokens, capped at BUY_MAX_XRP
-    if (cfg.buySupplyPct > 0 && !l.copy && l.supply > 0) {
+    if (cfg.buySupplyPct > 0 && !l.copy && !l.byHand && l.supply > 0) {
       const want = (l.supply * cfg.buySupplyPct) / 100;
       const need = want < p.tok * 0.95 ? (p.xrp * want) / (p.tok - want) / (1 - p.fee / 100) : Infinity;
       stake = Math.max(0.1, Math.min(need * 1.01, cfg.buyMaxXrp));
@@ -619,7 +619,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     rec.decision(l.k, 'bought', l.crowd ? `crowd entry: ${l.crowd}` : l.retried ? 'after launch protection' : '');
     rec.trade(l.k, buyInfo);
     rec.event('buy', { k: l.k, name: l.name, copy: l.copy || '', ...buyInfo });
-    say(`🟢 Bought ${l.name}${l.crowd ? ` (crowd entry – ${l.crowd})` : l.copy ? ` (copy ${l.copy})` : ''}: ${cost.toFixed(4)} XRP → ${got.toPrecision(6)} tokens${buyInfo.supplyPct != null ? ` = ${buyInfo.supplyPct}% of the supply` : ''}${l.fast ? ' ⚡' : ''} after ${buyInfo.delayS}s`);
+    say(`🟢 Bought ${l.name}${l.byHand ? ' (by hand)' : ''}${l.crowd ? ` (crowd entry – ${l.crowd})` : l.copy ? ` (copy ${l.copy})` : ''}: ${cost.toFixed(4)} XRP → ${got.toPrecision(6)} tokens${buyInfo.supplyPct != null ? ` = ${buyInfo.supplyPct}% of the supply` : ''}${l.fast ? ' ⚡' : ''} after ${buyInfo.delayS}s`);
   }
 
   function position(l, cost, amount, p) {
@@ -627,6 +627,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       k: l.k, currency: l.currency, issuer: l.issuer, name: l.name, cost, amount, sold: 0, proceeds: 0,
       entryPoolXrp: p.xrp, peak: cost, value: cost, tp1Done: false, at: now(), fails: 0, copy: l.copy || '',
       startPoolXrp: l.copy ? null : l.poolXrp, launchedAt: l.at, // pool size at launch (unknown for copies)
+      supply: l.supply || null, byHand: !!l.byHand,
     };
   }
 
@@ -807,22 +808,28 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     const free = await spendable();
     if (free - stake < cfg.minBalanceXrp) return;
     pos.adds = (pos.adds || 0) + 1; // counted before the try: never twice
+    const got = await addBuy(pos, stake, p);
+    if (!got) return say(`❌ ${pos.name}: add-on buy didn't fill`);
+    chart.note('add', pos, price, pos.health);
+    stat('chartAdds');
+    rec.event('chart_add', { k: pos.k, name: pos.name, cost: +got.cost.toFixed(6), tokens: got.tokens, score: pos.health, parts: pos.healthParts, gainPct: +gain.toFixed(1) });
+    say(`➕ ${pos.name}: chart very healthy (${pos.health}/100) – bought more: ${got.cost.toFixed(3)} XRP`);
+  }
+  // buy more of an open position (add-on or by hand): one IOC offer, the position grows
+  async function addBuy(pos, stake, p) {
     const expect = swapOut(stake, p.xrp, p.tok, p.fee);
-    if (cfg.dryRun) return say(`🧪 DRY add ${pos.name}: ${stake} XRP`);
+    if (cfg.dryRun) { pos.cost += stake; pos.amount += expect; pos.peak += stake; pos.value += stake; save(); return { cost: stake, tokens: expect }; }
     const r = await submit({
       TransactionType: 'OfferCreate', Account: me, Flags: TF_IOC | TF_SELL,
       TakerGets: toDrops(stake), TakerPays: { currency: pos.currency, issuer: pos.issuer, value: iouValue(expect * (1 - cfg.buySlippage / 100)) },
     });
     const fx = okResult(r) ? txEffects(r.meta, me, pos.currency, pos.issuer) : { tokDelta: 0, xrpDelta: 0 };
-    if (!(fx.tokDelta > 0)) return say(`❌ ${pos.name}: add-on buy didn't fill`);
+    if (!(fx.tokDelta > 0)) return null;
     const cost = Math.max(0, -fx.xrpDelta) || stake;
     pos.cost += cost; pos.amount += fx.tokDelta; pos.peak += cost; pos.value += cost;
     pos.entryPoolXrp = Math.max(pos.entryPoolXrp, p.xrp); // rug alarm measured from the new entry
-    chart.note('add', pos, price, pos.health);
-    stat('chartAdds');
-    rec.event('chart_add', { k: pos.k, name: pos.name, cost: +cost.toFixed(6), tokens: fx.tokDelta, score: pos.health, parts: pos.healthParts, gainPct: +gain.toFixed(1) });
     save();
-    say(`➕ ${pos.name}: chart very healthy (${pos.health}/100) – bought more: ${cost.toFixed(3)} XRP`);
+    return { cost, tokens: fx.tokDelta };
   }
 
   // What the rules want to do with a position right now: {part, why, opt?, rug?} or null.
@@ -924,11 +931,31 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   }
 
   // Your answers from the status page.
-  const answer = (k, what) => locked(() => answerNow(k, what));
-  async function answerNow(k, what) {
-    rec.event('answer', { k, what, waitedMin: S.positions[k]?.ask ? Math.round((now() - S.positions[k].ask.at) / 60000) : null });
+  const answer = (k, what, o = {}) => (what === 'buy' ? buyByHand(k, o.xrp) : locked(() => answerNow(k, what, o)));
+  async function answerNow(k, what, o = {}) {
+    rec.event('answer', { k, what, ...o, waitedMin: S.positions[k]?.ask ? Math.round((now() - S.positions[k].ask.at) / 60000) : null });
     const pos = S.positions[k];
     if (!pos) return 'gone';
+    if (what === 'sellpct') {
+      const pct = Math.max(1, Math.min(100, Number(o.pct) || 0));
+      delete pos.ask;
+      await sell(pos, pct >= 100 ? 1 : pct / 100, `sold ${pct}% by hand`);
+      return `${pos.name}: sold ${pct}%`;
+    }
+    if (what === 'buymore') {
+      const x = Number(o.xrp);
+      if (!(x >= 0.1 && x <= 100000)) return 'amount: 0.1 XRP or more';
+      const p = await pool(pos.currency, pos.issuer);
+      if (!p) return `${pos.name}: pool gone`;
+      const free = await spendable();
+      if (free - x < cfg.minBalanceXrp) return `only ${free.toFixed(2)} XRP free (floor ${cfg.minBalanceXrp})`;
+      const got = await addBuy(pos, x, p);
+      if (!got) return `${pos.name}: buy didn't fill (price moved more than ${cfg.buySlippage}%)`;
+      pos.addsByHand = (pos.addsByHand || 0) + 1;
+      rec.event('buy_by_hand', { k, name: pos.name, cost: got.cost, tokens: got.tokens, more: true });
+      say(`🛒 ${pos.name}: bought more by hand – ${got.cost.toFixed(3)} XRP`);
+      return `${pos.name}: bought ${got.cost.toFixed(3)} XRP more`;
+    }
     if (what === 'sell' && pos.ask) {
       const p = await pool(pos.currency, pos.issuer);
       const a = pos.ask;
@@ -953,6 +980,44 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       return 'sold';
     }
     return 'nothing to do';
+  }
+
+  // Buy any token from the status page: a FirstLedger link, NAME.rIssuer, or only the issuer
+  // address (if it issues one token). Hard problems (clawback, freeze, approval, no pool) refuse it;
+  // the launch filters (supply share, blackhole, pool size) don't apply – it's your call.
+  async function buyByHand(spec, xrpAmt) {
+    const x = Number(xrpAmt);
+    if (!(x >= 0.1 && x <= 100000)) return 'amount: 0.1 XRP or more';
+    const t = await parseToken(String(spec || '').trim());
+    if (t.err) return t.err;
+    const k = key(t.currency, t.issuer);
+    if (S.positions[k]) return answer(k, 'buymore', { xrp: x });
+    const l = { k, currency: t.currency, issuer: t.issuer, name: currencyName(t.currency), at: now(), buyXrp: x, byHand: true };
+    const c = await checks(l);
+    const hard = [...c.reasons.filter((r) => !/supply|pool only|> max/.test(r)), ...c.wait];
+    if (!c.pool) return `${l.name}: no XRP pool for this token`;
+    if (hard.length) return `${l.name}: not bought – ${hard.join(', ')}`;
+    l.poolXrp = c.pool.xrp; l.poolTok = c.pool.tok;
+    rec.event('buy_by_hand', { k, name: l.name, xrp: x });
+    await buy(l, c.pool);
+    return S.positions[k] ? `${l.name}: bought` : `${l.name}: buy didn't go through – see the log`;
+  }
+  async function parseToken(s) {
+    let m = s.match(/firstledger\.net\/token\/(r[1-9A-HJ-NP-Za-km-z]{24,34})\/([0-9A-Fa-f]{40}|[A-Za-z0-9]{3})/);
+    if (m) return { issuer: m[1], currency: m[2].length === 40 ? m[2].toUpperCase() : m[2] };
+    m = s.match(/^([^.:\s]{1,40})[.:](r[1-9A-HJ-NP-Za-km-z]{24,34})$/);
+    if (m) return { issuer: m[2], currency: m[1].length === 3 || /^[0-9A-F]{40}$/i.test(m[1]) ? m[1].toUpperCase() : Buffer.from(m[1], 'utf8').toString('hex').toUpperCase().padEnd(40, '0') };
+    m = s.match(/(r[1-9A-HJ-NP-Za-km-z]{24,34})/);
+    if (m) {
+      try {
+        const g = await req('gateway_balances', { account: m[1], ledger_index: 'validated' });
+        const cur = Object.keys(g.obligations || {});
+        if (cur.length === 1) return { issuer: m[1], currency: cur[0] };
+        if (cur.length > 1) return { err: `${m[1]} issues ${cur.length} tokens – write NAME.${m[1]}` };
+      } catch {}
+      return { err: `${m[1]} issues no token` };
+    }
+    return { err: 'paste a FirstLedger link, NAME.rIssuer or the issuer address' };
   }
 
   // Tokens to sell into the pool to receive `out` XRP (inverse of swapOut).
@@ -994,7 +1059,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       tracking: [...cfg.track.values()],
       stats: S.stats, following: rec.following(),
       mcapApproval: cfg.mcapApproval, mcapCurrency: cfg.mcapCurrency, paused: cfg.pauseBuys,
-      buysToday: S.buysToday, open: open.map((p) => ({ ...p, hist: undefined })), history: S.history.slice(0, 50),
+      buysToday: S.buysToday, open: open.map((p) => ({ ...p, hist: undefined, spark: (p.hist || []).filter((_, i, a) => i % Math.ceil(a.length / 60) === 0 || i === a.length - 1).map((x) => x.price) })), history: S.history.slice(0, 50),
       chart: { ...chart.summary(), on: cfg.chartSmart, add: cfg.chartAdd },
       wins: S.history.filter((h) => h.pnl > 0).length, losses: S.history.filter((h) => h.pnl <= 0).length,
     };

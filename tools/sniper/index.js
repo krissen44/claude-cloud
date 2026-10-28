@@ -132,7 +132,14 @@ ${an.total ? table('Decision', an.byDecision) + table('Start liquidity', an.bySt
 <p><small>Download: <a href="/export/launches.csv">launches.csv</a> (Excel) · <a href="/export/launches.json">launches.json</a> · <a href="/export/events.jsonl">events.jsonl</a> (every buy, sell, skip, approval, setting change)</small></p>`;
 }
 
-function page(st) {
+// tiny price line of a position's own chart
+function spark(arr) {
+  if (!arr || arr.length < 2) return '<small>chart builds up …</small>';
+  const w = 150, h = 34, mn = Math.min(...arr), mx = Math.max(...arr);
+  const pts = arr.map((v, i) => `${((i / (arr.length - 1)) * w).toFixed(1)},${(h - 2 - (mx > mn ? (v - mn) / (mx - mn) : 0.5) * (h - 4)).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-label="price, last minutes"><polyline fill="none" stroke="${arr.at(-1) >= arr[0] ? '#3ad17a' : '#ff6b6b'}" stroke-width="2" points="${pts}"/></svg>`;
+}
+function page(st, msg = '') {
   const t = (d) => new Date(d).toISOString().slice(5, 16).replace('T', ' ');
   const cap = (v) => (!v && v !== 0 ? '' : isNaN(v) ? '?' : (st.mcapCurrency === 'USD' ? '$' : '') + (v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(0) + 'k' : v.toFixed(0)) + (st.mcapCurrency === 'XRP' ? ' XRP' : ''));
   const btn = (k, what, label, cls = '') => `<form method="post" action="/act"><input type="hidden" name="k" value="${esc(k)}"><input type="hidden" name="do" value="${what}"><button class="${cls}">${label}</button></form>`;
@@ -145,17 +152,32 @@ function page(st) {
 The bot wants to sell <b>${Math.round(p.ask.part * 100)}%</b>: ${esc(p.ask.why)} <small>(since ${t(p.ask.at)})</small><br>
 ${p.domain ? `🌐 <a href="https://${esc(p.domain.replace(/^https?:\/\//, ''))}" target="_blank" rel="noopener">${esc(p.domain)}</a> · ` : '<small>no domain set on the issuer</small> · '}<a href="https://xrpscan.com/account/${esc(p.issuer)}" target="_blank" rel="noopener">XRPScan</a> · <a href="https://firstledger.net/token/${esc(p.issuer)}/${esc(p.currency)}" target="_blank" rel="noopener">FirstLedger</a> · <a href="https://x.com/search?q=${encodeURIComponent('$' + p.name)}" target="_blank" rel="noopener">X search</a>
 <div class="row">${btn(p.k, 'sell', '✅ Sell', 'ok')}${btn(p.k, 'hold', '✋ Keep (legit)', 'no')}</div></div>`).join('');
-  const liveRows = live.map((p) => `<tr><td>${name(p)}</td><td>${p.cost.toFixed(3)}</td><td>${p.value.toFixed(3)}</td><td class="${p.value >= p.cost ? 'g' : 'r'}">${f((p.value / p.cost - 1) * 100, 0)}%${p.tp1Done ? ' · ½ sold' : ''}</td><td>${cap(p.mcap)}</td><td>${t(p.at)}</td><td>${manualBtns(p)}</td></tr>`).join('');
-  const moonRows = moon.map((p) => { const bag = p.value - p.proceeds; return `<tr><td>${name(p)}</td><td>${p.cost.toFixed(3)}</td><td>${p.proceeds.toFixed(3)}</td><td class="g">${bag.toFixed(3)}</td><td>${(bag / p.cost).toFixed(1)}×</td><td>${cap(p.mcap)}</td><td>${manualBtns(p)}</td></tr>`; }).join('');
+  const act = (p, what, label, extra = '', cls = '', ask = '') => `<form method="post" action="/act"${ask ? ` onsubmit="return confirm('${esc(ask).replace(/'/g, '')}')"` : ''}><input type="hidden" name="k" value="${esc(p.k)}"><input type="hidden" name="do" value="${what}">${extra}<button class="${cls}">${label}</button></form>`;
+  const posCard = (p) => {
+    const pct = (p.value / p.cost - 1) * 100;
+    const moonbag = p.tp1Done && !p.copy;
+    const how = p.manual ? '✋ you decide (only a rug sells by itself)' : p.holding ? `⏳ holding – chart healthy (wanted: ${esc(p.holding.why)})` : moonbag ? '🌙 moonbag – stake is back, rides free' : p.copy === 'crowd' ? '👥 crowd entry – classic exits' : p.copy ? `👀 copy of ${esc(p.copy)}` : p.byHand ? '🛒 bought by hand – auto rules' : '🤖 auto rules';
+    const hp = p.health == null ? '' : ` <span class="hb ${p.health >= 70 ? 'g' : p.health < 40 ? 'r' : ''}" title="${esc(JSON.stringify(p.healthParts || {}))}">📈 ${p.health}/100</span>`;
+    return `<div class="pc"><div><b>${esc(p.name)}</b>${hp}${p.runner ? ' <small>🚀 Runner</small>' : ''}${p.adds || p.addsByHand ? ` <small>➕ bought more ${(p.adds || 0) + (p.addsByHand || 0)}×</small>` : ''} <small>· <a href="https://firstledger.net/token/${esc(p.issuer)}/${esc(p.currency)}" target="_blank" rel="noopener">FirstLedger</a> · <a href="https://xrpscan.com/account/${esc(p.issuer)}" target="_blank" rel="noopener">XRPScan</a></small></div>
+<div><small>${how}</small></div>
+<div class="pr"><div>${spark(p.spark)}</div><div><span class="k">Stake <b>${p.cost.toFixed(3)}</b></span><span class="k">Worth now <b>${p.value.toFixed(3)}</b></span><span class="k">Result <b class="${p.value >= p.cost ? 'g' : 'r'}">${f(p.value - p.cost)} XRP (${f(pct, 0)}%)</b></span>${p.proceeds ? `<span class="k">Taken out <b>${p.proceeds.toFixed(3)}</b></span>` : ''}<span class="k">MCap <b>${cap(p.mcap) || '–'}</b></span>${p.supply ? `<span class="k">Holding <b>${((p.amount / p.supply) * 100).toFixed(2)}%</b> of the supply</span>` : ''}<span class="k"><small>since ${t(p.at)} UTC</small></span></div></div>
+<div class="row">${[25, 50, 100].map((x) => act(p, 'sellpct', `Sell ${x}%`, `<input type="hidden" name="pct" value="${x}">`, x === 100 ? 'no' : '', x === 100 ? `Sell ALL of ${p.name}?` : '')).join('')}
+<form method="post" action="/act"><input type="hidden" name="k" value="${esc(p.k)}"><input type="hidden" name="do" value="buymore"><input class="xr" name="xrp" inputmode="decimal" placeholder="XRP" autocomplete="off"><button class="ok">Buy more</button></form>
+${p.manual ? act(p, 'auto', '🤖 Back to automatic') : act(p, 'hold', '✋ I decide')}</div></div>`;
+  };
   const hist = st.history.map((h) => `<tr><td>${esc(h.name)}</td><td>${h.cost.toFixed(3)}</td><td>${h.proceeds.toFixed(3)}</td><td class="${h.pnl >= 0 ? 'g' : 'r'}">${f(h.pnl)}</td><td>${esc(h.why)}</td><td>${t(h.closed)}</td></tr>`).join('');
-  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="20"><title>XRPL Sniper</title>
-<style>body{font:14px system-ui;margin:16px;background:#0e1726;color:#e6edf6}a{color:#6cb8ff}table{border-collapse:collapse;width:100%;margin:8px 0 24px}td,th{padding:4px 6px;border-bottom:1px solid #243247;text-align:left;vertical-align:top}.g{color:#3ad17a}.r{color:#ff6b6b}.k{display:inline-block;margin:0 16px 8px 0}small{color:#8aa0bb}form{display:inline}button{font:inherit;margin:2px 4px 2px 0;padding:4px 10px;border-radius:6px;border:1px solid #3a4d66;background:#1a2638;color:#e6edf6;cursor:pointer}button.ok{background:#1f6e43;border-color:#2c9a5e}button.no{background:#6e3a1f;border-color:#9a5a2c}.card{border:2px solid #f5b942;border-radius:10px;padding:10px 12px;margin:8px 0;line-height:1.7}.row{margin-top:6px}.wrap{overflow-x:auto}</style>
+  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>XRPL Sniper</title><script>setInterval(()=>{const a=document.activeElement;if(a&&a.tagName==='INPUT')return;if([...document.querySelectorAll('input[name=xrp],input[name=k]:not([type=hidden])')].some(i=>i.value))return;location.replace('/')},20000)</script>
+<style>body{font:14px system-ui;margin:16px;background:#0e1726;color:#e6edf6}a{color:#6cb8ff}table{border-collapse:collapse;width:100%;margin:8px 0 24px}td,th{padding:4px 6px;border-bottom:1px solid #243247;text-align:left;vertical-align:top}.g{color:#3ad17a}.r{color:#ff6b6b}.k{display:inline-block;margin:0 16px 8px 0}small{color:#8aa0bb}form{display:inline}button{font:inherit;margin:2px 4px 2px 0;padding:4px 10px;border-radius:6px;border:1px solid #3a4d66;background:#1a2638;color:#e6edf6;cursor:pointer}button.ok{background:#1f6e43;border-color:#2c9a5e}button.no{background:#6e3a1f;border-color:#9a5a2c}.card{border:2px solid #f5b942;border-radius:10px;padding:10px 12px;margin:8px 0;line-height:1.7}.row{margin-top:6px}.wrap{overflow-x:auto}.pc{border:1px solid #2c3d55;background:#121d2e;border-radius:10px;padding:10px 12px;margin:8px 0}.pr{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:4px}.hb{font-size:13px;margin-left:6px}input.xr{width:70px}input{font:inherit;padding:4px 8px;border-radius:6px;border:1px solid #3a4d66;background:#0e1726;color:#e6edf6}form.buy{display:flex;gap:6px;flex-wrap:wrap}form.buy input[name=k]{flex:1;min-width:220px}.msg{border-color:#6cb8ff}</style>
 <h2>XRPL Sniper ${st.dryRun ? '(DRY RUN)' : ''} <span style="float:right"><a href="/arb"><button type="button">⇄ Arbitrage</button></a> <a href="/settings"><button type="button">⚙️ Settings</button></a> <form method="post" action="/logout"><button>Log out</button></form></span></h2>
 ${st.paused ? '<div class="card" style="border-color:#ff6b6b">⏸ <b>Buying paused</b> – open positions are still sold by the rules. <a href="/settings">Change</a></div>' : ''}
 <div><span class="k">Wallet ${esc(st.wallet)}</span><span class="k">Cash result <b class="${st.cash >= 0 ? 'g' : 'r'}">${f(st.cash)} XRP</b></span><span class="k">Moonbags worth <b class="g">${st.moonValue.toFixed(3)} XRP</b></span><span class="k">${st.wins} wins / ${st.losses} losses</span><span class="k">Buys today ${st.buysToday}</span>${st.tracking.length ? `<span class="k">👀 ${st.tracking.map(esc).join(', ')}</span>` : ''}${st.mcapApproval ? `<span class="k">Approval from ${cap(st.mcapApproval)}</span>` : ''}</div>
 ${asks.length ? `<h3>🙋 Waiting for your approval (${asks.length})</h3>${askCards}` : ''}
-<h3>Open trades (${live.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Value</th><th>%</th><th>MCap</th><th>Bought (UTC)</th><th></th></tr>${liveRows}</table></div>
-<h3>🌙 Moonbags – stake back, the rest rides free (${moon.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Returned</th><th>Bag worth</th><th>×</th><th>MCap</th><th></th></tr>${moonRows}</table></div>
+${msg ? `<div class="card msg">${esc(msg)}</div>` : ''}
+<h3>🛒 Buy a token</h3>
+<form method="post" action="/act" class="buy" onsubmit="return confirm('Buy '+this.k.value.slice(0,60)+' for '+this.xrp.value+' XRP?')"><input type="hidden" name="do" value="buy"><input name="k" placeholder="FirstLedger link, NAME.rIssuer or the issuer address" autocomplete="off"><input class="xr" name="xrp" inputmode="decimal" placeholder="XRP" autocomplete="off"><button class="ok">Buy</button></form>
+<p><small>Sold by the launch rules afterwards (stake back at +${st.tp1 ?? 100}%, rest rides) – or press ✋ I decide. Tokens with clawback, a freeze or approval-only trust lines are refused.</small></p>
+<h3>💼 Positions (${live.length})</h3>${live.map(posCard).join('') || '<p><small>No open positions.</small></p>'}
+<h3>🌙 Moonbags – stake back, the rest rides free (${moon.length})</h3>${moon.map(posCard).join('') || '<p><small>None yet.</small></p>'}
 ${statsBlock(st.stats)}
 ${st.chart?.on ? `<div><span class="k">📈 Chart: held instead of selling <b>${st.stats?.chartHolds || 0}</b> · bought more <b>${st.stats?.chartAdds || 0}</b></span><span class="k">🧠 good calls: holds ${st.chart.hold.good}/${st.chart.hold.n} (score needed ${st.chart.hold.th}) · add-ons ${st.chart.add.good}/${st.chart.add.n} (score needed ${st.chart.add.th})${st.chart.pending ? ` · ${st.chart.pending} to judge` : ''}</span></div>` : ''}
 ${analysisBlock(st.analysis, st.following || 0)}
@@ -280,9 +302,9 @@ if (process.env.PORT) {
     if (!bot) return html(503, 'Bot is starting …');
     if (u.pathname === '/act' && req.method === 'POST') {
       return readBody(req, async (f) => {
-        const r = await bot.answer(f.get('k') || '', f.get('do') || '').catch((e) => e.message);
+        const r = await bot.answer(f.get('k') || '', f.get('do') || '', { pct: f.get('pct'), xrp: String(f.get('xrp') || '').replace(',', '.') }).catch((e) => e.message);
         console.log(`status page: ${f.get('do')} ${f.get('k')} → ${r}`);
-        res.writeHead(303, { location: '/' });
+        res.writeHead(303, { location: '/?msg=' + encodeURIComponent(String(r || '')).slice(0, 600) });
         res.end();
       });
     }
@@ -307,7 +329,7 @@ if (process.env.PORT) {
       return html(404, 'not found');
     }
     if (u.pathname === '/status.json') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); return res.end(JSON.stringify(bot.status())); }
-    html(200, page({ ...bot.status(), analysis: analysisCached() }));
+    html(200, page({ ...bot.status(), analysis: analysisCached() }, u.searchParams.get('msg') || ''));
   // BIND=127.0.0.1 when a reverse proxy (HTTPS) sits in front, so the page is not reachable directly
   }).listen(Number(process.env.PORT), process.env.BIND || undefined, () => console.log(`status page on ${process.env.BIND || '*'}:${process.env.PORT}`));
 }

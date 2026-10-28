@@ -68,6 +68,17 @@ Every buy and sale is in the log, on the status page (open trades and moonbags a
   the pool): FRIZZY (51 XRP, 22 % in the pool) ≈ 2.4 XRP, XRB (151 XRP, 36 %) ≈ 4.3 XRP, Swell (1,000 XRP, 99 %)
   ≈ 10 XRP. The buy message and the data show the share bought.
 
+## Status page: positions and trading by hand
+
+Every open position is a card: its own price line (last minutes), chart score 📈, stake, worth now, result,
+taken out, market cap, share of the supply held, how the bot handles it (auto / holding / moonbag / crowd /
+copy / ✋). Buttons: **Sell 25 % / 50 % / 100 %** (100 % asks first), **Buy more** (amount in XRP), **✋ I decide**
+↔ **🤖 Back to automatic**. On top: **Buy a token** – paste a FirstLedger link, `NAME.rIssuer` or just the
+issuer address, enter XRP; it is refused only for clawback, a freeze, approval-only trust lines or no XRP pool
+(the launch filters don't apply – your call) and then sold by the launch rules unless you press ✋. Buys by
+hand ignore the pause, the daily limit and the max. open trades, but never the balance floor. The page
+doesn't reload while you type.
+
 ## Chart: hold or buy more
 
 Every tick the bot adds the pool's price and XRP to the position's own chart, plus buys, sells, new wallets

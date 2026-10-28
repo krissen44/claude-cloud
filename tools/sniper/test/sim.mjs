@@ -778,6 +778,39 @@ await test('chart in the bot: healthy climb → buys more once and holds instead
   } finally { Date.now = realNow; }
 });
 
+await test('status page actions: sell 25 %, buy more, buy a token by link / NAME.rIssuer / issuer, clawback refused', async () => {
+  const { sim, bot } = setup(100);
+  await bot.start();
+  const cur = sim.launch({ name: 'HANDY', issuer: 'rHnd', poolXrp: 200, poolTok: 1e9 });
+  await settle(bot);
+  const k = `${cur}.rHnd`;
+  const a0 = bot.state().positions[k].amount;
+  assert.match(await bot.answer(k, 'sellpct', { pct: '25' }), /sold 25%/);
+  assert.ok(Math.abs(bot.state().positions[k].amount - a0 * 0.75) < a0 * 0.01, '25 % gone');
+  const c0 = bot.state().positions[k].cost;
+  assert.match(await bot.answer(k, 'buymore', { xrp: '2' }), /bought 2\.\d+ XRP more/);
+  assert.ok(bot.state().positions[k].cost > c0 + 1.9, 'stake grew');
+  assert.match(await bot.answer(k, 'buymore', { xrp: 'abc' }), /amount/);
+  // buy by hand – not launched while we watched, launch filters don't apply (only 5 % of the supply in the pool)
+  const c2 = sim.launch({ name: 'OLDIE', issuer: 'rHandBuy1111111111111111111111', poolXrp: 300, poolTok: 1e8, supply: 2e9, silent: true });
+  assert.match(await bot.answer('OLDIE.rHandBuy1111111111111111111111', 'buy', { xrp: '3' }), /OLDIE: bought/);
+  const p2 = bot.state().positions[`${c2}.rHandBuy1111111111111111111111`];
+  assert.ok(p2 && p2.byHand && Math.abs(p2.cost - 3) < 0.01);
+  const c3 = sim.launch({ name: 'LINKY', issuer: 'rLinkBuy1111111111111111111111', poolXrp: 300, poolTok: 1e8, silent: true });
+  assert.match(await bot.answer(`https://firstledger.net/token/rLinkBuy1111111111111111111111/${c3}`, 'buy', { xrp: '1' }), /LINKY: bought/);
+  const c4 = sim.launch({ name: 'SOLO', issuer: 'rSoBuy111111111111111111111111', poolXrp: 300, poolTok: 1e8, silent: true });
+  assert.match(await bot.answer('rSoBuy111111111111111111111111', 'buy', { xrp: '1' }), /SOLO: bought/);
+  assert.ok(bot.state().positions[`${c4}.rSoBuy111111111111111111111111`]);
+  sim.launch({ name: 'CLAWY', issuer: 'rCawzBuy1111111111111111111111', poolXrp: 300, poolTok: 1e8, flags: 0x00100000 | 0x80000000, silent: true });
+  assert.match(await bot.answer('CLAWY.rCawzBuy1111111111111111111111', 'buy', { xrp: '1' }), /not bought – clawback/);
+  assert.match(await bot.answer('nonsense', 'buy', { xrp: '1' }), /paste a FirstLedger link/);
+  assert.match(await bot.answer(k, 'hold'), /held/);
+  assert.equal(bot.state().positions[k].manual, true);
+  const st = bot.status();
+  assert.ok(Array.isArray(st.open[0].spark) && st.open[0].hist === undefined, 'page gets a small price line, not the whole history');
+  bot.stop();
+});
+
 await test('settings change live: pause stops buys, unpause buys again, open trades still sell', async () => {
   const { sim, bot, cfg } = setup();
   await bot.start();
