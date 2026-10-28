@@ -55,6 +55,19 @@ approval requests – the numbers to tune the filters with.
 
 Every buy and sale is in the log, on the status page (open trades and moonbags apart) and optionally in Discord.
 
+## First buyers and buying a share of the supply
+
+- **`FAST_LAUNCH`** (on): the sniper subscribes to `transactions_proposed` and sees an `AMMCreate` while it
+  enters the open ledger (measured ≈ 4–6 s before it is validated). It checks the launch on the open ledger
+  (`ledger_index: current`) and buys at once (the buy jumps the transaction queue) – one ledger earlier than
+  waiting for validation. Inside a ledger the order is set by the network, not by arrival: if our buy lands
+  before the pool exists, it is tried once more right after the launch is validated (`fastRetry`).
+  Launches that wait for a blackhole or a protection can't be bought earlier than that, of course.
+- **`BUY_SUPPLY_PCT`** (0 = off): instead of `BUY_XRP`, buy this percent of all tokens; the XRP needed is
+  computed from the pool, at most `BUY_MAX_XRP` (10). 1 % costs ≈ pool XRP × 1 % ÷ (share of the supply in
+  the pool): FRIZZY (51 XRP, 22 % in the pool) ≈ 2.4 XRP, XRB (151 XRP, 36 %) ≈ 4.3 XRP, Swell (1,000 XRP, 99 %)
+  ≈ 10 XRP. The buy message and the data show the share bought.
+
 ## Crowd entry and protection cap
 
 - **Crowd entry** (`CROWD_BUY`, on): a launch that was skipped for "dev holds the supply", "pool too small"

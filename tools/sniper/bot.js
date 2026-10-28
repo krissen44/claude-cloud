@@ -38,6 +38,12 @@ export function readConfig(env = process.env) {
     dryRun: bool('DRY_RUN', false),
     pauseBuys: bool('PAUSE_BUYS', false), // no new buys, open positions are still sold by the rules
     buyXrp: num('BUY_XRP', 1),
+    // size by share of the supply instead: buy this percent of all tokens (0 = off → BUY_XRP), at most BUY_MAX_XRP
+    buySupplyPct: num('BUY_SUPPLY_PCT', 0),
+    buyMaxXrp: num('BUY_MAX_XRP', 10),
+    // first buyers: see a launch while it enters the open ledger (≈ 4–6 s before it is validated),
+    // check it on that ledger and buy at once – one ledger earlier than before
+    fastLaunch: bool('FAST_LAUNCH', true),
     maxOpen: num('MAX_OPEN', 25),
     maxBuysPerDay: num('MAX_BUYS_PER_DAY', 40),
     minBalanceXrp: num('MIN_BALANCE_XRP', 10), // spendable XRP that is never used for buys
@@ -272,9 +278,9 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     return r.result;
   }
 
-  async function pool(currency, issuer) {
+  async function pool(currency, issuer, li = 'validated') {
     try {
-      const r = await req('amm_info', { asset: { currency: 'XRP' }, asset2: { currency, issuer }, ledger_index: 'validated' });
+      const r = await req('amm_info', { asset: { currency: 'XRP' }, asset2: { currency, issuer }, ledger_index: li });
       const a = r.amm;
       const xrpSide = typeof a.amount === 'string' ? a.amount : a.amount2;
       const tokSide = typeof a.amount === 'string' ? a.amount2 : a.amount;
@@ -305,30 +311,52 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   }
 
   // ---------- launch detection ----------
+  const seenValidated = new Set();
+  const launchValidated = new Map(); // k → wake-ups waiting for the validated AMMCreate
   function onTransaction(ev) {
     const tx = ev.tx_json || ev.transaction;
-    if (!tx || !ev.validated || ev.meta?.TransactionResult !== 'tesSUCCESS') return;
+    if (!tx) return;
+    if (!ev.validated) {
+      // open ledger: only launches, to be one of the first buyers
+      if (cfg.fastLaunch && tx.TransactionType === 'AMMCreate' && /^tes/.test(ev.engine_result || '')) onLaunch(tx, ev, true);
+      return;
+    }
+    if (ev.meta?.TransactionResult !== 'tesSUCCESS') return;
+    const h = ev.hash || tx.hash;
+    if (h) { if (seenValidated.has(h)) return; seenValidated.add(h); if (seenValidated.size > 20000) seenValidated.clear(); }
     rec.tx(ev);
     if (cfg.track.has(tx.Account) && tx.Account !== me) onTracked(tx, ev);
     // the issuer of a waiting launch did something (unfreeze, blackhole, fee change) → re-check now
     const ws = waiters.get(tx.Account);
     if (ws) { waiters.delete(tx.Account); for (const wake of ws) setTimeout(() => wake(true), 50); }
     if (tx.TransactionType !== 'AMMCreate') return;
+    onLaunch(tx, ev, false);
+  }
+  function onLaunch(tx, ev, fast) {
     const xrpAmt = typeof tx.Amount === 'string' ? tx.Amount : typeof tx.Amount2 === 'string' ? tx.Amount2 : null;
     const tok = typeof tx.Amount === 'object' ? tx.Amount : typeof tx.Amount2 === 'object' ? tx.Amount2 : null;
     if (!xrpAmt || !tok) return; // token/token pools are not launches against XRP
     const k = key(tok.currency, tok.issuer);
+    if (!fast) {
+      // the validated AMMCreate of a launch first seen in the open ledger: now its pool account is known
+      const lf = pending.get(k);
+      if (lf?.fast) lf.validated = true;
+      rec.setAmm?.(k, ammAccountOf(ev.meta));
+      const wake = launchValidated.get(k);
+      if (wake) { launchValidated.delete(k); wake.forEach((f) => f()); }
+    }
     if (S.seen[k] || pending.has(k) || S.positions[k]) return;
     S.seen[k] = now();
     const launch = {
       k, currency: tok.currency, issuer: tok.issuer, name: currencyName(tok.currency),
       creator: tx.Account, poolXrp: xrp(xrpAmt), poolTok: Number(tok.value), at: now(),
-      hash: ev.hash || tx.hash,
+      hash: ev.hash || tx.hash, fast, validated: !fast,
     };
+    if (fast) stat('fastLaunches');
     pending.set(k, launch);
     stat('launches');
-    rec.follow({ k, kind: 'launch', name: launch.name, currency: tok.currency, issuer: tok.issuer, creator: tx.Account, poolXrp: launch.poolXrp, poolTok: launch.poolTok, amm: ammAccountOf(ev.meta), ledger: ev.ledger_index || 0, hash: launch.hash || '' });
-    say(`🆕 Launch ${launch.name} (${launch.issuer.slice(0, 8)}…) pool ${launch.poolXrp.toFixed(1)} XRP`);
+    rec.follow({ k, kind: 'launch', name: launch.name, currency: tok.currency, issuer: tok.issuer, creator: tx.Account, poolXrp: launch.poolXrp, poolTok: launch.poolTok, amm: fast ? '' : ammAccountOf(ev.meta), ledger: ev.ledger_index || ev.ledger_current_index || 0, hash: launch.hash || '' });
+    say(`🆕 Launch ${launch.name} (${launch.issuer.slice(0, 8)}…) pool ${launch.poolXrp.toFixed(1)} XRP${fast ? ' ⚡ open ledger' : ''}`);
     evaluate(launch).catch((e) => { pending.delete(k); say(`⚠️ ${launch.name}: check failed – ${e.message}`); });
   }
 
@@ -359,7 +387,10 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     const reasons = [];
     let small = '';
     let supplyPct = null;
-    const info = (await req('account_info', { account: l.issuer, ledger_index: 'validated' })).account_data;
+    let supply = null;
+    // a launch seen in the open ledger isn't validated yet: check it on the open ledger
+    const li = l.fast && !l.validated ? 'current' : 'validated';
+    const info = (await req('account_info', { account: l.issuer, ledger_index: li })).account_data;
     const flags = info.Flags || 0;
     const blackholed = (flags & F.disableMaster) && (!info.RegularKey || BLACKHOLES.has(info.RegularKey));
     // Launch protections (anti-snipe phases) – freeze, transfer fee, authorized trust lines – can
@@ -372,7 +403,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (flags & F.requireAuth) soft('trust lines need the issuer\'s approval');
     const fee = info.TransferRate ? (info.TransferRate / 1e9 - 1) * 100 : 0;
     if (fee > cfg.maxTransferFee + 1e-9) soft(`transfer fee ${fee.toFixed(2)}%`);
-    const p = await pool(l.currency, l.issuer);
+    const p = await pool(l.currency, l.issuer, li);
     if (!p) reasons.push('pool gone');
     else {
       if (p.xrp < (l.minPool ?? cfg.minPoolXrp)) small = `pool only ${p.xrp.toFixed(1)} XRP`;
@@ -380,8 +411,8 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       if (p.fee > cfg.maxAmmFee) reasons.push(`AMM fee ${p.fee}%`);
       if (cfg.minPoolSupplyPct > 0) {
         try {
-          const g = await req('gateway_balances', { account: l.issuer, ledger_index: 'validated' });
-          const supply = Number(g.obligations?.[l.currency] || 0);
+          const g = await req('gateway_balances', { account: l.issuer, ledger_index: li });
+          supply = Number(g.obligations?.[l.currency] || 0);
           const pct = supply > 0 ? (p.tok / supply) * 100 : 100;
           supplyPct = +pct.toFixed(1);
           if (pct < cfg.minPoolSupplyPct) reasons.push(`only ${pct.toFixed(0)}% of supply in the pool`);
@@ -394,7 +425,8 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       domain: info.Domain ? Buffer.from(info.Domain, 'hex').toString('utf8').slice(0, 80) : '',
       checkedAfterS: Math.round((now() - l.at) / 1000),
     });
-    return { blackholed: !!blackholed, reasons, wait, small, pool: p };
+    if (supply > 0) l.supply = supply;
+    return { blackholed: !!blackholed, reasons, wait, small, pool: p, supply };
   }
 
   // Hard problems skip at once; a missing blackhole or a pool below the minimum is waited for.
@@ -491,9 +523,17 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (S.day !== day()) { S.day = day(); S.buysToday = 0; }
     const open = Object.values(S.positions).filter((x) => !isMoonbag(x)).length; // moonbags don't count
     if (open >= cfg.maxOpen) return stat(0, 'max open trades'), rec.decision(l.k, 'skipped', 'max open trades'), say(`⏸ ${l.name}: ${open} positions open (max ${cfg.maxOpen})`);
-    const stake = l.buyXrp ?? cfg.buyXrp;
+    let stake = l.buyXrp ?? cfg.buyXrp;
     if (S.buysToday >= cfg.maxBuysPerDay) return stat(0, 'daily buy limit'), rec.decision(l.k, 'skipped', 'daily buy limit'), say(`⏸ ${l.name}: daily buy limit reached`);
-    p = (await pool(l.currency, l.issuer)) || p; // fresh price, the queue may have waited
+    p = (await pool(l.currency, l.issuer, l.fast && !l.validated ? 'current' : 'validated')) || p; // fresh price, the queue may have waited
+    if (!p) return stat(0, 'pool gone'), rec.decision(l.k, 'skipped', 'pool gone'), say(`⛔ ${l.name}: pool gone`);
+    // size by share of the supply: XRP needed for BUY_SUPPLY_PCT % of all tokens, capped at BUY_MAX_XRP
+    if (cfg.buySupplyPct > 0 && !l.copy && l.supply > 0) {
+      const want = (l.supply * cfg.buySupplyPct) / 100;
+      const need = want < p.tok * 0.95 ? (p.xrp * want) / (p.tok - want) / (1 - p.fee / 100) : Infinity;
+      stake = Math.max(0.1, Math.min(need * 1.01, cfg.buyMaxXrp));
+      l.sizing = need <= cfg.buyMaxXrp ? `${cfg.buySupplyPct}% of the supply` : `capped at ${cfg.buyMaxXrp} XRP (${cfg.buySupplyPct}% would cost ${need === Infinity ? 'more than the pool' : need.toFixed(1) + ' XRP'})`;
+    }
     const free = await spendable();
     if (free - reserves.inc - stake < cfg.minBalanceXrp) {
       stat(0, 'balance floor');
@@ -516,11 +556,20 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       TransactionType: 'OfferCreate', Account: me, Flags: TF_IOC | TF_SELL,
       TakerGets: toDrops(stake),
       TakerPays: { currency: l.currency, issuer: l.issuer, value: iouValue(min) },
-    });
+    }, !!l.fast);
     const fx = okResult(r) ? txEffects(r.meta, me, l.currency, l.issuer) : { tokDelta: 0, xrpDelta: 0 };
     const got = fx.tokDelta;
     if (!(got > 0)) {
       const code = r?.meta?.TransactionResult || 'no fill';
+      // bought from the open ledger but landed before the pool existed: once more after the launch is validated
+      if (l.fast && !l.fastRetried) {
+        l.fastRetried = true;
+        S.buysToday = Math.max(0, S.buysToday - 1);
+        stat('fastRetry');
+        if (!l.validated) await new Promise((res) => { const t = setTimeout(res, 15000); launchValidated.set(l.k, [...(launchValidated.get(l.k) || []), () => { clearTimeout(t); res(); }]); });
+        l.validated = true;
+        return buyNow(l, null);
+      }
       // Did it bounce off a launch protection? Then don't give up: watch the token and buy once
       // the protection is lifted (one retry per token). A plain price move is not retried.
       if (!l.retried && !cfg.dryRun) {
@@ -551,6 +600,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     S.positions[l.k] = position(l, cost, got, p);
     save();
     const buyInfo = {
+      fast: !!l.fast, sizing: l.sizing || '', supplyPct: l.supply ? +((got / l.supply) * 100).toFixed(3) : null,
       cost: +cost.toFixed(6), tokens: got, expected: expect, slipPct: +((1 - got / expect) * 100).toFixed(2),
       entryPoolXrp: +p.xrp.toFixed(2), entryPrice: cost / got, delayS: +((now() - l.at) / 1000).toFixed(1),
       ledger: r.ledger_index || null, hash: r.hash || r.tx_json?.hash || '',
@@ -558,7 +608,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     rec.decision(l.k, 'bought', l.crowd ? `crowd entry: ${l.crowd}` : l.retried ? 'after launch protection' : '');
     rec.trade(l.k, buyInfo);
     rec.event('buy', { k: l.k, name: l.name, copy: l.copy || '', ...buyInfo });
-    say(`🟢 Bought ${l.name}${l.crowd ? ` (crowd entry – ${l.crowd})` : l.copy ? ` (copy ${l.copy})` : ''}: ${cost.toFixed(4)} XRP → ${got.toPrecision(6)} tokens`);
+    say(`🟢 Bought ${l.name}${l.crowd ? ` (crowd entry – ${l.crowd})` : l.copy ? ` (copy ${l.copy})` : ''}: ${cost.toFixed(4)} XRP → ${got.toPrecision(6)} tokens${buyInfo.supplyPct != null ? ` = ${buyInfo.supplyPct}% of the supply` : ''}${l.fast ? ' ⚡' : ''} after ${buyInfo.delayS}s`);
   }
 
   function position(l, cost, amount, p) {
@@ -847,13 +897,20 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   async function start() {
     await refreshReserves();
     client.on('transaction', onTransaction);
-    await client.request({ command: 'subscribe', streams: ['transactions'] });
+    await subscribe();
     timer = setInterval(() => { tick(); }, cfg.checkS * 1000);
     say(`🤖 Sniper running${cfg.dryRun ? ' (DRY RUN)' : ''} – wallet ${me}, ${cfg.buyXrp} XRP per launch, ${Object.keys(S.positions).length} open positions`);
   }
+  // FAST_LAUNCH: transactions_proposed also carries the validated transactions (one stream)
+  async function subscribe() {
+    if (cfg.fastLaunch) {
+      try { await client.request({ command: 'subscribe', streams: ['transactions_proposed'] }); return; } catch (e) { say(`⚠️ open-ledger stream refused (${e?.data?.error || e.message}) – validated launches only`); }
+    }
+    await client.request({ command: 'subscribe', streams: ['transactions'] });
+  }
   async function resubscribe() {
     await refreshReserves();
-    await client.request({ command: 'subscribe', streams: ['transactions'] });
+    await subscribe();
   }
   function stop() { stopped = true; clearInterval(timer); save(); rec.stop(); }
 

@@ -57,6 +57,8 @@ export function createRecorder({ dir, pool, log = () => {} }) {
     event(kind, { k, name, issuer, creator, poolXrp, poolTok, amm, ledger, hash, copy });
   }
 
+  // pool account learned later (a launch first seen in the open ledger has no metadata yet)
+  function setAmm(k, amm) { if (amm && W[k] && !W[k].amm) { W[k].amm = amm; byAmm.set(amm, k); dirty = true; } }
   const checks = (k, c) => { if (W[k]) { W[k].checks = c; dirty = true; } };
   function decision(k, result, reason = '') {
     // first decision counts – except a buy that finally works after a blocked/failed try
@@ -206,7 +208,7 @@ export function createRecorder({ dir, pool, log = () => {} }) {
   const timer = setInterval(sample, 10e3);
   const flusher = setInterval(flush, 60e3);
   return {
-    follow, checks, decision, trade, tx, event, sample, flush, rows, csv, analysis,
+    follow, setAmm, checks, decision, trade, tx, event, sample, flush, rows, csv, analysis,
     events: (since) => readJsonl('events', since),
     following: () => Object.keys(W).length,
     // live view of followed launches (for the crowd entry): start, last sample, trading so far

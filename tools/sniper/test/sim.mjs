@@ -659,6 +659,64 @@ await test('after a launch protection: skipped if the early buyers already pumpe
   bot.stop();
 });
 
+const openLedgerLaunch = (sim, name, issuer, poolXrp, poolTok, extra = {}) => {
+  const currency = sim.launch({ name, issuer, poolXrp, poolTok, silent: true, ...extra });
+  const tx = { TransactionType: 'AMMCreate', Account: 'rDEV', Amount: String(poolXrp * D), Amount2: { currency, issuer, value: String(poolTok) }, TradingFee: 500 };
+  sim.emit('transaction', { validated: false, engine_result: 'tesSUCCESS', ledger_current_index: 5001, tx_json: tx });
+  return { currency, validate: () => sim.emit('transaction', { validated: true, ledger_index: 5001, hash: 'V' + name, tx_json: tx, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [] } }) };
+};
+
+await test('first buyers: a launch seen in the open ledger is checked there and bought before it is validated', async () => {
+  const { sim, bot } = setup();
+  const subs = [];
+  const orig = sim.request.bind(sim);
+  sim.request = async (r) => { if (r.command === 'subscribe') subs.push(...r.streams); return orig(r); };
+  await bot.start();
+  assert.deepEqual(subs, ['transactions_proposed']);
+  const { currency, validate } = openLedgerLaunch(sim, 'FIRST', 'rFst', 200, 1e9);
+  await settle(bot);
+  assert.ok(bot.state().positions[`${currency}.rFst`], 'bought from the open ledger');
+  assert.ok(logs.join('\n').includes('⚡'));
+  validate(); await settle(bot); // the validated copy is not a second launch
+  assert.equal(sim.txs.filter((t) => t.TransactionType === 'OfferCreate').length, 1);
+  assert.equal(bot.status().stats.launches, 1);
+  bot.stop();
+});
+
+await test('first buyers: landed before the pool existed → once more right after the launch is validated', async () => {
+  const { sim, bot } = setup();
+  await bot.start();
+  let first = true;
+  const orig = sim.submitAndWait.bind(sim);
+  sim.submitAndWait = async (tx) => {
+    if (tx.TransactionType === 'OfferCreate' && first) { first = false; sim.txs.push(tx); return { result: { meta: { TransactionResult: 'tecKILLED' } } }; }
+    return orig(tx);
+  };
+  const { currency, validate } = openLedgerLaunch(sim, 'EARLY', 'rEar', 200, 1e9);
+  await settle(bot);
+  assert.equal(bot.state().positions[`${currency}.rEar`], undefined, 'first try missed');
+  validate(); await settle(bot);
+  assert.ok(bot.state().positions[`${currency}.rEar`], 'bought on the second try');
+  assert.equal(bot.status().stats.fastRetry, 1);
+  bot.stop();
+});
+
+await test('buy by share of the supply: 1 % of all tokens, capped at BUY_MAX_XRP', async () => {
+  const { sim, bot } = setup(100, { BUY_SUPPLY_PCT: '1', BUY_MAX_XRP: '10' });
+  await bot.start();
+  const a = sim.launch({ name: 'ONEPCT', issuer: 'rOne', poolXrp: 200, poolTok: 1e9 }); // whole supply in the pool
+  await settle(bot);
+  const pa = bot.state().positions[`${a}.rOne`];
+  assert.ok(pa && Math.abs(pa.amount / 1e9 - 0.01) < 0.0005, '≈ 1 % of the supply: ' + (pa && pa.amount));
+  assert.ok(pa.cost > 2 && pa.cost < 2.2, 'cost ≈ 2 XRP for 1 % of a 200 XRP pool: ' + pa.cost);
+  const b = sim.launch({ name: 'BIGPOOL', issuer: 'rBig', poolXrp: 3000, poolTok: 1e9 }); // 1 % would cost ≈ 30 XRP
+  await settle(bot);
+  const pb = bot.state().positions[`${b}.rBig`];
+  assert.ok(pb && pb.cost <= 10.01, 'capped: ' + (pb && pb.cost));
+  assert.ok(logs.join('\n').includes('% of the supply'));
+  bot.stop();
+});
+
 await test('settings change live: pause stops buys, unpause buys again, open trades still sell', async () => {
   const { sim, bot, cfg } = setup();
   await bot.start();

@@ -11,6 +11,9 @@ export const GROUPS = [
   ['💰 Money', [
     ['PAUSE_BUYS', 'Pause buying', 'bool', '0', 'No new buys; open positions are still sold by the rules'],
     ['BUY_XRP', 'Stake per launch (XRP)', 'num', '1', '', 0.1, 1000],
+    ['BUY_SUPPLY_PCT', 'Or buy this % of the supply', 'num', '0', '0 = off (stake above). e.g. 1 = 1 % of all tokens', 0, 50],
+    ['BUY_MAX_XRP', 'Max. XRP for the supply buy', 'num', '10', 'a bigger pool costs more for the same %', 0.1, 100000],
+    ['FAST_LAUNCH', 'First buyers: buy from the open ledger', 'bool', '1', 'sees a launch ≈ 4–6 s before it is validated'],
     ['MIN_BALANCE_XRP', 'Balance never spent (XRP)', 'num', '10', '', 0, 1e6],
     ['MAX_OPEN', 'Max. open trades', 'num', '25', 'Moonbags don’t count', 1, 500],
     ['MAX_BUYS_PER_DAY', 'Max. buys per day', 'num', '40', '', 0, 1000],
