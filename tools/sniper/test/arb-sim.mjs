@@ -284,7 +284,7 @@ await test('front-run: price fixed before our batch lands → nothing happens, o
   assert.ok(!L.tickets.has(tk[0]) && L.tickets.has(tk[1]) && L.tickets.has(tk[2]), 'failed loop used up only the outer ticket');
   assert.equal(bot.status().tickets.free, L.tickets.size, 'bot knows its free tickets');
   assert.equal(st.stats.notApplied, 1, JSON.stringify(st.stats));
-  assert.ok(Math.abs(before - L.acct.balance - 50 / D) < 1e-6, 'lost exactly the fee');
+  assert.ok(Math.abs(before - L.acct.balance - Number(L.sent[0].Fee) / D) < 1e-6, 'lost exactly the fee');
   bot.stop();
 });
 
@@ -385,7 +385,7 @@ await test('busy ledger: fee follows the open-ledger level, too expensive = skip
   await bot._manageLines(); await bot._manageLines();
   L.trade('rPoolAB', B, 1e6); await wait(400);
   assert.ok(L.sent.length >= 1);
-  assert.equal(Number(L.sent[0].Fee), Math.ceil(10 * 4 * 5 * 1.25), 'fee raised to get into the open ledger');
+  assert.ok(Number(L.sent[0].Fee) >= Math.ceil(10 * 4 * 5 * 1.25) && Number(L.sent[0].Fee) <= 500, 'fee raised to get into the open ledger, never above the max: ' + L.sent[0].Fee);
   L.openLevel = 256 * 50; // way too busy
   L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
   const sentBefore = L.sent.length;
@@ -695,8 +695,8 @@ await test('bridge: a loop may pass through a big token off the list – held is
   t2.bot.stop();
 });
 
-await test('live: a trade entering the open ledger → live pool state read → batch for this ledger, wins; an older validated update does not undo it', async () => {
-  const { L, bot } = setup();
+await test('live (send now): a trade entering the open ledger → live pool state read → batch for this ledger, wins; an older validated update does not undo it', async () => {
+  const { L, bot } = setup({ ARB_LIVE_SEND: 'now' });
   const subs = [];
   const orig = L.request.bind(L);
   L.request = async (r) => { if (r.command === 'subscribe') subs.push(...r.streams); return orig(r); };
@@ -726,6 +726,49 @@ await test('live: a trade entering the open ledger → live pool state read → 
   const st = bot.status();
   assert.ok(st.stats.wins >= 1, JSON.stringify(st.stats));
   assert.ok(st.trades.find((t) => t.applied).live, 'marked live');
+  bot.stop();
+});
+
+await test('live (send next, default): the gap is read and sent the moment the next ledger opens', async () => {
+  const { L, bot } = setup();
+  await bot.start();
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(300);
+  await bot._manageLines();
+  const sent0 = L.sent.length;
+  const p = L.pools.get('rPoolAB');
+  const out = swapOut(1e6, p.rb, p.ra, p.fee); p.rb += 1e6; p.ra -= out;
+  const open = L.index + 1;
+  const dump = { TransactionType: 'Payment', Account: 'rDumper', Amount: { currency: 'AAA', issuer: IA, value: '1' }, SendMax: { currency: 'BBB', issuer: IB, value: '1000000' } };
+  L.emit('transaction', { validated: false, ledger_current_index: open, engine_result: 'tesSUCCESS', tx_json: dump });
+  await wait(120);
+  assert.equal(L.sent.length, sent0, 'not into the same ledger');
+  // any transaction of the next open ledger shows the previous one closed
+  L.emit('transaction', { validated: false, ledger_current_index: open + 1, engine_result: 'tesSUCCESS', tx_json: { TransactionType: 'AccountSet', Account: 'rX' } });
+  await wait(120);
+  const now = L.sent.slice(sent0);
+  assert.equal(now.length, 1, 'sent at the rollover');
+  assert.equal(now[0].LastLedgerSequence, open + 2, 'for the new ledger and the one after');
+  assert.ok(bot.status().stats.liveRollover >= 1);
+  bot.stop();
+});
+
+await test('fee too low for a busy open ledger → fee read again, sent once more with more', async () => {
+  const { L, bot } = setup({ ARB_LIVE: '0', ARB_MAX_FEE_DROPS: '1000000' });
+  await bot.start();
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(300);
+  await bot._manageLines();
+  L.refuseNext = 1;
+  L.openLevel = 256 * 3;
+  const sent0 = L.sent.length;
+  L.trade('rPoolAB', B, 1e6); await wait(400);
+  const now = L.sent.slice(sent0);
+  assert.ok(now.length >= 2, 'refused, then again');
+  assert.ok(Number(now[1].Fee) > Number(now[0].Fee) && now[1].TicketSequence === now[0].TicketSequence, `same tickets, higher fee ${now[0].Fee} → ${now[1].Fee}`);
+  assert.equal(bot.status().stats.feeRetry, 1);
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  assert.ok(bot.status().stats.wins >= 1, JSON.stringify(bot.status().stats));
   bot.stop();
 });
 

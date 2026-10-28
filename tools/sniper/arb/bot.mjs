@@ -113,6 +113,10 @@ export function readArbConfig(env = process.env) {
     // and send into the same / next ledger – instead of waiting for validation (one ledger late)
     live: bool('ARB_LIVE', true),
     liveMaxPerLedger: num('ARB_LIVE_MAX_PER_LEDGER', 15), // pool reads per open ledger (server load)
+    // 'next': collect what moved during a ledger and send the moment the next ledger opens (lands right
+    // after the trade that made the gap, like the bwif bots); 'now': send at once into the same ledger
+    // (the network orders a ledger, not arrival – about half of those land before the trade)
+    liveSend: /^now$/i.test(env.ARB_LIVE_SEND || '') ? 'now' : 'next',
     bridge: bool('ARB_BRIDGE', true),
     bridgeMinXrp: num('ARB_BRIDGE_MIN_XRP', 1000), // XRP in the bridge token's own XRP pool
     lineMinScore: num('ARB_LINE_MIN_SCORE', 0.01),
@@ -358,7 +362,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   function onTransaction(ev) {
     const tx = ev.tx_json || ev.transaction;
     if (!tx) return;
-    if (!ev.validated) { if (cfg.live) onProposed(tx, ev); return; }
+    if (!ev.validated) { if (cfg.live) { noteOpen(ev); onProposed(tx, ev); } return; }
     if (!ev.meta) return;
     const hash = ev.hash || tx.hash;
     if (seenValidated.has(hash)) return; // a server may send it on both streams
@@ -424,7 +428,18 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     stat('liveSeen');
     const cur = ev.ledger_current_index || ledger + 1;
     clearTimeout(liveTimer);
-    liveTimer = setTimeout(() => liveRead(cur), 25); // a few ms to collect what arrives together
+    if (cfg.liveSend === 'now') { liveTimer = setTimeout(() => liveRead(cur), 25); return; }
+    // send when the next ledger opens; if no other transaction shows that, after ~4 s anyway
+    liveTimer = setTimeout(() => liveRead(cur + 1), 4500);
+  }
+  // a transaction of a newer open ledger = the previous one closed: its moves are final now
+  let openIdx = 0;
+  function noteOpen(ev) {
+    const i = ev.ledger_current_index;
+    if (!i || i <= openIdx) return;
+    const had = openIdx;
+    openIdx = i;
+    if (had && cfg.liveSend === 'next' && liveWant.size) { clearTimeout(liveTimer); stat('liveRollover'); liveRead(i); }
   }
   async function liveRead(cur) {
     if (stopped || !liveWant.size) return;
@@ -595,6 +610,10 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
 
   async function execute(o, feeDrops = cfg.feeDrops, ctx = {}) {
     if (!acct.seq) return false; // wallet not activated yet
+    // a big loop may pay more to be sure to get in (up to 10 % of what it should earn)
+    const paid = feeDrops;
+    if (!ctx.feeRetry) feeDrops = Math.max(feeDrops, Math.min(cfg.maxFeeDrops, Math.floor(o.net * DROPS * 0.1)));
+    if (feeDrops !== paid) o.net -= (feeDrops - paid) / DROPS; // expected profit after the higher fee
     let tk = null;
     if (useTickets()) {
       tk = [...tickets].sort((x, y) => x - y).slice(0, 3);
@@ -620,6 +639,12 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
         S.dayFees -= feeDrops / DROPS; // refused = not charged
         flights.delete(f.hash);
         release(tk);
+        // fee too low for the open ledger right now: read the fee again and try once more
+        if (/CAN_NOT_QUEUE|INSUF_FEE/.test(r.engine_result) && !ctx.feeRetry) {
+          await updateFee();
+          const nf = Math.min(cfg.maxFeeDrops, Math.ceil(Math.max(batchFee(), feeDrops) * 1.5));
+          if (nf > feeDrops && o.profit - nf / DROPS >= cfg.minProfit) { stat('feeRetry'); o.net = o.profit - nf / DROPS; return execute(o, nf, { ...ctx, feeRetry: true }); }
+        }
         if (tk && /TICKET|PAST_SEQ/.test(r.engine_result)) syncTickets().catch(() => {});
         if (!tk) seqDirty = true;
         return false;

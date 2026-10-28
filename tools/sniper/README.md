@@ -338,6 +338,17 @@ landed two ledgers after the state they were computed on – one ledger after th
 from an older ledger never overwrite a pool read live from a newer one. A miss is "beaten … (late)" when our
 pool was moved in a ledger between our view and the one we landed in.
 
+**When to send (`ARB_LIVE_SEND`, default `next`):** inside a ledger the network sets the order, not the
+arrival. Sending into the same ledger as the trade that opened the gap put about half of our batches *before*
+that trade (the gap wasn't there yet → "math" misses). Now the bot collects the moved pools during a ledger and
+reads + sends the moment the next ledger opens (the first transaction of a newer open ledger shows it) – right
+after the move, like the bwif bots. `now` = the old behaviour.
+
+**Fees:** batches can't wait in the queue, so a fee below the open ledger's level is refused
+(`telCAN_NOT_QUEUE` – 24 of 62 tries on 28 Oct, among them the biggest loops). Now a loop pays up to 10 % of
+what it should earn (never above `ARB_MAX_FEE_DROPS`), and a refused one is sent once more with the fee read
+again ×1.5 if it still earns.
+
 ## Fees and sequence numbers
 
 A busy ledger costs more than the minimum: the bot reads the open-ledger fee level every ledger and pays what
