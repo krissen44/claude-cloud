@@ -49,6 +49,17 @@ export function readConfig(env = process.env) {
     requireBlackhole: bool('REQUIRE_BLACKHOLE', true),
     blackholeWaitS: num('BLACKHOLE_WAIT_S', 120),
     protectWaitMin: num('PROTECT_WAIT_MIN', 60), // launch protection phase: wait this long for it to be lifted
+    // after a protection the early buyers are in already: skip if the price is above this many × launch (0 = off)
+    protectMaxX: num('PROTECT_MAX_X', 12),
+    // crowd entry: a launch that was skipped (dev holds the supply / pool too small) but then draws a
+    // real crowd – many different buyers and a deep pool within the first hour – is bought after all,
+    // with the classic exits (half at +100 %, trailing 30 %, stop −50 %, rug alarm, max 24 h)
+    crowd: bool('CROWD_BUY', true),
+    crowdMinBuyers: num('CROWD_MIN_BUYERS', 100),
+    crowdMinPoolXrp: num('CROWD_MIN_POOL_XRP', 500),
+    crowdWindowMin: num('CROWD_WINDOW_MIN', 60),
+    crowdBuyXrp: num('CROWD_BUY_XRP', num('BUY_XRP', 1)),
+    crowdRequireBlackhole: bool('CROWD_REQUIRE_BLACKHOLE', false),
     minPoolSupplyPct: num('MIN_POOL_SUPPLY_PCT', 20), // share of the supply that sits in the pool
     buySlippage: num('BUY_SLIPPAGE', 35),
     sellSlippage: num('SELL_SLIPPAGE', 30),
@@ -252,7 +263,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   const SKIP_KINDS = [
     [/blackholed/, 'not blackholed'], [/pool only/, 'pool too small'], [/> max/, 'pool too big'],
     [/clawback/, 'clawback'], [/froze/, 'frozen'], [/transfer fee/, 'transfer fee'], [/AMM fee/, 'AMM fee'],
-    [/supply/, 'dev holds the supply'], [/pool gone/, 'pool gone'], [/approval/, 'trust lines need approval'],
+    [/supply/, 'dev holds the supply'], [/pumped/, 'pumped during protection'], [/pool gone/, 'pool gone'], [/approval/, 'trust lines need approval'],
   ];
   const skipKind = (text) => (SKIP_KINDS.find(([re]) => re.test(text)) || [0, 'other'])[1];
 
@@ -428,6 +439,14 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       }
       if (hole && !c.small && !c.wait.length && !stillBlocked) {
         pending.delete(l.k);
+        // bought late after a protection: the early buyers may have pumped it already
+        const x0 = l.poolXrp && l.poolTok ? l.poolXrp / l.poolTok : null;
+        const xNow = c.pool && x0 ? c.pool.xrp / c.pool.tok / x0 : null;
+        if (l.protected && cfg.protectMaxX > 0 && xNow && xNow > cfg.protectMaxX) {
+          stat(0, 'pumped during protection');
+          rec.decision(l.k, 'skipped', 'pumped during protection');
+          return say(`⛔ Skip ${l.name}: already ${xNow.toFixed(1)}× the launch price when the protection ended (max ${cfg.protectMaxX}×)`);
+        }
         return buy(l, c.pool);
       }
       if (!hole && now() > holeBy) {
@@ -536,10 +555,10 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       entryPoolXrp: +p.xrp.toFixed(2), entryPrice: cost / got, delayS: +((now() - l.at) / 1000).toFixed(1),
       ledger: r.ledger_index || null, hash: r.hash || r.tx_json?.hash || '',
     };
-    rec.decision(l.k, 'bought', l.retried ? 'after launch protection' : '');
+    rec.decision(l.k, 'bought', l.crowd ? `crowd entry: ${l.crowd}` : l.retried ? 'after launch protection' : '');
     rec.trade(l.k, buyInfo);
     rec.event('buy', { k: l.k, name: l.name, copy: l.copy || '', ...buyInfo });
-    say(`🟢 Bought ${l.name}${l.copy ? ` (copy ${l.copy})` : ''}: ${cost.toFixed(4)} XRP → ${got.toPrecision(6)} tokens`);
+    say(`🟢 Bought ${l.name}${l.crowd ? ` (crowd entry – ${l.crowd})` : l.copy ? ` (copy ${l.copy})` : ''}: ${cost.toFixed(4)} XRP → ${got.toPrecision(6)} tokens`);
   }
 
   function position(l, cost, amount, p) {
@@ -629,9 +648,40 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     return r;
   }
 
+  // ---------- crowd entry ----------
+  const CROWD_REASONS = new Set(['dev holds the supply', 'pool too small', 'not blackholed']);
+  async function crowdScan() {
+    if (!cfg.crowd || stopped) return;
+    S.crowded ||= {};
+    for (const r of rec.live ? rec.live() : []) {
+      if (r.kind !== 'launch' || r.dead || !r.last || S.crowded[r.k] || S.positions[r.k] || pending.has(r.k)) continue;
+      if (r.decision?.result !== 'skipped' || !CROWD_REASONS.has(r.decision.reason)) continue;
+      if (r.decision.reason === 'not blackholed' && cfg.crowdRequireBlackhole) continue;
+      if (now() - r.at > cfg.crowdWindowMin * 60000) continue;
+      if (r.buyers < cfg.crowdMinBuyers || r.last.xrp < cfg.crowdMinPoolXrp) continue;
+      S.crowded[r.k] = now();
+      const why = `${r.buyers} buyers, pool ${r.last.xrp.toFixed(0)} XRP after ${Math.round((now() - r.at) / 60000)} min`;
+      stat('crowdSignals');
+      rec.event('crowd_signal', { k: r.k, name: r.name, buyers: r.buyers, poolXrp: r.last.xrp, ageMin: +((now() - r.at) / 60000).toFixed(1) });
+      say(`👥 ${r.name}: ${why} – checking for a crowd entry`);
+      const l = { k: r.k, currency: r.currency, issuer: r.issuer, name: r.name, at: r.at, poolXrp: r.start?.xrp, poolTok: r.start?.tok, copy: 'crowd', crowd: why, buyXrp: cfg.crowdBuyXrp };
+      try {
+        const c = await checks(l);
+        // the reasons it was skipped for are what the crowd answers; anything else still counts
+        const hard = c.reasons.filter((x) => !/supply|pool only/.test(x));
+        if (!c.pool) hard.push('pool gone');
+        if (c.wait.length) hard.push(...c.wait);
+        if (cfg.crowdRequireBlackhole && !c.blackholed) hard.push('not blackholed');
+        if (hard.length) { rec.event('crowd_skip', { k: r.k, why: hard.join(', ') }); say(`⛔ ${r.name}: no crowd entry – ${hard.join(', ')}`); continue; }
+        await buy(l, c.pool);
+      } catch (e) { say(`⚠️ ${r.name}: crowd entry failed – ${e.message}`); }
+    }
+  }
+
   async function tick() {
     if (ticking || stopped) return;
     ticking = true;
+    crowdScan().catch(() => {});
     try {
       await locked(async () => {
         for (const pos of Object.values(S.positions)) {

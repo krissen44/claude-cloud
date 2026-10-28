@@ -55,6 +55,19 @@ approval requests – the numbers to tune the filters with.
 
 Every buy and sale is in the log, on the status page (open trades and moonbags apart) and optionally in Discord.
 
+## Crowd entry and protection cap
+
+- **Crowd entry** (`CROWD_BUY`, on): a launch that was skipped for "dev holds the supply", "pool too small"
+  or "not blackholed" is bought after all if, within `CROWD_WINDOW_MIN` (60), at least `CROWD_MIN_BUYERS`
+  (100) different wallets bought it and the pool holds `CROWD_MIN_POOL_XRP` (500) XRP. All other checks
+  (clawback, freeze, approval, transfer fee) still apply; `CROWD_REQUIRE_BLACKHOLE` (off) adds the blackhole.
+  It sells by the copy rules (half at +100 %, rest on a 30 % trailing stop, −50 %, rug alarm, 24 h). Data
+  from 27–28 Oct: the "dev holds the supply" rugs had 11–23 buyers; UBER (dumped −80 % in its first minute,
+  then 15× from the dip) had 558 buyers and 1,383 XRP in the pool after 1 h.
+- **Protection cap** (`PROTECT_MAX_X`, 12): after a launch protection ends, the token is skipped if the
+  early (approved) buyers already pumped it above 12× the launch price. FRIZZY was bought at ≈ 25× after its
+  protection and hit the stop loss; XRB at ≈ 9× ran on.
+
 ## Data collection
 
 The bot records as much as it can, in `DATA_DIR/data/` (kept across updates):

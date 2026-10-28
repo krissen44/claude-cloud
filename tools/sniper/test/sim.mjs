@@ -597,6 +597,68 @@ await test('buy blocked by a protection (no flags visible) → buys once the iss
   bot.stop();
 });
 
+await test('crowd entry: a skipped launch (dev holds the supply, not blackholed) that draws 100+ buyers and 500+ XRP is bought; a rug-sized crowd is not', async () => {
+  const realNow = Date.now;
+  let offset = 0;
+  Date.now = () => realNow() + offset;
+  try {
+    const { sim, bot } = setup(100, { BUY_XRP: '5' });
+    await bot.start();
+    const ammOf = {};
+    const launchWithAmm = (name, issuer, xrp, extra = {}) => {
+      ammOf[issuer] = 'rAmm' + name;
+      const currency = sim.launch({ name, issuer, poolXrp: xrp, poolTok: 1e7, silent: true, ...extra });
+      sim.emit('transaction', {
+        validated: true, ledger_index: 2000,
+        tx_json: { TransactionType: 'AMMCreate', Account: 'rDEV', Amount: String(xrp * 1e6), Amount2: { currency, issuer, value: '10000000' } },
+        meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [{ CreatedNode: { LedgerEntryType: 'AccountRoot', NewFields: { Account: ammOf[issuer], AMMID: 'X', Balance: String(xrp * 1e6) } } }] },
+      });
+      return currency;
+    };
+    const poolTrade = (issuer, cur, xrp, who) => {
+      const before = Math.round(sim.amm[`${cur}.${issuer}`].xrp * 1e6);
+      sim.trade(cur, issuer, xrp);
+      const after = Math.round(sim.amm[`${cur}.${issuer}`].xrp * 1e6);
+      sim.emit('transaction', { validated: true, tx_json: { TransactionType: 'Payment', Account: who }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [{ ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: ammOf[issuer], Balance: String(after) }, PreviousFields: { Balance: String(before) } } }] } });
+    };
+    // like UBER: 1 % of the supply in the pool, issuer not blackholed
+    const u = launchWithAmm('UBERX', 'rUber', 140, { supply: 1e9, flags: 0x00800000 });
+    const r = launchWithAmm('RUGGY', 'rRug', 50, { supply: 1e9 });
+    await settle(bot);
+    assert.equal(bot.state().positions[`${u}.rUber`], undefined, 'skipped at launch');
+    assert.equal(bot.rec.rows().find((x) => x.name === 'UBERX').reason, 'dev holds the supply');
+    for (let i = 0; i < 120; i++) poolTrade('rUber', u, 6, 'rB' + i); // a real crowd
+    for (let i = 0; i < 15; i++) poolTrade('rRug', r, 3, 'rR' + i); // the rugs in the data had 11–23 buyers
+    offset = 5 * 60e3; await bot.rec.sample();
+    await bot.tick(); await settle(bot);
+    const pos = bot.state().positions[`${u}.rUber`];
+    assert.ok(pos, 'crowd entry bought it');
+    assert.equal(pos.copy, 'crowd', 'classic exits');
+    assert.equal(bot.state().positions[`${r}.rRug`], undefined, 'no entry for a small crowd');
+    assert.match(bot.rec.rows().find((x) => x.name === 'UBERX').reason, /^crowd entry: 120 buyers/);
+    assert.ok(logs.join('\n').includes('👥 UBERX'));
+    // once only
+    await bot.tick(); await settle(bot);
+    assert.equal(sim.txs.filter((t) => t.TransactionType === 'OfferCreate' && t.TakerPays.issuer === 'rUber').length, 1);
+    bot.stop();
+  } finally { Date.now = realNow; }
+});
+
+await test('after a launch protection: skipped if the early buyers already pumped it above PROTECT_MAX_X', async () => {
+  const { sim, bot } = setup(50, { BLACKHOLE_WAIT_S: '1' });
+  await bot.start();
+  const cur = sim.launch({ name: 'PUMPD', issuer: 'rPmp', poolXrp: 50, poolTok: 1e9, flags: 0x00800000 | 0x00040000 });
+  await settle(bot);
+  sim.trade(cur, 'rPmp', 200); // authorized early buyers: pool 50 → 250 XRP ≈ 25× the price
+  sim.acc.rPmp.Flags = 0x00800000 | 0x00100000;
+  sim.emit('transaction', { validated: true, tx_json: { TransactionType: 'AccountSet', Account: 'rPmp' }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [] } });
+  await settle(bot);
+  assert.equal(bot.state().positions[`${cur}.rPmp`], undefined, 'not bought at the top');
+  assert.ok(logs.join('\n').includes('when the protection ended (max 12×)'));
+  assert.equal(bot.status().stats.skipped['pumped during protection'], 1);
+  bot.stop();
+});
+
 await test('settings change live: pause stops buys, unpause buys again, open trades still sell', async () => {
   const { sim, bot, cfg } = setup();
   await bot.start();

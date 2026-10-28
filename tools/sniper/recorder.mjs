@@ -209,6 +209,11 @@ export function createRecorder({ dir, pool, log = () => {} }) {
     follow, checks, decision, trade, tx, event, sample, flush, rows, csv, analysis,
     events: (since) => readJsonl('events', since),
     following: () => Object.keys(W).length,
+    // live view of followed launches (for the crowd entry): start, last sample, trading so far
+    live: () => Object.values(W).map((r) => ({
+      k: r.k, kind: r.kind, name: r.name, currency: r.currency, issuer: r.issuer, at: r.at, start: r.start, last: r.last, max: r.max, dead: r.dead,
+      buyers: r.flow.buyers.length, buys: r.flow.buys, sells: r.flow.sells, xrpIn: r.flow.xrpIn, decision: r.decision, checks: r.checks,
+    })),
     stop() { clearInterval(timer); clearInterval(flusher); flush(); },
   };
 }
