@@ -61,7 +61,7 @@ export function createLearner(state, cfg, clock = Date.now) {
     if (e.p >= cfg.targetWin) return 'go';
     // a route we haven't tried often enough: try it within the daily budget (costs only the fee),
     // unless what we know about its pools already says it will fail
-    if (e.seen < (cfg.learnMinTries || 6) && e.p >= cfg.targetWin * 0.5 && budget > 0) return 'explore';
+    if (e.seen < (cfg.learnMinTries || 6) && e.p >= (cfg.exploreMinChance ?? 0.15) && budget > 0) return 'explore';
     return 'lowChance';
   }
 

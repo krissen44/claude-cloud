@@ -83,7 +83,8 @@ export function readArbConfig(env = process.env) {
     // learning: only loops whose estimated chance (from our own results) reaches the target are sent;
     // unknown ones are tried within a daily exploration budget (costs only fees)
     targetWin: num('ARB_TARGET_WIN', 90) / 100,
-    exploreDay: num('ARB_EXPLORE_DAY', 100),
+    exploreDay: num('ARB_EXPLORE_DAY', 300),
+    exploreMinChance: num('ARB_EXPLORE_MIN_CHANCE', 15) / 100, // learning tries need at least this estimated chance
     learnMinTries: num('ARB_LEARN_MIN_TRIES', 6),
     learnHalfLifeH: num('ARB_LEARN_HALF_LIFE_H', 72),
     parallel: num('ARB_PARALLEL', 5), // batches per ledger (0 = one at a time, no tickets)
@@ -183,17 +184,41 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   // A token with a transfer fee or a freeze makes our math wrong (the batch would fail every
   // ledger and burn fees), so only tokens whose issuer was checked and is clean are traded.
   const issuers = new Map(); // issuer → {ok, why, at}
+  // Checks run through a small queue (a burst of hundreds made the server refuse them). A check
+  // that fails is NOT a verdict: it is retried in 2 minutes instead of blocking the token for hours.
   const checking = new Set();
-  async function checkIssuer(iss) {
+  const issuerQueue = [];
+  let issuerRunning = 0;
+  function checkIssuer(iss) {
     if (checking.has(iss)) return;
     checking.add(iss);
-    try {
-      const d = (await req('account_info', { account: iss, ledger_index: 'validated' })).account_data;
-      const fee = d.TransferRate ? d.TransferRate / 1e9 - 1 : 0;
-      const frozen = (d.Flags || 0) & 0x00400000;
-      issuers.set(iss, { ok: !(fee > 0) && !frozen, why: fee > 0 ? `transfer fee ${(fee * 100).toFixed(2)}%` : frozen ? 'frozen' : '', at: now() });
-    } catch { issuers.set(iss, { ok: false, why: 'unknown', at: now() }); }
-    checking.delete(iss);
+    issuerQueue.push(iss);
+    pumpIssuers();
+  }
+  function pumpIssuers() {
+    while (issuerRunning < 2 && issuerQueue.length) {
+      const iss = issuerQueue.shift();
+      issuerRunning++;
+      (async () => {
+        try {
+          const d = (await req('account_info', { account: iss, ledger_index: 'validated' })).account_data;
+          const fee = d.TransferRate ? d.TransferRate / 1e9 - 1 : 0;
+          const frozen = (d.Flags || 0) & 0x00400000;
+          issuers.set(iss, { ok: !(fee > 0) && !frozen, why: fee > 0 ? `transfer fee ${(fee * 100).toFixed(2)}%` : frozen ? 'frozen' : '', at: now() });
+        } catch (e) {
+          stat('issuerCheckFailed');
+          // unknown ≠ bad: keep any earlier verdict, else ask again in 2 minutes
+          if (!issuers.get(iss)?.verdict) issuers.set(iss, { ok: false, why: 'retry', at: now() - 6 * 3600e3 + 120e3 });
+          if (/slowDown|tooBusy|rate/i.test(String(e?.data?.error || e?.message))) await new Promise((r) => setTimeout(r, 3000));
+        }
+        const v = issuers.get(iss);
+        if (v && v.why !== 'retry') v.verdict = true;
+        checking.delete(iss);
+        issuerRunning--;
+        await new Promise((r) => setTimeout(r, 100));
+        pumpIssuers();
+      })();
+    }
   }
   const issuerOf = (asset) => asset.split('.')[1];
   function tokensOk(assets) {
@@ -208,14 +233,15 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   const tokFails = new Map(); // token → {n, until}
   const blocked = (o) => (cool.get(o.key) || 0) > ledger || o.assets.some((a) => (tokFails.get(a)?.until || 0) > now());
   function failed(o, why = 'model') {
-    // beaten = the loop was real, someone was faster: try again soon. model = our math is off for
-    // this route: block it for a long time and count it against its tokens
-    if (why === 'beaten') { cool.set(o.key, ledger + 3); return; }
-    cool.set(o.key, ledger + (why === 'model' ? 300 : 10));
+    // beaten / expired = the loop was real, someone was faster or we didn't get in: try again soon.
+    // model = nothing got in the way and it still failed: block the route a while; a token whose
+    // routes fail like that 4 times in a row pauses for 20 minutes
+    if (why !== 'model') { cool.set(o.key, ledger + 3); return; }
+    cool.set(o.key, ledger + 30);
     for (const a of o.assets) {
       const t = tokFails.get(a) || { n: 0, until: 0 };
       t.n = t.until && t.until < now() ? 1 : t.n + 1;
-      if (t.n >= 3) { t.until = now() + 3600e3; t.n = 0; say(`🧊 ${name(a)}: 3 failed cycles – not used for 1 h`); }
+      if (t.n >= 4) { t.until = now() + 20 * 60e3; t.n = 0; say(`🧊 ${name(a)}: 4 failed cycles in a row – paused 20 min`); }
       tokFails.set(a, t);
     }
   }
@@ -660,6 +686,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
         if (applied) stat(m + 'Wins');
         if (f.vLedger) { stat(f.live ? 'liveLanded' : 'slowLanded'); stat((f.live ? 'liveLandedAfter' : 'slowLandedAfter'), f.vLedger - f.sentLedger); }
       }
+      if (applied) for (const a of f.o.assets) tokFails.delete(a);
       if (!applied && f.outer) failed(f.o, why);
       else if (!applied) failed(f.o, 'expired');
       if (applied) S.stats.profit = (S.stats.profit || 0) + pnl;

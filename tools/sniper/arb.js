@@ -37,7 +37,8 @@ export const ARB_GROUPS = [
   ]],
   ['🧠 Learning', [
     ['ARB_TARGET_WIN', 'Target win rate (%)', 'num', '90', 'only loops the bot expects to win this often are sent – higher = fewer but surer trades', 10, 99],
-    ['ARB_EXPLORE_DAY', 'Learning tries per day', 'num', '100', 'routes it can’t judge yet are tried this often (each miss costs only the fee, ≈ 0.00005 XRP)', 0, 10000],
+    ['ARB_EXPLORE_DAY', 'Learning tries per day', 'num', '300', 'routes it can’t judge yet are tried this often (each miss costs only the fee, ≈ 0.00005 XRP)', 0, 10000],
+    ['ARB_EXPLORE_MIN_CHANCE', 'Learning tries: min. estimated chance (%)', 'num', '15', 'lower = more tries while it learns', 1, 99],
     ['ARB_LEARN_MIN_TRIES', 'Tries before a route is judged', 'num', '6', '', 1, 100],
     ['ARB_LEARN_HALF_LIFE_H', 'Results fade after (hours, half-life)', 'num', '72', 'the market changes – old results count less', 1, 2000],
   ]],
