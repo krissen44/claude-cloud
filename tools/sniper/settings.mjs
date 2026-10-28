@@ -76,6 +76,14 @@ export const GROUPS = [
     ['COPY_RUG_POOL_DROP', 'Copy: rug alarm (%)', 'num', '40', '0 = off', 0, 99],
     ['COPY_MAX_HOLD_H', 'Copy: max. hold (h)', 'num', '24', '0 = off', 0, 10000],
   ]],
+  ['🕵️ Smart wallets (copy the good traders)', [
+    ['AUTO_TRACK', 'Copy the best wallets automatically', 'bool', '1', 'found from the launches the bot follows; bought with the copy rules above'],
+    ['AUTO_MIN_LAUNCHES', 'Min. launches traded', 'num', '3', '', 1, 1000],
+    ['AUTO_MIN_WIN', 'Min. wins (%)', 'num', '60', 'win = took out ≥ 10 % more XRP than it put in', 0, 100],
+    ['AUTO_MIN_PNL', 'Min. profit over all (XRP)', 'num', '5', '', -1e6, 1e9],
+    ['AUTO_MIN_EARLY', 'Min. early entries (≤ 2 min)', 'num', '0', 'e.g. 2 = only snipers', 0, 1000],
+    ['AUTO_MAX', 'Max. wallets copied at once', 'num', '5', '', 0, 100],
+  ]],
   ['🙋 Approval', [
     ['AUTO_FIRST_SALE', 'First sale never waits', 'bool', '1', 'Stake back / first take profit goes through without asking; later sales still ask'],
     ['MCAP_APPROVAL', 'Ask from market cap', 'num', '100000', '0 = off', 0, 1e12],

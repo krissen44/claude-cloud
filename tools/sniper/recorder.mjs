@@ -20,10 +20,18 @@ const month = (t = Date.now()) => new Date(t).toISOString().slice(0, 7);
 // how often to sample a launch, by age
 const every = (age) => (age < 10 * 60e3 ? 30e3 : age < 3600e3 ? 120e3 : age < 6 * 3600e3 ? 600e3 : 1800e3);
 
-export function createRecorder({ dir, pool, log = () => {} }) {
+const WALLET_SETTLE_MS = 3 * 3600e3; // a launch's traders are scored 3 h after it started
+
+export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
   const dataDir = path.join(dir, 'data');
   fs.mkdirSync(dataDir, { recursive: true });
   const watchFile = path.join(dataDir, 'watch.json');
+  // every wallet that traded the launches we followed: launches, how early, XRP in/out, wins
+  const walletFile = path.join(dataDir, 'wallets.json');
+  let WL = {};
+  try { WL = JSON.parse(fs.readFileSync(walletFile, 'utf8')); } catch {}
+  let wlDirty = false;
+  const skipWallet = new Set(ignore);
   let W = {}; // k → record
   try { W = JSON.parse(fs.readFileSync(watchFile, 'utf8')); } catch {}
   const byAmm = new Map(Object.values(W).filter((r) => r.amm).map((r) => [r.amm, r.k]));
@@ -90,6 +98,14 @@ export function createRecorder({ dir, pool, log = () => {} }) {
         f.buys++; f.xrpIn += d;
         if (f.buyers.length < 5000 && !f.buyers.includes(t.Account)) f.buyers.push(t.Account);
       } else if (d < 0) { f.sells++; f.xrpOut += -d; }
+      // per wallet (not the dev / issuer): XRP paid in, XRP taken out, seconds after the launch
+      if (d !== 0 && !/^AMM/.test(t.TransactionType) && t.Account !== r.creator && t.Account !== r.issuer && !skipWallet.has(t.Account)) {
+        const ws = (r.wallets ||= {});
+        if (ws[t.Account] || Object.keys(ws).length < 400) {
+          const e = (ws[t.Account] ||= { in: 0, out: 0, firstS: Math.round((Date.now() - r.at) / 1000), buys: 0, sells: 0 });
+          if (d > 0) { e.in += d; e.buys++; } else { e.out += -d; e.sells++; }
+        }
+      }
       dirty = true;
     }
   }
@@ -104,6 +120,7 @@ export function createRecorder({ dir, pool, log = () => {} }) {
       for (const r of Object.values(W)) {
         const age = now - r.at;
         if (age > FOLLOW_MS) { finish(r); continue; }
+        if (age >= WALLET_SETTLE_MS && !r.walletsDone) settleWallets(r);
         if (r.dead || now < r.nextAt) continue;
         r.nextAt = now + every(age);
         let p;
@@ -122,7 +139,34 @@ export function createRecorder({ dir, pool, log = () => {} }) {
     } finally { busy = false; flush(); }
   }
 
+  // book a launch's traders into the wallet table: a "win" took out at least 10 % more than it put in
+  function settleWallets(r) {
+    r.walletsDone = true;
+    dirty = true;
+    for (const [a, e] of Object.entries(r.wallets || {})) {
+      if (!(e.in > 0.5)) continue; // dust / sell-only (got tokens elsewhere)
+      const w = (WL[a] ||= { n: 0, early: 0, in: 0, out: 0, wins: 0, last: 0, tokens: [] });
+      w.n++; w.in += e.in; w.out += e.out; w.last = Date.now();
+      if (e.firstS <= 120) w.early++;
+      if (e.out >= e.in * 1.1) w.wins++;
+      w.tokens = [`${r.name}${e.out >= e.in * 1.1 ? '+' : '−'}`, ...w.tokens].slice(0, 6);
+      wlDirty = true;
+    }
+    if (wlDirty) {
+      // keep the table small: drop one-launch wallets not seen for 14 days
+      for (const [a, w] of Object.entries(WL)) if (w.n < 2 && Date.now() - w.last > 14 * 864e5) delete WL[a];
+      try { fs.writeFileSync(walletFile + '.tmp', JSON.stringify(WL)); fs.renameSync(walletFile + '.tmp', walletFile); wlDirty = false; } catch (e) { log(`recorder: ${e.message}`); }
+    }
+  }
+  // wallets with derived numbers, best first
+  function walletList() {
+    return Object.entries(WL).map(([wallet, w]) => ({
+      wallet, launches: w.n, early: w.early, winRate: w.n ? w.wins / w.n : 0, pnl: +(w.out - w.in).toFixed(2), in: +w.in.toFixed(2), last: w.last, tokens: w.tokens,
+    })).sort((a, b) => b.pnl - a.pnl);
+  }
+
   function finish(r) {
+    if (!r.walletsDone) settleWallets(r);
     delete W[r.k];
     if (r.amm) byAmm.delete(r.amm);
     append('launches', summary(r));
@@ -208,7 +252,7 @@ export function createRecorder({ dir, pool, log = () => {} }) {
   const timer = setInterval(sample, 10e3);
   const flusher = setInterval(flush, 60e3);
   return {
-    follow, setAmm, checks, decision, trade, tx, event, sample, flush, rows, csv, analysis,
+    follow, setAmm, checks, decision, wallets: walletList, ignoreWallet: (a) => skipWallet.add(a), trade, tx, event, sample, flush, rows, csv, analysis,
     events: (since) => readJsonl('events', since),
     following: () => Object.keys(W).length,
     // trading so far in one followed pool (for the chart health of a position)

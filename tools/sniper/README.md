@@ -103,6 +103,16 @@ trend, liquidity, higher lows, drawdown from the high, buy vs. sell pressure, ne
   decision?). Under 50 % good calls → the score needed goes up 5; over 75 % → down 3 (55–95). The status page
   shows the score per position (📈) and the learned thresholds.
 
+## Smart wallets (find good traders and copy them)
+
+The recorder follows every launch for 24 h and now also notes every wallet that trades its pool (not the dev
+or the issuer): XRP paid in, XRP taken out, seconds after the launch. 3 h after a launch its traders are booked
+into `DATA_DIR/data/wallets.json`: launches traded, early entries (≤ 2 min), wins (took out ≥ 10 % more XRP than
+put in) and XRP out − in. Every 30 min the best wallets that pass `AUTO_MIN_LAUNCHES` (3), `AUTO_MIN_WIN` (60 %),
+`AUTO_MIN_PNL` (+5 XRP) and `AUTO_MIN_EARLY` (0) are copied like `TRACK_WALLETS` (up to `AUTO_MAX` = 5, copy
+rules and `COPY_BUY_XRP`). The status page lists the top 20 with **📌 Copy** (always) and **🚫 Never**. Note: a
+wallet that still holds counts its buy as a loss until it sells – the ranking prefers traders who take profit.
+
 ## Crowd entry and protection cap
 
 - **Crowd entry** (`CROWD_BUY`, on): a launch that was skipped for "dev holds the supply", "pool too small"

@@ -132,6 +132,15 @@ ${an.total ? table('Decision', an.byDecision) + table('Start liquidity', an.bySt
 <p><small>Download: <a href="/export/launches.csv">launches.csv</a> (Excel) · <a href="/export/launches.json">launches.json</a> · <a href="/export/events.jsonl">events.jsonl</a> (every buy, sell, skip, approval, setting change)</small></p>`;
 }
 
+// wallets that trade the launches we follow – the best ones are copied
+function smartBlock(sm) {
+  if (!sm) return '';
+  const wbtn = (w, what, label, cls = '') => `<form method="post" action="/act"><input type="hidden" name="k" value="${esc(w)}"><input type="hidden" name="do" value="${what}"><button class="${cls}">${label}</button></form>`;
+  const rows = (sm.list || []).map((w) => `<tr><td><a href="https://xrpscan.com/account/${esc(w.wallet)}" target="_blank" rel="noopener">${esc(w.wallet.slice(0, 10))}…</a>${w.copied ? ' <b class="g">copying</b>' : w.smart ? ' <small>smart</small>' : ''}${w.pinned ? ' 📌' : ''}${w.banned ? ' 🚫' : ''}</td><td>${w.launches}</td><td>${w.early}</td><td>${Math.round(w.winRate * 100)}%</td><td class="${w.pnl >= 0 ? 'g' : 'r'}">${f(w.pnl, 1)}</td><td><small>${esc((w.tokens || []).join(' '))}</small></td><td>${w.pinned || w.banned ? wbtn(w.wallet, 'wfree', 'Auto') : wbtn(w.wallet, 'wpin', '📌 Copy', 'ok') + wbtn(w.wallet, 'wban', '🚫 Never')}</td></tr>`).join('');
+  return `<h3>🕵️ Smart wallets <small>${sm.on ? `copied automatically: ≥ ${sm.rules.launches} launches, ≥ ${sm.rules.win}% wins, ≥ +${sm.rules.pnl} XRP` : 'auto-copy is off – 📌 to copy one'}</small></h3>
+${(sm.copying || []).length ? `<p>Copying now: ${sm.copying.map((c) => esc(c.label)).join(' · ')}</p>` : ''}
+${rows ? `<div class="wrap"><table><tr><th>Wallet</th><th>Launches</th><th>Early (≤ 2 min)</th><th>Wins</th><th>XRP out − in</th><th>Last tokens (+ win / − loss)</th><th></th></tr>${rows}</table></div>` : '<p><small>No data yet – every launch’s traders are scored 3 h after it started.</small></p>'}`;
+}
 // tiny price line of a position's own chart
 function spark(arr) {
   if (!arr || arr.length < 2) return '<small>chart builds up …</small>';
@@ -178,6 +187,7 @@ ${msg ? `<div class="card msg">${esc(msg)}</div>` : ''}
 <p><small>Sold by the launch rules afterwards (stake back at +${st.tp1 ?? 100}%, rest rides) – or press ✋ I decide. Tokens with clawback, a freeze or approval-only trust lines are refused.</small></p>
 <h3>💼 Positions (${live.length})</h3>${live.map(posCard).join('') || '<p><small>No open positions.</small></p>'}
 <h3>🌙 Moonbags – stake back, the rest rides free (${moon.length})</h3>${moon.map(posCard).join('') || '<p><small>None yet.</small></p>'}
+${smartBlock(st.smart)}
 ${statsBlock(st.stats)}
 ${st.cleanup?.on ? `<div><span class="k">🧹 Dead / dust trust lines deleted <b>${st.cleanup.cleared}</b> · reserve freed <b class="g">${st.cleanup.freed} XRP</b></span><form method="post" action="/act"><input type="hidden" name="k" value="-"><input type="hidden" name="do" value="cleanup"><button>🧹 Clean up now</button></form></div>` : ''}
 ${st.chart?.on ? `<div><span class="k">📈 Chart: held instead of selling <b>${st.stats?.chartHolds || 0}</b> · bought more <b>${st.stats?.chartAdds || 0}</b></span><span class="k">🧠 good calls: holds ${st.chart.hold.good}/${st.chart.hold.n} (score needed ${st.chart.hold.th}) · add-ons ${st.chart.add.good}/${st.chart.add.n} (score needed ${st.chart.add.th})${st.chart.pending ? ` · ${st.chart.pending} to judge` : ''}</span></div>` : ''}

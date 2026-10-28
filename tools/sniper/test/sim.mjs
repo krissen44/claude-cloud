@@ -850,6 +850,59 @@ await test('clean-up: a dead pool\'s tokens go back to the issuer and the line i
   bot.stop();
 });
 
+await test('smart wallets: a wallet that buys early and sells with profit across launches is found and copied; a loser is not', async () => {
+  const realNow = Date.now;
+  let offset = 0;
+  Date.now = () => realNow() + offset;
+  try {
+    const SMART = 'rSmartTrader11111111111111111111', DUMB = 'rDumbTrader111111111111111111111';
+    const { sim, bot } = setup(100, { COPY_BUY_XRP: '2', AUTO_MIN_LAUNCHES: '3', AUTO_MIN_PNL: '5', MIN_POOL_SUPPLY_PCT: '0' });
+    await bot.start();
+    const amm = {};
+    const trade = (issuer, cur, xrp, who) => {
+      const before = Math.round(sim.amm[`${cur}.${issuer}`].xrp * 1e6);
+      sim.trade(cur, issuer, xrp);
+      const after = Math.round(sim.amm[`${cur}.${issuer}`].xrp * 1e6);
+      sim.emit('transaction', { validated: true, tx_json: { TransactionType: 'Payment', Account: who }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [{ ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: amm[issuer], Balance: String(after) }, PreviousFields: { Balance: String(before) } } }] } });
+    };
+    for (let i = 0; i < 3; i++) {
+      const iss = `rLaunch${i}xxxxxxxxxxxxxxxxxxxxx`;
+      amm[iss] = 'rAmmL' + i;
+      const cur = sim.launch({ name: 'LCH' + i, issuer: iss, poolXrp: 50, poolTok: 1e9, silent: true });
+      sim.emit('transaction', { validated: true, ledger_index: 3000 + i, tx_json: { TransactionType: 'AMMCreate', Account: 'rDEV', Amount: String(50e6), Amount2: { currency: cur, issuer: iss, value: '1000000000' } }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [{ CreatedNode: { LedgerEntryType: 'AccountRoot', NewFields: { Account: amm[iss], AMMID: 'X', Balance: String(50e6) } } }] } });
+      trade(iss, cur, 10, SMART); // early buy
+      trade(iss, cur, 40, 'rCrowd' + i); // others pump it
+      trade(iss, cur, 30, DUMB); // late buy at the top
+      trade(iss, cur, -18, SMART); // smart sells: out 18 > in 10
+      trade(iss, cur, -10, DUMB); // dumb sells at a loss: out 10 < in 30
+    }
+    await settle(bot);
+    offset = 3.1 * 3600e3; await bot.rec.sample();
+    const ws = bot.rec.wallets();
+    const smart = ws.find((w) => w.wallet === SMART), dumb = ws.find((w) => w.wallet === DUMB);
+    assert.ok(smart && smart.launches === 3 && smart.winRate === 1 && smart.pnl > 20 && smart.early === 3, JSON.stringify(smart));
+    assert.ok(dumb && dumb.pnl < 0 && dumb.winRate === 0);
+    bot._refreshSmart();
+    const sm = bot.status().smart;
+    assert.deepEqual(sm.copying.map((c) => c.wallet), [SMART], 'only the good trader is copied');
+    // the smart wallet buys a new token → the bot copies it
+    const cur = sim.launch({ name: 'NEXTUP', issuer: 'rNext', poolXrp: 400, poolTok: 1e9, silent: true });
+    sim.emit('transaction', { validated: true, hash: 'SMARTBUY', tx_json: { TransactionType: 'Payment', Account: SMART, Fee: '12' }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [
+      { ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: SMART, Balance: '80000000' }, PreviousFields: { Balance: '100000012' } } },
+      { ModifiedNode: { LedgerEntryType: 'RippleState', FinalFields: { Balance: { currency: cur, value: '-50000000' }, LowLimit: { issuer: 'rNext' }, HighLimit: { issuer: SMART } }, PreviousFields: { Balance: { currency: cur, value: '0' } } } },
+    ] } });
+    await settle(bot);
+    const pos = bot.state().positions[`${cur}.rNext`];
+    assert.ok(pos && /🕵️/.test(pos.copy), 'copied the smart wallet: ' + (pos && pos.copy));
+    // never: ban → no longer copied; pin works for any wallet
+    assert.match(await bot.answer(SMART, 'wban'), /never copied/);
+    assert.equal(bot.status().smart.copying.length, 0);
+    assert.match(await bot.answer(DUMB, 'wpin'), /copied from now on/);
+    assert.deepEqual(bot.status().smart.copying.map((c) => c.wallet), [DUMB]);
+    bot.stop();
+  } finally { Date.now = realNow; }
+});
+
 await test('settings change live: pause stops buys, unpause buys again, open trades still sell', async () => {
   const { sim, bot, cfg } = setup();
   await bot.start();

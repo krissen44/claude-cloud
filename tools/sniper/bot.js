@@ -97,6 +97,13 @@ export function readConfig(env = process.env) {
     // wallet tracking: TRACK_WALLETS=rAbc…:Name,rDef… → buy what these wallets buy
     track: parseTrack(env.TRACK_WALLETS || ''),
     copyBuyXrp: num('COPY_BUY_XRP', num('BUY_XRP', 1)),
+    // smart wallets: found from the launches we follow, then copied like TRACK_WALLETS
+    autoTrack: bool('AUTO_TRACK', true),
+    autoMinLaunches: num('AUTO_MIN_LAUNCHES', 3),
+    autoMinWin: num('AUTO_MIN_WIN', 60), // percent of launches with ≥ 10 % more XRP out than in
+    autoMinPnl: num('AUTO_MIN_PNL', 5), // XRP taken out minus put in, over all followed launches
+    autoMinEarly: num('AUTO_MIN_EARLY', 0), // how many of those launches it bought within 2 min (sniper)
+    autoMax: num('AUTO_MAX', 5),
     copyMinXrp: num('COPY_MIN_XRP', 5), // ignore buys of the tracked wallet below this many XRP
     copyMinPoolXrp: num('COPY_MIN_POOL_XRP', num('MIN_POOL_XRP', 100)),
     // copied buys sell by classic rules (no moonbag): half at +100 %, rest on a 30 % trailing stop,
@@ -306,8 +313,24 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
 
   // data recorder: follows every launch for 24 h and logs every event (see recorder.mjs)
   const NOREC = { follow() {}, checks() {}, decision() {}, trade() {}, tx() {}, event() {}, stop() {}, rows: () => [], csv: () => '', analysis: () => null, events: () => [], following: () => 0 };
-  const rec = record ? createRecorder({ dir: cfg.dataDir, pool: (c, i) => pool(c, i), log: (m) => log(m) }) : NOREC;
+  const rec = record ? createRecorder({ dir: cfg.dataDir, pool: (c, i) => pool(c, i), log: (m) => log(m), ignore: [me] }) : NOREC;
   const chart = createChartLearner(S, cfg, { now, log: (m) => say(m) });
+
+  // ---------- smart wallets ----------
+  // Ranked from the followed launches; the best ones (and the ones you pinned) are copied.
+  S.walletPin ||= {}; S.walletBan ||= {};
+  let auto = new Map(); // wallet → label
+  const isSmart = (w) => w.launches >= cfg.autoMinLaunches && w.winRate * 100 >= cfg.autoMinWin && w.pnl >= cfg.autoMinPnl && w.early >= cfg.autoMinEarly;
+  function refreshSmart() {
+    const list = rec.wallets ? rec.wallets() : [];
+    const next = new Map();
+    for (const a of Object.keys(S.walletPin)) next.set(a, `📌 ${a.slice(0, 6)}`);
+    if (cfg.autoTrack) for (const w of list.filter((x) => isSmart(x) && !S.walletBan[x.wallet]).slice(0, cfg.autoMax)) next.set(w.wallet, `🕵️ ${w.wallet.slice(0, 6)} (${w.launches} launches, ${Math.round(w.winRate * 100)}%, ${w.pnl >= 0 ? '+' : ''}${w.pnl} XRP)`);
+    for (const a of next.keys()) if (!auto.has(a)) { say(`🕵️ Now copying ${next.get(a)}`); rec.event('smart_wallet', { wallet: a, label: next.get(a) }); }
+    auto = next;
+  }
+  const tracked = (a) => cfg.track.has(a) || auto.has(a);
+  const trackedName = (a) => cfg.track.get(a) || auto.get(a) || a.slice(0, 8);
 
   async function refreshReserves() {
     try {
@@ -339,7 +362,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     const h = ev.hash || tx.hash;
     if (h) { if (seenValidated.has(h)) return; seenValidated.add(h); if (seenValidated.size > 20000) seenValidated.clear(); }
     rec.tx(ev);
-    if (cfg.track.has(tx.Account) && tx.Account !== me) onTracked(tx, ev);
+    if (tracked(tx.Account) && tx.Account !== me) onTracked(tx, ev);
     // the issuer of a waiting launch did something (unfreeze, blackhole, fee change) → re-check now
     const ws = waiters.get(tx.Account);
     if (ws) { waiters.delete(tx.Account); for (const wake of ws) setTimeout(() => wake(true), 50); }
@@ -377,7 +400,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   // A tracked wallet bought a token → run the same checks and buy it too (once per token).
   function onTracked(tx, ev) {
     if (tx.TransactionType === 'AMMDeposit' || tx.TransactionType === 'AMMCreate') return;
-    const who = cfg.track.get(tx.Account);
+    const who = trackedName(tx.Account);
     for (const b of buysOf(ev.meta, tx.Account, Number(tx.Fee || 0))) {
       if (b.issuer === tx.Account || b.xrp < cfg.copyMinXrp) continue;
       const k = key(b.currency, b.issuer);
@@ -996,6 +1019,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
 
   // Your answers from the status page.
   const answer = (k, what, o = {}) => (what === 'buy' ? buyByHand(k, o.xrp)
+    : what === 'wpin' || what === 'wban' || what === 'wfree' ? walletAct(k, what)
     : what === 'cleanup' ? locked(cleanupSweep).then((n) => (n === 'off' ? 'clean-up is off (or already running)' : `🧹 clean-up done: ${n} trust line(s) deleted`))
     : locked(() => answerNow(k, what, o)));
   async function answerNow(k, what, o = {}) {
@@ -1046,6 +1070,15 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       return 'sold';
     }
     return 'nothing to do';
+  }
+
+  function walletAct(a, what) {
+    if (!/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(a)) return 'not a wallet address';
+    delete S.walletPin[a]; delete S.walletBan[a];
+    if (what === 'wpin') S.walletPin[a] = now();
+    if (what === 'wban') S.walletBan[a] = now();
+    save(); refreshSmart();
+    return what === 'wpin' ? `📌 ${a.slice(0, 8)}…: copied from now on` : what === 'wban' ? `🚫 ${a.slice(0, 8)}…: never copied` : `${a.slice(0, 8)}…: automatic again`;
   }
 
   // Buy any token from the status page: a FirstLedger link, NAME.rIssuer, or only the issuer
@@ -1100,7 +1133,8 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     client.on('transaction', onTransaction);
     await subscribe();
     timer = setInterval(() => { tick(); }, cfg.checkS * 1000);
-    sweepTimer = setInterval(() => { locked(cleanupSweep).catch(() => {}); }, 30 * 60e3);
+    sweepTimer = setInterval(() => { locked(cleanupSweep).catch(() => {}); refreshSmart(); }, 30 * 60e3);
+    refreshSmart();
     setTimeout(() => { locked(cleanupSweep).catch(() => {}); }, 60e3);
     say(`🤖 Sniper running${cfg.dryRun ? ' (DRY RUN)' : ''} – wallet ${me}, ${cfg.buyXrp} XRP per launch, ${Object.keys(S.positions).length} open positions`);
   }
@@ -1130,10 +1164,11 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       mcapApproval: cfg.mcapApproval, mcapCurrency: cfg.mcapCurrency, paused: cfg.pauseBuys,
       buysToday: S.buysToday, open: open.map((p) => ({ ...p, hist: undefined, spark: (p.hist || []).filter((_, i, a) => i % Math.ceil(a.length / 60) === 0 || i === a.length - 1).map((x) => x.price) })), history: S.history.slice(0, 50),
       chart: { ...chart.summary(), on: cfg.chartSmart, add: cfg.chartAdd },
+      smart: { on: cfg.autoTrack, copying: [...auto.entries()].map(([wallet, label]) => ({ wallet, label })), list: (rec.wallets ? rec.wallets() : []).slice(0, 20).map((w) => ({ ...w, smart: isSmart(w), copied: auto.has(w.wallet), pinned: !!S.walletPin[w.wallet], banned: !!S.walletBan[w.wallet] })), rules: { launches: cfg.autoMinLaunches, win: cfg.autoMinWin, pnl: cfg.autoMinPnl } },
       cleanup: { on: cfg.cleanup, cleared: S.stats.linesCleared || 0, freed: S.stats.reserveFreed || 0 },
       wins: S.history.filter((h) => h.pnl > 0).length, losses: S.history.filter((h) => h.pnl <= 0).length,
     };
   }
 
-  return { start, stop, resubscribe, tick, status, answer, say, rec, onTransaction, state: () => S, _pending: pending };
+  return { start, stop, resubscribe, tick, status, answer, say, rec, onTransaction, state: () => S, _pending: pending, _refreshSmart: refreshSmart };
 }
