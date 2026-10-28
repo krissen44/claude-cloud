@@ -179,6 +179,7 @@ ${msg ? `<div class="card msg">${esc(msg)}</div>` : ''}
 <h3>💼 Positions (${live.length})</h3>${live.map(posCard).join('') || '<p><small>No open positions.</small></p>'}
 <h3>🌙 Moonbags – stake back, the rest rides free (${moon.length})</h3>${moon.map(posCard).join('') || '<p><small>None yet.</small></p>'}
 ${statsBlock(st.stats)}
+${st.cleanup?.on ? `<div><span class="k">🧹 Dead / dust trust lines deleted <b>${st.cleanup.cleared}</b> · reserve freed <b class="g">${st.cleanup.freed} XRP</b></span><form method="post" action="/act"><input type="hidden" name="k" value="-"><input type="hidden" name="do" value="cleanup"><button>🧹 Clean up now</button></form></div>` : ''}
 ${st.chart?.on ? `<div><span class="k">📈 Chart: held instead of selling <b>${st.stats?.chartHolds || 0}</b> · bought more <b>${st.stats?.chartAdds || 0}</b></span><span class="k">🧠 good calls: holds ${st.chart.hold.good}/${st.chart.hold.n} (score needed ${st.chart.hold.th}) · add-ons ${st.chart.add.good}/${st.chart.add.n} (score needed ${st.chart.add.th})${st.chart.pending ? ` · ${st.chart.pending} to judge` : ''}</span></div>` : ''}
 ${analysisBlock(st.analysis, st.following || 0)}
 <h3>Closed</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Proceeds</th><th>XRP</th><th>Reason</th><th>Closed (UTC)</th></tr>${hist}</table></div>`;

@@ -68,6 +68,16 @@ Every buy and sale is in the log, on the status page (open trades and moonbags a
   the pool): FRIZZY (51 XRP, 22 % in the pool) ≈ 2.4 XRP, XRB (151 XRP, 36 %) ≈ 4.3 XRP, Swell (1,000 XRP, 99 %)
   ≈ 10 XRP. The buy message and the data show the share bought.
 
+## Clean-up of dead trust lines
+
+Every trust line locks 0.2 XRP of reserve, and a line can only be deleted when its balance is zero. When a
+pool is deleted (rug, like Swell) the tokens are worthless but still on the line – so the bot sends them back
+to the issuer (a payment to the issuer burns them; issuers that need a destination tag get tag 0) and then
+deletes the line (`CLEANUP_LINES`, on). Every 30 minutes (and with **🧹 Clean up now** on the status page) it
+also goes through all lines that belong to no open trade: empty ones are deleted; tokens worth less than
+`DUST_XRP` (0.05) are sold if they still fetch ≥ 0.001 XRP, the rest goes back to the issuer and the line is
+deleted. Tokens worth more than that are never touched. The page shows the lines deleted and the reserve freed.
+
 ## Status page: positions and trading by hand
 
 Every open position is a card: its own price line (last minutes), chart score 📈, stake, worth now, result,

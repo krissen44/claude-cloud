@@ -70,6 +70,9 @@ export function readConfig(env = process.env) {
     chartMaxAdds: num('CHART_MAX_ADDS', 1),
     hardStop: num('HARD_STOP', 75), // a loss this big is sold whatever the chart says
     chartLearn: bool('CHART_LEARN', true),
+    // trust lines of dead / dust tokens: tokens go back to the issuer, the line is deleted (frees 0.2 XRP)
+    cleanup: bool('CLEANUP_LINES', true),
+    dustXrp: num('DUST_XRP', 0.05), // a leftover worth less than this (and not an open trade) is cleared
     crowd: bool('CROWD_BUY', true),
     crowdMinBuyers: num('CROWD_MIN_BUYERS', 100),
     crowdMinPoolXrp: num('CROWD_MIN_POOL_XRP', 500),
@@ -690,7 +693,68 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     rec.trade(pos.k, { proceeds: +pos.proceeds.toFixed(6), pnl: +pnl.toFixed(6), closeWhy: why, heldMin: Math.round((now() - pos.at) / 60000), peak: +pos.peak.toFixed(6), runner: !!pos.runner });
     rec.event('close', { k: pos.k, name: pos.name, cost: pos.cost, proceeds: pos.proceeds, pnl, why });
     say(`${pnl >= 0 ? '✅' : '🔴'} Closed ${pos.name}: ${pos.cost.toFixed(3)} → ${pos.proceeds.toFixed(3)} XRP (${pnl >= 0 ? '+' : ''}${pnl.toFixed(3)}) – ${why}. Total ${S.realized >= 0 ? '+' : ''}${S.realized.toFixed(3)} XRP`);
-    if (!cfg.dryRun) await dropTrustLine(pos.currency, pos.issuer).catch(() => {});
+    if (cfg.dryRun) return;
+    // a dead pool leaves worthless tokens on the line: give them back to the issuer so the line can go
+    if (/pool deleted|dead/.test(why) && cfg.cleanup) await clearLine(pos.currency, pos.issuer, pos.name, why).catch((e) => say(`⚠️ ${pos.name}: line not cleared – ${e.message}`));
+    else await dropTrustLine(pos.currency, pos.issuer).catch(() => {});
+  }
+
+  // Send what's left of a token back to its issuer (that burns it) and delete the trust line.
+  async function clearLine(currency, issuer, name, why) {
+    const lines = await req('account_lines', { account: me, peer: issuer, ledger_index: 'validated' });
+    const line = lines.lines?.find((x) => x.currency === currency);
+    if (!line) return false;
+    if (Number(line.balance) < 0) return false; // we'd be the issuer side – never touch
+    if (Number(line.balance) > 0) {
+      const pay = { TransactionType: 'Payment', Account: me, Destination: issuer, Amount: { currency, issuer, value: line.balance } };
+      let r = await submit(pay, true);
+      if (r?.meta?.TransactionResult === 'tecDST_TAG_NEEDED') r = await submit({ ...pay, DestinationTag: 0 }, true);
+      if (!okResult(r)) { say(`⚠️ ${name}: couldn't send the tokens back to the issuer (${r?.meta?.TransactionResult}) – line stays`); return false; }
+      rec.event('burned', { k: key(currency, issuer), name, tokens: line.balance, why });
+    }
+    const t = await submit({ TransactionType: 'TrustSet', Account: me, Flags: TF_SET_NO_RIPPLE, LimitAmount: { currency, issuer, value: '0' } }, true);
+    if (!okResult(t)) return false;
+    stat('linesCleared');
+    S.stats.reserveFreed = +((S.stats.reserveFreed || 0) + reserves.inc).toFixed(2);
+    save();
+    say(`🧹 ${name}: ${Number(line.balance) > 0 ? 'worthless tokens sent back to the issuer, ' : ''}trust line deleted – ${reserves.inc} XRP reserve free (${why})`);
+    return true;
+  }
+
+  // Every 30 min: lines that belong to no open trade – empty ones are deleted, dust (worth less than
+  // DUST_XRP) is sold if it still fetches something and the rest goes back to the issuer.
+  // Tokens worth more than that are never touched (they may be yours).
+  let sweeping = false;
+  async function cleanupSweep() {
+    if (!cfg.cleanup || cfg.dryRun || sweeping || stopped) return 'off';
+    sweeping = true;
+    let n = 0;
+    try {
+      let marker;
+      const all = [];
+      do {
+        const r = await req('account_lines', { account: me, ledger_index: 'validated', limit: 400, ...(marker ? { marker } : {}) });
+        all.push(...(r.lines || []));
+        marker = r.marker;
+      } while (marker);
+      for (const line of all) {
+        const k = key(line.currency, line.account);
+        if (S.positions[k] || pending.has(k) || Number(line.balance) < 0) continue;
+        const name = currencyName(line.currency);
+        const bal = Number(line.balance);
+        if (bal === 0) { if (await clearLine(line.currency, line.account, name, 'empty line')) n++; continue; }
+        const p = await pool(line.currency, line.account).catch(() => undefined);
+        if (p === undefined) continue; // couldn't ask – next time
+        const worth = p ? swapOut(bal, p.tok, p.xrp, p.fee) : 0;
+        if (worth >= cfg.dustXrp) continue;
+        if (p && worth >= 0.001) {
+          // still fetches a little: sell it first
+          await submit({ TransactionType: 'Payment', Account: me, Destination: me, Flags: TF_PARTIAL, Amount: toDrops(worth * 1.5), SendMax: { currency: line.currency, issuer: line.account, value: line.balance }, DeliverMin: toDrops(worth * 0.5) }, true).catch(() => {});
+        }
+        if (await clearLine(line.currency, line.account, name, p ? `dust worth ${worth.toFixed(4)} XRP` : 'pool gone')) n++;
+      }
+    } finally { sweeping = false; }
+    return n;
   }
 
   // Frees the 0.2 XRP reserve of a trust line once its balance is zero.
@@ -931,7 +995,9 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   }
 
   // Your answers from the status page.
-  const answer = (k, what, o = {}) => (what === 'buy' ? buyByHand(k, o.xrp) : locked(() => answerNow(k, what, o)));
+  const answer = (k, what, o = {}) => (what === 'buy' ? buyByHand(k, o.xrp)
+    : what === 'cleanup' ? locked(cleanupSweep).then((n) => (n === 'off' ? 'clean-up is off (or already running)' : `🧹 clean-up done: ${n} trust line(s) deleted`))
+    : locked(() => answerNow(k, what, o)));
   async function answerNow(k, what, o = {}) {
     rec.event('answer', { k, what, ...o, waitedMin: S.positions[k]?.ask ? Math.round((now() - S.positions[k].ask.at) / 60000) : null });
     const pos = S.positions[k];
@@ -1028,11 +1094,14 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
 
   // ---------- lifecycle ----------
   let timer;
+  let sweepTimer;
   async function start() {
     await refreshReserves();
     client.on('transaction', onTransaction);
     await subscribe();
     timer = setInterval(() => { tick(); }, cfg.checkS * 1000);
+    sweepTimer = setInterval(() => { locked(cleanupSweep).catch(() => {}); }, 30 * 60e3);
+    setTimeout(() => { locked(cleanupSweep).catch(() => {}); }, 60e3);
     say(`🤖 Sniper running${cfg.dryRun ? ' (DRY RUN)' : ''} – wallet ${me}, ${cfg.buyXrp} XRP per launch, ${Object.keys(S.positions).length} open positions`);
   }
   // FAST_LAUNCH: transactions_proposed also carries the validated transactions (one stream)
@@ -1046,7 +1115,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     await refreshReserves();
     await subscribe();
   }
-  function stop() { stopped = true; clearInterval(timer); save(); rec.stop(); }
+  function stop() { stopped = true; clearInterval(timer); clearInterval(sweepTimer); save(); rec.stop(); }
 
   function status() {
     const open = Object.values(S.positions);
@@ -1061,6 +1130,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       mcapApproval: cfg.mcapApproval, mcapCurrency: cfg.mcapCurrency, paused: cfg.pauseBuys,
       buysToday: S.buysToday, open: open.map((p) => ({ ...p, hist: undefined, spark: (p.hist || []).filter((_, i, a) => i % Math.ceil(a.length / 60) === 0 || i === a.length - 1).map((x) => x.price) })), history: S.history.slice(0, 50),
       chart: { ...chart.summary(), on: cfg.chartSmart, add: cfg.chartAdd },
+      cleanup: { on: cfg.cleanup, cleared: S.stats.linesCleared || 0, freed: S.stats.reserveFreed || 0 },
       wins: S.history.filter((h) => h.pnl > 0).length, losses: S.history.filter((h) => h.pnl <= 0).length,
     };
   }

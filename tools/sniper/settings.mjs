@@ -49,6 +49,10 @@ export const GROUPS = [
     ['HARD_STOP', 'Always sell at a loss of (%)', 'num', '75', 'whatever the chart says', 1, 99],
     ['CHART_LEARN', 'Learn the scores', 'bool', '1', 'every hold / add-on is judged 20 min later'],
   ]],
+  ['🧹 Clean-up', [
+    ['CLEANUP_LINES', 'Clear dead / dust trust lines', 'bool', '1', 'pool gone or worth less than below: tokens back to the issuer, line deleted (0.2 XRP free each)'],
+    ['DUST_XRP', 'Dust: worth less than (XRP)', 'num', '0.05', 'never applies to open trades', 0, 10],
+  ]],
   ['🌙 Selling – launch buys', [
     ['TAKE_PROFIT', 'First sale at gain (%)', 'num', '100', '', 1, 100000],
     ['TAKE_PROFIT_PART', 'How much to sell then', 'part', 'auto', '“auto” = exactly the stake back, the rest is a moonbag; or a percent'],

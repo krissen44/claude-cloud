@@ -60,7 +60,7 @@ class Sim {
       return { result: { amm: { amount: String(Math.round(p.xrp * D)), amount2: { ...r.asset2, value: String(p.tok) }, trading_fee: p.fee } } };
     }
     if (c === 'account_lines') {
-      const lines = Object.entries(this.lines).filter(([k]) => k.endsWith('.' + r.peer)).map(([k, b]) => ({ currency: k.split('.')[0], account: r.peer, balance: String(b) }));
+      const lines = Object.entries(this.lines).filter(([k]) => !r.peer || k.endsWith('.' + r.peer)).map(([k, b]) => ({ currency: k.split('.')[0], account: k.split('.')[1], balance: String(b) }));
       return { result: { lines } };
     }
     if (c === 'gateway_balances') {
@@ -110,6 +110,16 @@ class Sim {
             : { ModifiedNode: { LedgerEntryType: 'RippleState', FinalFields: line, PreviousFields: { Balance: { currency: iou.currency, value: String(before) } } } },
         ],
       });
+    }
+    if (tx.TransactionType === 'Payment' && tx.Destination !== ME) {
+      // tokens back to their issuer (burn)
+      const k = this.k(tx.Amount.currency, tx.Amount.issuer);
+      me.Balance = String(Number(me.Balance) - fee);
+      if (tx.Destination !== tx.Amount.issuer || !(this.lines[k] > 0)) return res('tecPATH_DRY');
+      if (this.needTag?.has(tx.Destination) && tx.DestinationTag == null) return res('tecDST_TAG_NEEDED');
+      this.burned = (this.burned || 0) + Number(tx.Amount.value);
+      this.lines[k] = Math.max(0, this.lines[k] - Number(tx.Amount.value));
+      return res('tesSUCCESS');
     }
     if (tx.TransactionType === 'Payment') {
       const buy = typeof tx.Amount === 'object';
@@ -808,6 +818,35 @@ await test('status page actions: sell 25 %, buy more, buy a token by link / NAME
   assert.equal(bot.state().positions[k].manual, true);
   const st = bot.status();
   assert.ok(Array.isArray(st.open[0].spark) && st.open[0].hist === undefined, 'page gets a small price line, not the whole history');
+  bot.stop();
+});
+
+await test('clean-up: a dead pool\'s tokens go back to the issuer and the line is deleted; dust and empty lines too; real holdings stay', async () => {
+  const { sim, bot } = setup(100);
+  await bot.start();
+  const cur = sim.launch({ name: 'SWELLY', issuer: 'rSwl', poolXrp: 300, poolTok: 1e9 });
+  await settle(bot);
+  const k = `${cur}.rSwl`;
+  assert.ok(sim.lines[k] > 0, 'holding tokens');
+  const owners = sim.acc[ME].OwnerCount;
+  delete sim.amm[k]; // rug: the dev withdrew the whole pool
+  await bot.tick(); await settle(bot);
+  assert.equal(bot.state().positions[k], undefined, 'closed');
+  assert.equal(k in sim.lines, false, 'line deleted');
+  assert.ok(sim.burned > 0, 'tokens sent back to the issuer');
+  assert.equal(sim.acc[ME].OwnerCount, owners - 1, 'reserve free');
+  // leftovers from before: an empty line, dust, a dead token with a tag-requiring issuer, and a real holding
+  const mk = (name, iss, xrp, bal) => { const c = sim.launch({ name, issuer: iss, poolXrp: xrp, poolTok: 1e9, silent: true }); sim.lines[`${c}.${iss}`] = bal; sim.acc[ME].OwnerCount++; return `${c}.${iss}`; };
+  const empty = mk('EMPTYL', 'rEmp', 100, 0);
+  const dust = mk('DUSTY', 'rDst', 100, 1e5); // worth ≈ 0.01 XRP
+  const dead = mk('DEADY', 'rDed', 100, 5e6); delete sim.amm[dead];
+  sim.needTag = new Set(['rDed']);
+  const keep = mk('KEEPER', 'rKep', 1000, 5e7); // worth ≈ 47 XRP – could be yours
+  assert.match(await bot.answer('-', 'cleanup'), /3 trust line/);
+  for (const x of [empty, dust, dead]) assert.equal(x in sim.lines, false, 'cleared ' + x);
+  assert.ok(sim.lines[keep] === 5e7, 'real holding untouched');
+  assert.equal(bot.status().cleanup.cleared, 4);
+  assert.ok(Math.abs(bot.status().cleanup.freed - 0.8) < 1e-9);
   bot.stop();
 });
 
