@@ -136,7 +136,7 @@ function page(st) {
   const t = (d) => new Date(d).toISOString().slice(5, 16).replace('T', ' ');
   const cap = (v) => (!v && v !== 0 ? '' : isNaN(v) ? '?' : (st.mcapCurrency === 'USD' ? '$' : '') + (v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(0) + 'k' : v.toFixed(0)) + (st.mcapCurrency === 'XRP' ? ' XRP' : ''));
   const btn = (k, what, label, cls = '') => `<form method="post" action="/act"><input type="hidden" name="k" value="${esc(k)}"><input type="hidden" name="do" value="${what}"><button class="${cls}">${label}</button></form>`;
-  const name = (p) => `${esc(p.name)}${p.copy ? ` <small>👀 ${esc(p.copy)}</small>` : ''}${p.manual ? ' <small>✋ manual</small>' : ''}${p.runner ? ' <small>🚀 Runner</small>' : ''}`;
+  const name = (p) => `${esc(p.name)}${p.copy ? ` <small>👀 ${esc(p.copy)}</small>` : ''}${p.manual ? ' <small>✋ manual</small>' : ''}${p.runner ? ' <small>🚀 Runner</small>' : ''}${p.health != null ? ` <small title="${esc(JSON.stringify(p.healthParts || {}))}">📈 ${p.health}</small>` : ''}${p.holding ? ' <small>⏳ holding – chart healthy</small>' : ''}${p.adds ? ` <small>➕${p.adds}</small>` : ''}`;
   const manualBtns = (p) => (p.manual ? btn(p.k, 'sellhalf', 'Sell half') + btn(p.k, 'sellall', 'Sell all', 'no') + btn(p.k, 'auto', 'Back to automatic') : '');
   const asks = st.open.filter((p) => p.ask);
   const live = st.open.filter((p) => !p.ask && !(p.tp1Done && !p.copy));
@@ -157,6 +157,7 @@ ${asks.length ? `<h3>🙋 Waiting for your approval (${asks.length})</h3>${askCa
 <h3>Open trades (${live.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Value</th><th>%</th><th>MCap</th><th>Bought (UTC)</th><th></th></tr>${liveRows}</table></div>
 <h3>🌙 Moonbags – stake back, the rest rides free (${moon.length})</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Returned</th><th>Bag worth</th><th>×</th><th>MCap</th><th></th></tr>${moonRows}</table></div>
 ${statsBlock(st.stats)}
+${st.chart?.on ? `<div><span class="k">📈 Chart: held instead of selling <b>${st.stats?.chartHolds || 0}</b> · bought more <b>${st.stats?.chartAdds || 0}</b></span><span class="k">🧠 good calls: holds ${st.chart.hold.good}/${st.chart.hold.n} (score needed ${st.chart.hold.th}) · add-ons ${st.chart.add.good}/${st.chart.add.n} (score needed ${st.chart.add.th})${st.chart.pending ? ` · ${st.chart.pending} to judge` : ''}</span></div>` : ''}
 ${analysisBlock(st.analysis, st.following || 0)}
 <h3>Closed</h3><div class="wrap"><table><tr><th>Token</th><th>Stake</th><th>Proceeds</th><th>XRP</th><th>Reason</th><th>Closed (UTC)</th></tr>${hist}</table></div>`;
 }

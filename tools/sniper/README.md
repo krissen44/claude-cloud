@@ -68,6 +68,20 @@ Every buy and sale is in the log, on the status page (open trades and moonbags a
   the pool): FRIZZY (51 XRP, 22 % in the pool) ≈ 2.4 XRP, XRB (151 XRP, 36 %) ≈ 4.3 XRP, Swell (1,000 XRP, 99 %)
   ≈ 10 XRP. The buy message and the data show the share bought.
 
+## Chart: hold or buy more
+
+Every tick the bot adds the pool's price and XRP to the position's own chart, plus buys, sells, new wallets
+and liquidity removed from the stream. From the last 10 minutes it scores the chart 0–100 (`chart.mjs`:
+trend, liquidity, higher lows, drawdown from the high, buy vs. sell pressure, new wallets, liquidity pulled).
+- **Hold** (`CHART_SMART`, score ≥ `CHART_HOLD_SCORE` 70): a sale the rules want (stake back, take profit,
+  trailing stop, stop loss, max hold) waits while the chart is healthy. Always sold: a rug alarm, a loss of
+  `HARD_STOP` (75 %) or more, a value that fell to half of its peak.
+- **Buy more** (`CHART_ADD`, score ≥ `CHART_ADD_SCORE` 80): once per trade (`CHART_MAX_ADDS`), at least 3 min
+  after the buy, between −40 % and +200 %, `CHART_ADD_XRP`.
+- **Learning** (`CHART_LEARN`): every hold / add-on is judged 20 minutes later (price higher than at the
+  decision?). Under 50 % good calls → the score needed goes up 5; over 75 % → down 3 (55–95). The status page
+  shows the score per position (📈) and the learned thresholds.
+
 ## Crowd entry and protection cap
 
 - **Crowd entry** (`CROWD_BUY`, on): a launch that was skipped for "dev holds the supply", "pool too small"

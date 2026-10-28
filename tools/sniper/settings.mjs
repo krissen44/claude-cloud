@@ -39,6 +39,16 @@ export const GROUPS = [
     ['CROWD_BUY_XRP', 'Stake (XRP)', 'num', '1', '', 0.1, 1000],
     ['CROWD_REQUIRE_BLACKHOLE', 'Only blackholed issuers', 'bool', '0', 'on = safer, but UBER (not blackholed) would not have been bought'],
   ]],
+  ['📈 Chart (hold / buy more)', [
+    ['CHART_SMART', 'Read the chart', 'bool', '1', 'healthy chart → a sale waits (rug, hard stop and half the peak lost always sell)'],
+    ['CHART_HOLD_SCORE', 'Hold from health score', 'num', '70', '0–100; learned and adjusted by the bot', 1, 100],
+    ['CHART_ADD', 'Buy more on a very healthy chart', 'bool', '1', 'once per trade, between −40 % and +200 %'],
+    ['CHART_ADD_SCORE', 'Buy more from health score', 'num', '80', 'learned and adjusted by the bot', 1, 100],
+    ['CHART_ADD_XRP', 'Add-on stake (XRP)', 'num', '1', '', 0.1, 1000],
+    ['CHART_MAX_ADDS', 'Max. add-ons per trade', 'num', '1', '', 0, 10],
+    ['HARD_STOP', 'Always sell at a loss of (%)', 'num', '75', 'whatever the chart says', 1, 99],
+    ['CHART_LEARN', 'Learn the scores', 'bool', '1', 'every hold / add-on is judged 20 min later'],
+  ]],
   ['🌙 Selling – launch buys', [
     ['TAKE_PROFIT', 'First sale at gain (%)', 'num', '100', '', 1, 100000],
     ['TAKE_PROFIT_PART', 'How much to sell then', 'part', 'auto', '“auto” = exactly the stake back, the rest is a moonbag; or a percent'],

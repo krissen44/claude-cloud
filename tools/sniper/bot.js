@@ -8,6 +8,7 @@
 
 import fs from 'node:fs';
 import { createRecorder, ammAccountOf } from './recorder.mjs';
+import { chartHealth, createChartLearner } from './chart.mjs';
 import path from 'node:path';
 
 const DROPS = 1_000_000;
@@ -60,6 +61,15 @@ export function readConfig(env = process.env) {
     // crowd entry: a launch that was skipped (dev holds the supply / pool too small) but then draws a
     // real crowd – many different buyers and a deep pool within the first hour – is bought after all,
     // with the classic exits (half at +100 %, trailing 30 %, stop −50 %, rug alarm, max 24 h)
+    // chart: hold instead of selling while the chart is healthy, buy more once; learns its thresholds
+    chartSmart: bool('CHART_SMART', true),
+    chartHoldScore: num('CHART_HOLD_SCORE', 70),
+    chartAdd: bool('CHART_ADD', true),
+    chartAddScore: num('CHART_ADD_SCORE', 80),
+    chartAddXrp: num('CHART_ADD_XRP', num('BUY_XRP', 1)),
+    chartMaxAdds: num('CHART_MAX_ADDS', 1),
+    hardStop: num('HARD_STOP', 75), // a loss this big is sold whatever the chart says
+    chartLearn: bool('CHART_LEARN', true),
     crowd: bool('CROWD_BUY', true),
     crowdMinBuyers: num('CROWD_MIN_BUYERS', 100),
     crowdMinPoolXrp: num('CROWD_MIN_POOL_XRP', 500),
@@ -294,6 +304,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   // data recorder: follows every launch for 24 h and logs every event (see recorder.mjs)
   const NOREC = { follow() {}, checks() {}, decision() {}, trade() {}, tx() {}, event() {}, stop() {}, rows: () => [], csv: () => '', analysis: () => null, events: () => [], following: () => 0 };
   const rec = record ? createRecorder({ dir: cfg.dataDir, pool: (c, i) => pool(c, i), log: (m) => log(m) }) : NOREC;
+  const chart = createChartLearner(S, cfg, { now, log: (m) => say(m) });
 
   async function refreshReserves() {
     try {
@@ -732,6 +743,9 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (ticking || stopped) return;
     ticking = true;
     crowdScan().catch(() => {});
+    chart.evaluate(async (c, i) => { const q = await pool(c, i); return q ? q.xrp / q.tok : 0; })
+      .then((res) => { for (const r of res) rec.event('chart_judged', r); })
+      .catch(() => {});
     try {
       await locked(async () => {
         for (const pos of Object.values(S.positions)) {
@@ -748,12 +762,67 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     pos.peak = Math.max(pos.peak, pos.value);
     pos.mcap = await marketCap(pos, p);
     runnerCheck(pos, p);
+    // the position's own chart: price + liquidity every tick, trading from the stream
+    const price = p.xrp / p.tok;
+    pos.hist ||= [];
+    pos.hist.push({ at: now(), xrp: +p.xrp.toFixed(3), price, flow: rec.flowOf?.(pos.k) || null });
+    while (pos.hist.length > 200 || (pos.hist.length && now() - pos.hist[0].at > 30 * 60e3)) pos.hist.shift();
+    const h = chartHealth(pos.hist, now());
+    pos.health = h ? h.score : null;
+    pos.healthParts = h ? h.parts : null;
     const d = decide(pos, p);
-    if (!d) return;
-    if (d.rug) { delete pos.ask; return sell(pos, d.part, d.why, d.opt); } // never wait on a rug
+    if (!d) { if (cfg.chartAdd && !pos.manual && !pos.ask) await maybeAdd(pos, p, price); return; }
+    if (d.rug) { delete pos.ask; delete pos.holding; return sell(pos, d.part, d.why, d.opt); } // never wait on a rug
+    if (!pos.manual && !pos.ask && holdForChart(pos, d, price)) return;
+    delete pos.holding;
     if (pos.manual || pos.ask) return; // you decide for this one
     if (needsOk(pos) && !(d.first && cfg.autoFirstSale)) { stat('asks'); return ask(pos, d); }
     return sell(pos, d.part, d.why, d.opt);
+  }
+
+  // ---------- chart: hold / buy more ----------
+  // A sale the rules want is postponed while the chart is healthy – except a rug, a loss beyond
+  // HARD_STOP, or a value that already fell to half of its peak.
+  function holdForChart(pos, d, price) {
+    if (!cfg.chartSmart || pos.health == null || pos.health < chart.th('hold')) return false;
+    const gain = (pos.value / pos.cost - 1) * 100;
+    if (gain <= -cfg.hardStop) return false;
+    if (pos.value < pos.peak * 0.5) return false;
+    if (!pos.holding || pos.holding.why !== d.why) {
+      pos.holding = { why: d.why, at: now(), score: pos.health };
+      chart.note('hold', pos, price, pos.health);
+      stat('chartHolds');
+      rec.event('chart_hold', { k: pos.k, name: pos.name, why: d.why, score: pos.health, parts: pos.healthParts, gainPct: +gain.toFixed(1) });
+      say(`📈 ${pos.name}: chart healthy (${pos.health}/100) – not selling yet (${d.why})`);
+    }
+    return true;
+  }
+  // Buy more once while the chart is very healthy and the trade is between −40 % and +200 %.
+  async function maybeAdd(pos, p, price) {
+    if (!cfg.chartSmart || cfg.pauseBuys || pos.tp1Done || (pos.adds || 0) >= cfg.chartMaxAdds) return;
+    if (pos.health == null || pos.health < chart.th('add') || now() - pos.at < 3 * 60e3) return;
+    const gain = (pos.value / pos.cost - 1) * 100;
+    if (gain < -40 || gain > 200) return;
+    const stake = cfg.chartAddXrp;
+    const free = await spendable();
+    if (free - stake < cfg.minBalanceXrp) return;
+    pos.adds = (pos.adds || 0) + 1; // counted before the try: never twice
+    const expect = swapOut(stake, p.xrp, p.tok, p.fee);
+    if (cfg.dryRun) return say(`🧪 DRY add ${pos.name}: ${stake} XRP`);
+    const r = await submit({
+      TransactionType: 'OfferCreate', Account: me, Flags: TF_IOC | TF_SELL,
+      TakerGets: toDrops(stake), TakerPays: { currency: pos.currency, issuer: pos.issuer, value: iouValue(expect * (1 - cfg.buySlippage / 100)) },
+    });
+    const fx = okResult(r) ? txEffects(r.meta, me, pos.currency, pos.issuer) : { tokDelta: 0, xrpDelta: 0 };
+    if (!(fx.tokDelta > 0)) return say(`❌ ${pos.name}: add-on buy didn't fill`);
+    const cost = Math.max(0, -fx.xrpDelta) || stake;
+    pos.cost += cost; pos.amount += fx.tokDelta; pos.peak += cost; pos.value += cost;
+    pos.entryPoolXrp = Math.max(pos.entryPoolXrp, p.xrp); // rug alarm measured from the new entry
+    chart.note('add', pos, price, pos.health);
+    stat('chartAdds');
+    rec.event('chart_add', { k: pos.k, name: pos.name, cost: +cost.toFixed(6), tokens: fx.tokDelta, score: pos.health, parts: pos.healthParts, gainPct: +gain.toFixed(1) });
+    save();
+    say(`➕ ${pos.name}: chart very healthy (${pos.health}/100) – bought more: ${cost.toFixed(3)} XRP`);
   }
 
   // What the rules want to do with a position right now: {part, why, opt?, rug?} or null.
@@ -925,7 +994,8 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       tracking: [...cfg.track.values()],
       stats: S.stats, following: rec.following(),
       mcapApproval: cfg.mcapApproval, mcapCurrency: cfg.mcapCurrency, paused: cfg.pauseBuys,
-      buysToday: S.buysToday, open, history: S.history.slice(0, 50),
+      buysToday: S.buysToday, open: open.map((p) => ({ ...p, hist: undefined })), history: S.history.slice(0, 50),
+      chart: { ...chart.summary(), on: cfg.chartSmart, add: cfg.chartAdd },
       wins: S.history.filter((h) => h.pnl > 0).length, losses: S.history.filter((h) => h.pnl <= 0).length,
     };
   }

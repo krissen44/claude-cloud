@@ -717,6 +717,67 @@ await test('buy by share of the supply: 1 % of all tokens, capped at BUY_MAX_XRP
   bot.stop();
 });
 
+await test('chart health: steady climb with buyers is healthy; a dump, lower lows or pulled liquidity are not', async () => {
+  const { chartHealth } = await import('../chart.mjs');
+  const T = 1e12;
+  const mk = (prices, xrps, flows) => prices.map((pr, i) => ({ at: T + i * 30e3, price: pr, xrp: xrps[i], flow: flows ? flows[i] : null }));
+  const n = 12;
+  const up = mk([...Array(n)].map((_, i) => 1 + i * 0.03), [...Array(n)].map((_, i) => 200 + i * 5), [...Array(n)].map((_, i) => ({ buys: i * 4, sells: i, buyers: i * 3, lpRemove: 0 })));
+  const healthy = chartHealth(up, T + (n - 1) * 30e3).score;
+  assert.ok(healthy >= 80, 'climb: ' + healthy);
+  const dump = mk([...Array(n)].map((_, i) => 1.3 - i * 0.05), [...Array(n)].map((_, i) => 260 - i * 8), [...Array(n)].map((_, i) => ({ buys: i, sells: i * 4, buyers: i, lpRemove: 0 })));
+  assert.ok(chartHealth(dump, T + (n - 1) * 30e3).score < 40, 'dump');
+  const pulled = up.map((x, i) => ({ ...x, flow: { ...x.flow, lpRemove: i > 8 ? 50 : 0 } }));
+  assert.ok(chartHealth(pulled, T + (n - 1) * 30e3).score < healthy - 30, 'liquidity pulled');
+  assert.equal(chartHealth(up.slice(0, 2), T + 30e3), null, 'too little chart → no opinion');
+});
+
+await test('chart learner: bad holds raise the score needed, good ones lower it slowly; a settings change restarts', async () => {
+  const { createChartLearner } = await import('../chart.mjs');
+  let t = 0;
+  const cfg = { chartHoldScore: 70, chartAddScore: 80, chartLearn: true };
+  const state = {};
+  const L = createChartLearner(state, cfg, { now: () => t });
+  assert.equal(L.th('hold'), 70);
+  for (let i = 0; i < 4; i++) L.note('hold', { k: 'K' + i, currency: 'C', issuer: 'I' }, 1, 75);
+  t += 21 * 60e3;
+  await L.evaluate(async () => 0.5); // price halved after every hold → bad calls
+  assert.equal(L.th('hold'), 75);
+  for (let i = 0; i < 12; i++) L.note('hold', { k: 'G' + i, currency: 'C', issuer: 'I' }, 1, 80);
+  t += 21 * 60e3;
+  await L.evaluate(async () => 2);
+  assert.ok(L.th('hold') < 75, 'good calls lower it: ' + L.th('hold'));
+  cfg.chartHoldScore = 60;
+  assert.equal(L.th('hold'), 60, 'new setting = new start');
+});
+
+await test('chart in the bot: healthy climb → buys more once and holds instead of taking the stake back; the dump sells', async () => {
+  const realNow = Date.now;
+  let offset = 0;
+  Date.now = () => realNow() + offset;
+  try {
+    const { sim, bot } = setup(100, { BUY_XRP: '2', CHART_ADD_XRP: '1' });
+    await bot.start();
+    const cur = sim.launch({ name: 'HEALTH', issuer: 'rHlt', poolXrp: 200, poolTok: 1e9 });
+    await settle(bot);
+    const k = `${cur}.rHlt`;
+    assert.ok(bot.state().positions[k], 'bought');
+    for (let i = 0; i < 16; i++) { offset += 30e3; sim.trade(cur, 'rHlt', 14); await bot.tick(); await settle(bot); }
+    const pos = bot.state().positions[k];
+    assert.equal(pos.adds, 1, 'bought more exactly once');
+    assert.ok(pos.cost > 2.9, 'stake grew: ' + pos.cost);
+    assert.ok(pos.value / pos.cost >= 2, 'over +100 %: ' + (pos.value / pos.cost));
+    assert.equal(pos.tp1Done, false, 'stake back postponed – chart healthy');
+    assert.ok(pos.holding, 'holding');
+    assert.ok(logs.join('\n').includes('chart healthy'));
+    for (let i = 0; i < 6; i++) { offset += 30e3; sim.trade(cur, 'rHlt', -60); await bot.tick(); await settle(bot); }
+    const after = bot.state().positions[k];
+    assert.ok(!after || after.tp1Done, 'sold once the chart turned');
+    assert.ok(bot.status().stats.chartHolds >= 1 && bot.status().stats.chartAdds === 1);
+    bot.stop();
+  } finally { Date.now = realNow; }
+});
+
 await test('settings change live: pause stops buys, unpause buys again, open trades still sell', async () => {
   const { sim, bot, cfg } = setup();
   await bot.start();
