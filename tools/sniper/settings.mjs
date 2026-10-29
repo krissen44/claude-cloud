@@ -79,6 +79,7 @@ export const GROUPS = [
   ]],
   ['🕵️ Smart wallets (copy the good traders)', [
     ['AUTO_TRACK', 'Copy the best wallets automatically', 'bool', '1', 'found from the launches the bot follows; bought with the copy rules above'],
+    ['AUTO_BIG_HITS', 'Or: early + ≥ 2× in this many big launches 🚀', 'num', '2', 'big = 5× / 1,000 XRP pool / 150 buyers; 0 = off', 0, 1000],
     ['AUTO_MIN_LAUNCHES', 'Min. launches traded', 'num', '3', '', 1, 1000],
     ['AUTO_MIN_WIN', 'Min. wins (%)', 'num', '60', 'win = took out ≥ 10 % more XRP than it put in', 0, 100],
     ['AUTO_MIN_PNL', 'Min. profit over all (XRP)', 'num', '5', '', -1e6, 1e9],

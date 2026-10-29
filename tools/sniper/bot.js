@@ -7,7 +7,7 @@
 // mainnet and against the simulator in test/sim.mjs.
 
 import fs from 'node:fs';
-import { createRecorder, ammAccountOf } from './recorder.mjs';
+import { createRecorder, ammAccountOf, ammTokDelta, bundleOf, isBigLaunch } from './recorder.mjs';
 import { chartHealth, createChartLearner } from './chart.mjs';
 import path from 'node:path';
 
@@ -107,6 +107,8 @@ export function readConfig(env = process.env) {
     autoMinPnl: num('AUTO_MIN_PNL', 5), // XRP taken out minus put in, over all followed launches
     autoMinEarly: num('AUTO_MIN_EARLY', 0), // how many of those launches it bought within 2 min (sniper)
     autoMax: num('AUTO_MAX', 5),
+    // big launches: a wallet that was in early (≤ 2 min) and made ≥ 2× on this many of them is copied
+    autoBigHits: num('AUTO_BIG_HITS', 2),
     copyMinXrp: num('COPY_MIN_XRP', 5), // ignore buys of the tracked wallet below this many XRP
     copyMinPoolXrp: num('COPY_MIN_POOL_XRP', num('MIN_POOL_XRP', 100)),
     // copied buys sell by classic rules (no moonbag): half at +100 %, rest on a 30 % trailing stop,
@@ -323,12 +325,13 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   // Ranked from the followed launches; the best ones (and the ones you pinned) are copied.
   S.walletPin ||= {}; S.walletBan ||= {};
   let auto = new Map(); // wallet → label
-  const isSmart = (w) => w.launches >= cfg.autoMinLaunches && w.winRate * 100 >= cfg.autoMinWin && w.pnl >= cfg.autoMinPnl && w.early >= cfg.autoMinEarly;
+  const isSmart = (w) => (cfg.autoBigHits > 0 && w.bigHits >= cfg.autoBigHits && w.pnl > 0)
+    || (w.launches >= cfg.autoMinLaunches && w.winRate * 100 >= cfg.autoMinWin && w.pnl >= cfg.autoMinPnl && w.early >= cfg.autoMinEarly);
   function refreshSmart() {
     const list = rec.wallets ? rec.wallets() : [];
     const next = new Map();
     for (const a of Object.keys(S.walletPin)) next.set(a, `📌 ${a.slice(0, 6)}`);
-    if (cfg.autoTrack) for (const w of list.filter((x) => isSmart(x) && !S.walletBan[x.wallet]).slice(0, cfg.autoMax)) next.set(w.wallet, `🕵️ ${w.wallet.slice(0, 6)} (${w.launches} launches, ${Math.round(w.winRate * 100)}%, ${w.pnl >= 0 ? '+' : ''}${w.pnl} XRP)`);
+    if (cfg.autoTrack) for (const w of list.filter((x) => isSmart(x) && !S.walletBan[x.wallet]).slice(0, cfg.autoMax)) next.set(w.wallet, `🕵️ ${w.wallet.slice(0, 6)} (${w.launches} launches${w.bigHits ? `, ${w.bigHits}× early in a 🚀` : ''}, ${Math.round(w.winRate * 100)}%, ${w.pnl >= 0 ? '+' : ''}${w.pnl} XRP)`);
     for (const a of next.keys()) if (!auto.has(a)) { say(`🕵️ Now copying ${next.get(a)}`); rec.event('smart_wallet', { wallet: a, label: next.get(a) }); }
     auto = next;
   }
@@ -1051,6 +1054,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   // Your answers from the status page.
   const answer = (k, what, o = {}) => (what === 'buy' ? buyByHand(k, o.xrp)
     : what === 'wpin' || what === 'wban' || what === 'wfree' ? walletAct(k, what)
+    : what === 'analyze' ? analyzeLaunch(k)
     : what === 'cleanup' ? locked(cleanupSweep).then((n) => (n === 'off' ? 'clean-up is off (or already running)' : `🧹 clean-up done: ${n} trust line(s) deleted`))
     : locked(() => answerNow(k, what, o)));
   async function answerNow(k, what, o = {}) {
@@ -1103,6 +1107,71 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     return 'nothing to do';
   }
 
+  // Read a launch's whole pool history from the ledger (also old ones, e.g. a big runner you saw)
+  // and book its traders into the wallet table – the same way followed launches are booked.
+  async function analyzeLaunch(spec) {
+    const t = await parseToken(String(spec || '').trim());
+    if (t.err) return t.err;
+    const k = key(t.currency, t.issuer);
+    const name = currencyName(t.currency);
+    if (rec.booked?.(k)) return `${name}: already in the wallet table`;
+    let a;
+    try { a = (await req('amm_info', { asset: { currency: 'XRP' }, asset2: { currency: t.currency, issuer: t.issuer }, ledger_index: 'validated' })).amm; } catch { return `${name}: no XRP pool found`; }
+    const amm = a.account;
+    const xrpNow = typeof a.amount === 'string' ? Number(a.amount) / 1e6 : Number(a.amount2) / 1e6;
+    const tokNow = Number((typeof a.amount === 'string' ? a.amount2 : a.amount).value);
+    const priceNow = xrpNow / tokNow;
+    const txs = [];
+    let marker;
+    do {
+      const r = await req('account_tx', { account: amm, forward: true, limit: 400, ...(marker ? { marker } : {}) });
+      txs.push(...(r.transactions || []));
+      marker = r.marker;
+    } while (marker && txs.length < 8000);
+    if (!txs.length) return `${name}: no history`;
+    const when = (x) => { const tx = x.tx_json || x.tx || {}; return tx.date != null ? tx.date + 946684800 : x.close_time_iso ? Date.parse(x.close_time_iso) / 1000 : 0; };
+    const t0 = when(txs[0]);
+    let creator = '', xrp = 0, tok = 0, start = null, maxP = 0, maxPool = 0;
+    const wallets = {};
+    for (const x of txs) {
+      const tx = x.tx_json || x.tx;
+      if (!tx || x.meta?.TransactionResult !== 'tesSUCCESS') continue;
+      let dx = 0;
+      for (const n of x.meta.AffectedNodes || []) {
+        const m = n.ModifiedNode || n.CreatedNode;
+        const f = m?.FinalFields || m?.NewFields;
+        if (m?.LedgerEntryType === 'AccountRoot' && f?.Account === amm) dx = (Number(f.Balance) - Number(m.PreviousFields?.Balance ?? (n.CreatedNode ? 0 : f.Balance))) / 1e6;
+      }
+      const dt = ammTokDelta(x.meta, amm, t.currency);
+      xrp += dx; tok += dt;
+      const age = when(x) - t0;
+      if (tx.TransactionType === 'AMMCreate') creator ||= tx.Account;
+      if (/^AMM/.test(tx.TransactionType)) {
+        // the create, and the FirstLedger deposit of the rest of the supply, set the launch price
+        if (tok > 0 && (tx.TransactionType === 'AMMCreate' || (age <= 600 && dt > 0 && dt > (tok - dt)))) start = xrp / tok;
+        continue;
+      }
+      start ??= tok > 0 ? xrp / tok : null;
+      if (tok > 0) { maxP = Math.max(maxP, xrp / tok); maxPool = Math.max(maxPool, xrp); }
+      const w = tx.Account;
+      if (w === creator || w === t.issuer || w === me || bundleOf(w, creator, t.issuer)) continue;
+      const e = (wallets[w] ||= { in: 0, out: 0, tokIn: 0, tokOut: 0, firstS: Math.round(age), buys: 0, sells: 0 });
+      if (dx > 0) { e.in += dx; e.buys++; } else if (dx < 0) { e.out += -dx; e.sells++; }
+      if (dt < 0) e.tokIn += -dt; else e.tokOut += dt;
+    }
+    const buyers = Object.values(wallets).filter((e) => e.in > 0).length;
+    const maxX = start ? maxP / start : 0;
+    const big = isBigLaunch({ maxX, maxPoolXrp: maxPool, buyers });
+    const res = rec.bookLaunch?.({ k, name, wallets, price: priceNow, big });
+    stat('launchesAnalyzed');
+    rec.event('analyzed', { k, name, txs: txs.length, buyers, maxX: +maxX.toFixed(1), maxPoolXrp: +maxPool.toFixed(0), big });
+    refreshSmart();
+    const best = Object.entries(wallets).filter(([, e]) => e.in > 0.5 && e.firstS <= 120)
+      .map(([w, e]) => ({ w, x: (e.out + Math.max(0, e.tokIn - e.tokOut) * priceNow * 0.9) / e.in, s: e.firstS }))
+      .sort((p, q) => q.x - p.x).slice(0, 5);
+    return `🔍 ${name}: ${txs.length} trades, ${buyers} buyers, best ${maxX.toFixed(1)}× from the start, pool up to ${maxPool.toFixed(0)} XRP${big ? ' – 🚀 big launch' : ''}; ${res?.booked ?? 0} wallets booked. Best early buyers: ${best.map((b) => `${b.w.slice(0, 8)}… ${b.x.toFixed(1)}× (${b.s}s)`).join(', ') || '–'}`;
+  }
+
   function walletAct(a, what) {
     if (!/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(a)) return 'not a wallet address';
     delete S.walletPin[a]; delete S.walletBan[a];
@@ -1133,7 +1202,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     return S.positions[k] ? `${l.name}: bought` : `${l.name}: buy didn't go through – see the log`;
   }
   async function parseToken(s) {
-    let m = s.match(/firstledger\.net\/token\/(r[1-9A-HJ-NP-Za-km-z]{24,34})\/([0-9A-Fa-f]{40}|[A-Za-z0-9]{3})/);
+    let m = s.match(/firstledger\.net\/(?:[a-z]{2}\/)?token(?:-v\d)?\/(r[1-9A-HJ-NP-Za-km-z]{24,34})\/([0-9A-Fa-f]{40}|[A-Za-z0-9]{3})/);
     if (m) return { issuer: m[1], currency: m[2].length === 40 ? m[2].toUpperCase() : m[2] };
     m = s.match(/^([^.:\s]{1,40})[.:](r[1-9A-HJ-NP-Za-km-z]{24,34})$/);
     if (m) return { issuer: m[2], currency: m[1].length === 3 || /^[0-9A-F]{40}$/i.test(m[1]) ? m[1].toUpperCase() : Buffer.from(m[1], 'utf8').toString('hex').toUpperCase().padEnd(40, '0') };
@@ -1195,7 +1264,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       mcapApproval: cfg.mcapApproval, mcapCurrency: cfg.mcapCurrency, paused: cfg.pauseBuys,
       buysToday: S.buysToday, open: open.map((p) => ({ ...p, hist: undefined, spark: (p.hist || []).filter((_, i, a) => i % Math.ceil(a.length / 60) === 0 || i === a.length - 1).map((x) => x.price) })), history: S.history.slice(0, 50),
       chart: { ...chart.summary(), on: cfg.chartSmart, add: cfg.chartAdd },
-      smart: { on: cfg.autoTrack, copying: [...auto.entries()].map(([wallet, label]) => ({ wallet, label })), list: (rec.wallets ? rec.wallets() : []).slice(0, 20).map((w) => ({ ...w, smart: isSmart(w), copied: auto.has(w.wallet), pinned: !!S.walletPin[w.wallet], banned: !!S.walletBan[w.wallet] })), rules: { launches: cfg.autoMinLaunches, win: cfg.autoMinWin, pnl: cfg.autoMinPnl } },
+      smart: { on: cfg.autoTrack, copying: [...auto.entries()].map(([wallet, label]) => ({ wallet, label })), list: (rec.wallets ? rec.wallets() : []).slice(0, 20).map((w) => ({ ...w, smart: isSmart(w), copied: auto.has(w.wallet), pinned: !!S.walletPin[w.wallet], banned: !!S.walletBan[w.wallet] })), rules: { launches: cfg.autoMinLaunches, win: cfg.autoMinWin, pnl: cfg.autoMinPnl, bigHits: cfg.autoBigHits } },
       cleanup: { on: cfg.cleanup, cleared: S.stats.linesCleared || 0, freed: S.stats.reserveFreed || 0 },
       wins: S.history.filter((h) => h.pnl > 0).length, losses: S.history.filter((h) => h.pnl <= 0).length,
     };

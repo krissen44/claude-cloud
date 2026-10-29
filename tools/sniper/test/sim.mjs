@@ -57,12 +57,13 @@ class Sim {
     if (c === 'amm_info') {
       const p = this.amm[this.k(r.asset2.currency, r.asset2.issuer)];
       if (!p) throw Object.assign(new Error('actNotFound'), { data: { error: 'actNotFound' } });
-      return { result: { amm: { amount: String(Math.round(p.xrp * D)), amount2: { ...r.asset2, value: String(p.tok) }, trading_fee: p.fee } } };
+      return { result: { amm: { account: p.account, amount: String(Math.round(p.xrp * D)), amount2: { ...r.asset2, value: String(p.tok) }, trading_fee: p.fee } } };
     }
     if (c === 'account_lines') {
       const lines = Object.entries(this.lines).filter(([k]) => !r.peer || k.endsWith('.' + r.peer)).map(([k, b]) => ({ currency: k.split('.')[0], account: k.split('.')[1], balance: String(b) }));
       return { result: { lines } };
     }
+    if (c === 'account_tx') return { result: { transactions: (this.history?.[r.account] || []) } };
     if (c === 'gateway_balances') {
       const obligations = {};
       for (const [k, v] of Object.entries(this.supply)) if (k.endsWith('.' + r.account)) obligations[k.split('.')[0]] = String(v);
@@ -808,6 +809,8 @@ await test('status page actions: sell 25 %, buy more, buy a token by link / NAME
   assert.ok(p2 && p2.byHand && Math.abs(p2.cost - 3) < 0.01);
   const c3 = sim.launch({ name: 'LINKY', issuer: 'rLinkBuy1111111111111111111111', poolXrp: 300, poolTok: 1e8, silent: true });
   assert.match(await bot.answer(`https://firstledger.net/token/rLinkBuy1111111111111111111111/${c3}`, 'buy', { xrp: '1' }), /LINKY: bought/);
+  // the link format FirstLedger uses today (language + token-v2): already held → buys more
+  assert.match(await bot.answer(`https://firstledger.net/de/token-v2/rLinkBuy1111111111111111111111/${c3}`, 'buy', { xrp: '1' }), /LINKY: bought 1\.\d+ XRP more/);
   const c4 = sim.launch({ name: 'SOLO', issuer: 'rSoBuy111111111111111111111111', poolXrp: 300, poolTok: 1e8, silent: true });
   assert.match(await bot.answer('rSoBuy111111111111111111111111', 'buy', { xrp: '1' }), /SOLO: bought/);
   assert.ok(bot.state().positions[`${c4}.rSoBuy111111111111111111111111`]);
@@ -942,6 +945,47 @@ await test('low supply share and no deposit comes → skipped after SUPPLY_WAIT_
   await wait(2500); await settle(bot);
   assert.ok(logs.join('\n').includes('Skip NODEP: only 1% of supply'), 'skipped after the wait');
   assert.equal(bot.state().positions[`${cur}.rNoDep1111111111111111111111111`], undefined);
+  bot.stop();
+});
+
+await test('analyze a launch: whole pool history → early sniper of a big launch gets a big hit (held tokens count), dev bundle is ignored', async () => {
+  const { sim, bot } = setup(100, { AUTO_BIG_HITS: '1' });
+  await bot.start();
+  const iss = 'rBigssuer11111111111111111111111', AMM = 'rAmmBigPoo1111111111111111111111', DEV = 'rDevWa11etAAAAAAAAAAAAAAAAAAAAAA';
+  const SNIPER = 'rSnipe1111111111111111111111111', BUNDLE = 'rDevWa1zzzzzzzzzzzzzzzzzzzzzzzz', LATE = 'rLateBuyer11111111111111111111111';
+  const cur = sim.launch({ name: 'BIGGY', issuer: iss, poolXrp: 1000, poolTok: 1e6, silent: true });
+  sim.amm[`${cur}.${iss}`].account = AMM;
+  let xrp = 0, tok = 0, t = 800000000;
+  const step = (type, who, dx, dt, dtS = 5) => {
+    const nodes = [];
+    nodes.push(xrp === 0 && dx > 0 ? { CreatedNode: { LedgerEntryType: 'AccountRoot', NewFields: { Account: AMM, Balance: String(dx * D) } } } : { ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: AMM, Balance: String((xrp + dx) * D) }, PreviousFields: { Balance: String(xrp * D) } } });
+    nodes.push(tok === 0 ? { CreatedNode: { LedgerEntryType: 'RippleState', NewFields: { Balance: { currency: cur, value: String(-(tok + dt)) }, LowLimit: { issuer: iss }, HighLimit: { issuer: AMM } } } } : { ModifiedNode: { LedgerEntryType: 'RippleState', FinalFields: { Balance: { currency: cur, value: String(-(tok + dt)) }, LowLimit: { issuer: iss }, HighLimit: { issuer: AMM } }, PreviousFields: { Balance: { currency: cur, value: String(-tok) } } } });
+    xrp += dx; tok += dt; t += dtS;
+    return { tx: { TransactionType: type, Account: who, date: t }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: nodes } };
+  };
+  const hist = [
+    step('AMMCreate', DEV, 50, 1e4),
+    step('AMMDeposit', DEV, 0, 99e4), // FirstLedger: the rest of the supply
+    step('Payment', BUNDLE, 40, -440000), // the dev's own bundle buys first
+    step('Payment', SNIPER, 10, -60000), // our sniper, 10 s in – and keeps them
+    step('Payment', 'rCrowdA1111111111111111111111111', 400, -250000, 300),
+    step('Payment', 'rCrowdB1111111111111111111111111', 500, -110000, 600),
+    step('Payment', LATE, 50, -8000, 900), // late at the top …
+    step('Payment', LATE, -20, 8000, 60), // … and out at a loss
+  ];
+  sim.history = { [AMM]: hist };
+  sim.amm[`${cur}.${iss}`].xrp = xrp; sim.amm[`${cur}.${iss}`].tok = tok;
+  const r = await bot.answer(`https://firstledger.net/de/token-v2/${iss}/${cur}`, 'analyze');
+  assert.match(r, /BIGGY: .*🚀 big launch/, r);
+  const ws = bot.rec.wallets();
+  const sn = ws.find((w) => w.wallet === SNIPER);
+  assert.ok(sn && sn.bigHits === 1 && sn.pnl > 50, 'held tokens count at today\'s price: ' + JSON.stringify(sn));
+  assert.equal(ws.find((w) => w.wallet === BUNDLE), undefined, 'dev bundle ignored');
+  assert.equal(ws.find((w) => w.wallet === DEV), undefined);
+  const late = ws.find((w) => w.wallet === LATE);
+  assert.ok(late && late.bigHits === 0 && late.pnl < 0);
+  assert.ok(bot.status().smart.copying.some((c) => c.wallet === SNIPER), 'sniper copied');
+  assert.match(await bot.answer(`BIGGY.${iss}`, 'analyze'), /already/);
   bot.stop();
 });
 

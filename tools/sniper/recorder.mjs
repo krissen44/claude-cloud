@@ -22,6 +22,25 @@ const every = (age) => (age < 10 * 60e3 ? 30e3 : age < 3600e3 ? 120e3 : age < 6 
 
 const WALLET_SETTLE_MS = 3 * 3600e3; // a launch's traders are scored 3 h after it started
 
+// same vanity prefix as the creator / issuer (e.g. rwdDGoVpCs… / rh13rh2s…) = the dev's own bundle wallets
+export const bundleOf = (a, ...devs) => devs.some((d) => d && a !== d && a.slice(0, 7) === d.slice(0, 7));
+// token change of an AMM account in one transaction (− = tokens left the pool = bought)
+// (only the token's own line – the pool's LP-token lines also name the AMM account)
+export function ammTokDelta(meta, amm, currency) {
+  for (const n of meta?.AffectedNodes || []) {
+    const m = n.ModifiedNode || n.CreatedNode || n.DeletedNode;
+    const f = m?.FinalFields || m?.NewFields;
+    if (m?.LedgerEntryType !== 'RippleState' || !f?.Balance || ![f.HighLimit?.issuer, f.LowLimit?.issuer].includes(amm)) continue;
+    if (currency && f.Balance.currency !== currency) continue;
+    const now = n.DeletedNode ? 0 : Math.abs(Number(f.Balance.value));
+    const before = n.CreatedNode ? 0 : Math.abs(Number(m.PreviousFields?.Balance?.value ?? f.Balance.value));
+    return now - before;
+  }
+  return 0;
+}
+// a launch that took off: 5× from the start, 1,000 XRP in the pool, or 150 buyers
+export const isBigLaunch = ({ maxX = 0, maxPoolXrp = 0, buyers = 0 }) => maxX >= 5 || maxPoolXrp >= 1000 || buyers >= 150;
+
 export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
   const dataDir = path.join(dir, 'data');
   fs.mkdirSync(dataDir, { recursive: true });
@@ -86,6 +105,7 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
       if (rs?.LedgerEntryType !== 'RippleState' || !ff?.Balance) continue;
       const k = byAmm.get(ff.HighLimit?.issuer) || byAmm.get(ff.LowLimit?.issuer);
       const r = k && W[k];
+      if (r && ff.Balance.currency !== r.currency) continue; // LP-token line
       if (!r || r.startFixed || Date.now() - r.at > 10 * 60e3 || !r.start.tok) continue;
       const tokNow = Math.abs(Number(ff.Balance.value));
       const tokBefore = Math.abs(Number(rs.PreviousFields?.Balance?.value ?? tokNow));
@@ -117,11 +137,13 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
         if (f.buyers.length < 5000 && !f.buyers.includes(t.Account)) f.buyers.push(t.Account);
       } else if (d < 0) { f.sells++; f.xrpOut += -d; }
       // per wallet (not the dev / issuer): XRP paid in, XRP taken out, seconds after the launch
-      if (d !== 0 && !/^AMM/.test(t.TransactionType) && t.Account !== r.creator && t.Account !== r.issuer && !skipWallet.has(t.Account)) {
+      if (d !== 0 && !/^AMM/.test(t.TransactionType) && t.Account !== r.creator && t.Account !== r.issuer && !skipWallet.has(t.Account) && !bundleOf(t.Account, r.creator, r.issuer)) {
         const ws = (r.wallets ||= {});
-        if (ws[t.Account] || Object.keys(ws).length < 400) {
-          const e = (ws[t.Account] ||= { in: 0, out: 0, firstS: Math.round((Date.now() - r.at) / 1000), buys: 0, sells: 0 });
+        if (ws[t.Account] || Object.keys(ws).length < 2000) {
+          const e = (ws[t.Account] ||= { in: 0, out: 0, tokIn: 0, tokOut: 0, firstS: Math.round((Date.now() - r.at) / 1000), buys: 0, sells: 0 });
+          const tk = ammTokDelta(ev.meta, acct, r.currency);
           if (d > 0) { e.in += d; e.buys++; } else { e.out += -d; e.sells++; }
+          if (tk < 0) e.tokIn += -tk; else e.tokOut += tk;
         }
       }
       dirty = true;
@@ -161,26 +183,44 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
   function settleWallets(r) {
     r.walletsDone = true;
     dirty = true;
-    for (const [a, e] of Object.entries(r.wallets || {})) {
+    const p0 = r.start?.price;
+    const maxX = p0 && r.max ? r.max.price / p0 : 0;
+    const big = isBigLaunch({ maxX, maxPoolXrp: r.max?.xrp || r.last?.xrp || 0, buyers: r.flow.buyers.length });
+    bookLaunch({ k: r.k, name: r.name, wallets: r.wallets || {}, price: r.last?.price || 0, big });
+  }
+  // book one launch's traders. Tokens still held count at today's price (−10 %), so a holder of a
+  // runner isn't a "loser". Each launch is booked once (also when analysed by hand).
+  function bookLaunch({ k, name, wallets, price, big }) {
+    WL._booked ||= {};
+    if (WL._booked[k]) return { booked: 0, already: true };
+    WL._booked[k] = Date.now();
+    let booked = 0;
+    for (const [a, e] of Object.entries(wallets)) {
       if (!(e.in > 0.5)) continue; // dust / sell-only (got tokens elsewhere)
-      const w = (WL[a] ||= { n: 0, early: 0, in: 0, out: 0, wins: 0, last: 0, tokens: [] });
-      w.n++; w.in += e.in; w.out += e.out; w.last = Date.now();
+      const held = Math.max(0, (e.tokIn || 0) - (e.tokOut || 0)) * price * 0.9;
+      const total = e.out + held;
+      const w = (WL[a] ||= { n: 0, early: 0, in: 0, out: 0, wins: 0, big: 0, bigHits: 0, last: 0, tokens: [] });
+      w.big ||= 0; w.bigHits ||= 0;
+      w.n++; w.in += e.in; w.out += total; w.last = Date.now();
       if (e.firstS <= 120) w.early++;
-      if (e.out >= e.in * 1.1) w.wins++;
-      w.tokens = [`${r.name}${e.out >= e.in * 1.1 ? '+' : '−'}`, ...w.tokens].slice(0, 6);
+      if (total >= e.in * 1.1) w.wins++;
+      if (big) { w.big++; if (e.firstS <= 120 && total >= e.in * 2) w.bigHits++; }
+      w.tokens = [`${name}${big ? '🚀' : ''}${total >= e.in * 1.1 ? '+' : '−'}`, ...w.tokens].slice(0, 6);
+      booked++;
       wlDirty = true;
     }
     if (wlDirty) {
       // keep the table small: drop one-launch wallets not seen for 14 days
-      for (const [a, w] of Object.entries(WL)) if (w.n < 2 && Date.now() - w.last > 14 * 864e5) delete WL[a];
+      for (const [a, w] of Object.entries(WL)) if (a[0] !== '_' && w.n < 2 && !w.bigHits && Date.now() - w.last > 14 * 864e5) delete WL[a];
       try { fs.writeFileSync(walletFile + '.tmp', JSON.stringify(WL)); fs.renameSync(walletFile + '.tmp', walletFile); wlDirty = false; } catch (e) { log(`recorder: ${e.message}`); }
     }
+    return { booked, already: false };
   }
   // wallets with derived numbers, best first
   function walletList() {
-    return Object.entries(WL).map(([wallet, w]) => ({
-      wallet, launches: w.n, early: w.early, winRate: w.n ? w.wins / w.n : 0, pnl: +(w.out - w.in).toFixed(2), in: +w.in.toFixed(2), last: w.last, tokens: w.tokens,
-    })).sort((a, b) => b.pnl - a.pnl);
+    return Object.entries(WL).filter(([a]) => a[0] !== '_').map(([wallet, w]) => ({
+      wallet, launches: w.n, early: w.early, winRate: w.n ? w.wins / w.n : 0, pnl: +(w.out - w.in).toFixed(2), in: +w.in.toFixed(2), last: w.last, tokens: w.tokens, big: w.big || 0, bigHits: w.bigHits || 0,
+    })).sort((a, b) => b.bigHits - a.bigHits || b.pnl - a.pnl);
   }
 
   function finish(r) {
@@ -270,7 +310,7 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
   const timer = setInterval(sample, 10e3);
   const flusher = setInterval(flush, 60e3);
   return {
-    follow, setAmm, checks, decision, wallets: walletList, ignoreWallet: (a) => skipWallet.add(a), trade, tx, event, sample, flush, rows, csv, analysis,
+    follow, setAmm, checks, decision, wallets: walletList, bookLaunch, booked: (k) => !!WL._booked?.[k], ignoreWallet: (a) => skipWallet.add(a), trade, tx, event, sample, flush, rows, csv, analysis,
     events: (since) => readJsonl('events', since),
     following: () => Object.keys(W).length,
     // trading so far in one followed pool (for the chart health of a position)
