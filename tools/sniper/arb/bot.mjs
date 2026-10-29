@@ -113,6 +113,7 @@ export function readArbConfig(env = process.env) {
     // speed: watch transactions while they enter the open ledger, read the touched pools' live state
     // and send into the same / next ledger – instead of waiting for validation (one ledger late)
     live: bool('ARB_LIVE', true),
+    multiSubmit: bool('ARB_MULTI_SUBMIT', true), // every batch to all servers in ARB_XRPL_WS at once
     liveMaxPerLedger: num('ARB_LIVE_MAX_PER_LEDGER', 15), // pool reads per open ledger (server load)
     // 'next': collect what moved during a ledger and send the moment the next ledger opens (lands right
     // after the trade that made the gap, like the bwif bots); 'now': send at once into the same ledger
@@ -129,7 +130,9 @@ export function readArbConfig(env = process.env) {
   };
 }
 
-export function createArb({ client, wallet, cfg, log = console.log, fetchFn = globalThis.fetch }) {
+// submitAlso(request) → promises of the same submit on other servers (each relays it to its own
+// peers, so the batch reaches the validators sooner). The first success counts.
+export function createArb({ client, wallet, cfg, log = console.log, fetchFn = globalThis.fetch, submitAlso = null }) {
   const me = wallet?.address || 'rDRYRUN';
   fs.mkdirSync(cfg.dataDir, { recursive: true });
   const stateFile = path.join(cfg.dataDir, 'arb-state.json');
@@ -610,6 +613,24 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     };
   }
 
+  // the same signed batch to every server at once; the first tesSUCCESS/terQUEUED wins, otherwise
+  // the main server's answer (others often say tefALREADY / tefPAST_SEQ once it got there)
+  const okSubmit = (r) => /^(tesSUCCESS|terQUEUED)$/.test(r?.engine_result || '');
+  function submitAll(blob) {
+    const main = req('submit', { tx_blob: blob });
+    let more = [];
+    if (submitAlso && cfg.multiSubmit !== false) { try { more = (submitAlso({ command: 'submit', tx_blob: blob }) || []).map((p) => Promise.resolve(p).then((x) => x?.result ?? x)); } catch {} }
+    if (!more.length) return main;
+    stat('multiSubmit');
+    return new Promise((resolve, reject) => {
+      let left = more.length + 1;
+      let mainR, mainE, other;
+      const end = () => { if (--left === 0) (mainR || other ? resolve(mainR || other) : reject(mainE)); };
+      main.then((r) => { mainR = r; if (okSubmit(r)) resolve(r); end(); }, (e) => { mainE = e; end(); });
+      for (const p of more) p.then((r) => { other ||= r; if (okSubmit(r)) resolve(r); end(); }, () => end());
+    });
+  }
+
   async function execute(o, feeDrops = cfg.feeDrops, ctx = {}) {
     if (!acct.seq) return false; // wallet not activated yet
     // a big loop may pay more to be sure to get in (up to 10 % of what it should earn)
@@ -639,7 +660,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     stat('attempts');
     S.dayFees += feeDrops / DROPS;
     try {
-      const r = await req('submit', { tx_blob: signed.tx_blob });
+      const r = await submitAll(signed.tx_blob);
       f.prelim = r.engine_result;
       if (!/^(tesSUCCESS|terQUEUED)$/.test(r.engine_result)) {
         stat('rejected');

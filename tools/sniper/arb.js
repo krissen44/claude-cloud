@@ -47,6 +47,7 @@ export const ARB_GROUPS = [
     ['ARB_TOKENS', 'The list', 'tokens', DEFAULT_TOKENS, 'One per line: NAME.rIssuer – suggestions to add are on the arb page'],
     ['ARB_LIVE', 'Live mode (react to the open ledger)', 'bool', '1', 'Sees trades ≈ 5 s before they are validated and sends into the same / next ledger'],
     ['ARB_LIVE_SEND', 'Live: when to send', 'text', 'next', '“next” = the moment the next ledger opens (lands right after the move, like bwif); “now” = into the same ledger'],
+    ['ARB_MULTI_SUBMIT', 'Send every batch to all servers at once', 'bool', '1', 'Each batch goes to every server in ARB_XRPL_WS in parallel (s1, s2, xrplcluster) – whichever relays fastest gets it to the validators'],
     ['ARB_LIVE_MAX_PER_LEDGER', 'Live pool reads per ledger', 'num', '15', 'server load', 1, 200],
     ['ARB_BRIDGE', 'Loops may pass through big tokens', 'bool', '1', 'Inside the same all-or-nothing batch only – never held, no trust line (e.g. FUZZY → WIND → DROP). Off = only list tokens in a loop'],
     ['ARB_BRIDGE_MIN_XRP', 'Bridge token: min. XRP in its pool', 'num', '1000', 'bwif’s bridges (WIND, CRAP, CABAL, POOL) have ≈ 1,400', 0, 1e8],
@@ -127,6 +128,18 @@ async function reconnect() {
   reconnecting = false;
   try { await bot.resubscribe(); } catch { setTimeout(reconnect, 5000); }
 }
+// extra connections, only for sending: every batch also goes to the other servers (multi-submit)
+const extras = new Map(); // url → { c, up }
+function extraConnect(url) {
+  const e = extras.get(url) || { c: null, up: false, tries: 0 };
+  extras.set(url, e);
+  if (e.c) { e.c.removeAllListeners(); e.c.disconnect().catch(() => {}); }
+  e.up = false;
+  e.c = new Client(url, { connectionTimeout: 15000 });
+  e.c.on('disconnected', () => { e.up = false; setTimeout(() => extraConnect(url), Math.min(60000, 5000 * ++e.tries)); });
+  e.c.connect().then(() => { e.up = true; e.tries = 0; }, () => { setTimeout(() => extraConnect(url), Math.min(60000, 5000 * ++e.tries)); });
+}
+const submitAlso = (r) => [...extras].filter(([url, e]) => e.up && url !== servers[si]).map(([, e]) => e.c.request(r));
 let lastTx = Date.now();
 setInterval(() => { if (Date.now() - lastTx > 60000) { lastTx = Date.now(); reconnect(); } }, 20000);
 
@@ -167,7 +180,8 @@ async function main() {
   await connect();
   client.on('disconnected', () => reconnect());
   proxy.on('transaction', () => { lastTx = Date.now(); });
-  bot = createArb({ client: proxy, wallet, cfg });
+  if (servers.length > 1 && !/^(0|false|no|off)$/i.test(process.env.ARB_MULTI_SUBMIT || '')) for (const url of servers) extraConnect(url);
+  bot = createArb({ client: proxy, wallet, cfg, submitAlso });
   await bot.start();
 }
 process.on('SIGINT', () => { bot?.stop(); process.exit(0); });

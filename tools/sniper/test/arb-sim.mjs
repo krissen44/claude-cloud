@@ -201,7 +201,7 @@ const A = `AAA.${IA}`, B = `BBB.${IB}`;
 let passed = 0;
 async function test(name, fn) { try { await fn(); passed++; console.log('✔', name); } catch (e) { console.log('✘', name); throw e; } }
 
-function setup(env = {}) {
+function setup(env = {}, opts = {}) {
   const wallet = Wallet.generate();
   const L = new Ledger(wallet, 50);
   L.pool('rPoolXA', 'XRP', A, 500, 5e6);
@@ -209,7 +209,7 @@ function setup(env = {}) {
   L.pool('rPoolBX', B, 'XRP', 1e7, 500);
   const logs = [];
   const cfg = readArbConfig({ ARB_DATA_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'arb-')), ARB_FETCH_PER_SEC: '200', ARB_WATCH: `${RIVAL}:Rival`, ARB_TOKENS: `AAA.${IA},BBB.${IB}`, ...env });
-  const bot = createArb({ client: L, wallet, cfg, log: (m) => logs.push(m), fetchFn: null });
+  const bot = createArb({ client: opts.wrap ? opts.wrap(L) : L, wallet, cfg, log: (m) => logs.push(m), fetchFn: null, submitAlso: opts.also?.(L) });
   // the ledger reports the hash of what the bot signed, like the real stream does
   const sign = wallet.sign.bind(wallet);
   wallet.sign = (tx) => { const s = sign(tx); L.outerHash = s.hash; return s; };
@@ -823,6 +823,39 @@ await test('default list: 38 FirstLedger top tokens, settings field parses back'
   assert.ok(t.includes('666.rhvf9fe6PP3GC8Bku2Ug7iQPjPDxYZfrxN'), '666 (deepest pool, not the copy)');
   assert.equal(readArbConfig({ ARB_TOKENS: '' }).tokens.length, 38, 'empty value = the default list');
   assert.equal(readArbConfig({}).listOnly, true);
+});
+
+await test('multi-submit: the batch goes to every server at once; a slow / refusing main server does not lose it', async () => {
+  // main server: refuses submits (busy) or has lost its connection; the second server takes it
+  let mode = 'refuse';
+  let alsoCalls = 0;
+  const wrap = (L) => ({ on: (e, f) => L.on(e, f), submitAndWait: (tx, o) => L.submitAndWait(tx, o), request: async (r) => {
+    if (r.command !== 'submit') return L.request(r);
+    if (mode === 'down') throw new Error('websocket closed');
+    return { result: { engine_result: 'telCAN_NOT_QUEUE' } };
+  } });
+  const also = (L) => (r) => { alsoCalls++; return [L.request(r)]; };
+  const { L, bot } = setup({ ARB_LIVE: '0' }, { wrap, also });
+  await bot.start();
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(300);
+  await bot._manageLines();
+  L.trade('rPoolAB', B, 1e6); await wait(400);
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  let st = bot.status().stats;
+  assert.ok(alsoCalls >= 1 && st.multiSubmit >= 1, 'sent to the second server too');
+  assert.ok(st.wins >= 1 && !st.feeRetry && !st.rejected, JSON.stringify(st));
+  mode = 'down';
+  const w0 = st.wins;
+  L.trade('rPoolAB', B, 1e6); await wait(400);
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  st = bot.status().stats;
+  assert.ok(st.wins > w0, 'main connection down → the other server still gets it in');
+  bot.stop();
+  // off: only the main server
+  const r2 = setup({ ARB_LIVE: '0', ARB_MULTI_SUBMIT: '0' }, { also: () => () => { throw new Error('must not be called'); } });
+  assert.equal(r2.cfg.multiSubmit, false);
+  r2.bot.stop();
 });
 
 console.log(`\n${passed} arb scenarios passed`);
