@@ -51,6 +51,23 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
   try { WL = JSON.parse(fs.readFileSync(walletFile, 'utf8')); } catch {}
   let wlDirty = false;
   const skipWallet = new Set(ignore);
+  // launch creators and the wallets that funded them: launches and rugs (a rug marks both)
+  const devFile = path.join(dataDir, 'devs.json');
+  let DEV = {};
+  try { DEV = JSON.parse(fs.readFileSync(devFile, 'utf8')); } catch {}
+  const saveDevs = () => { try { fs.writeFileSync(devFile + '.tmp', JSON.stringify(DEV)); fs.renameSync(devFile + '.tmp', devFile); } catch (e) { log(`recorder: ${e.message}`); } };
+  const devOf = (a) => (DEV[a] ||= { launches: 0, rugs: 0, names: [], last: 0 });
+  function markRug(r, why) {
+    if (r.rugged || r.kind !== 'launch') return;
+    r.rugged = why;
+    dirty = true;
+    for (const a of new Set([r.creator, r.funder].filter(Boolean))) {
+      const d = devOf(a);
+      d.rugs++; d.last = Date.now(); d.names = [`${r.name}✗`, ...d.names].slice(0, 6);
+    }
+    saveDevs();
+    event('rug', { k: r.k, name: r.name, creator: r.creator, funder: r.funder || '', why });
+  }
   let W = {}; // k → record
   try { W = JSON.parse(fs.readFileSync(watchFile, 'utf8')); } catch {}
   const byAmm = new Map(Object.values(W).filter((r) => r.amm).map((r) => [r.amm, r.k]));
@@ -81,6 +98,7 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
     };
     if (amm) byAmm.set(amm, k);
     dirty = true;
+    if (kind === 'launch' && creator) { const d = devOf(creator); d.launches++; d.last = Date.now(); saveDevs(); }
     event(kind, { k, name, issuer, creator, poolXrp, poolTok, amm, ledger, hash, copy });
   }
 
@@ -131,7 +149,11 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
       const d = (Number(node.FinalFields.Balance) - Number(before)) / 1e6;
       const f = r.flow;
       if (t.TransactionType === 'AMMDeposit') f.lpAdd += Math.max(0, d);
-      else if (t.TransactionType === 'AMMWithdraw') f.lpRemove += Math.max(0, -d);
+      else if (t.TransactionType === 'AMMWithdraw') {
+        f.lpRemove += Math.max(0, -d);
+        // half the pool's XRP (at its best) pulled out = a rug
+        if (f.lpRemove >= 0.5 * Math.max(r.max?.xrp || 0, r.start.xrp || 0, 1)) markRug(r, `liquidity pulled (${f.lpRemove.toFixed(0)} XRP)`);
+      }
       else if (d > 0) {
         f.buys++; f.xrpIn += d;
         if (f.buyers.length < 5000 && !f.buyers.includes(t.Account)) f.buyers.push(t.Account);
@@ -165,7 +187,7 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
         r.nextAt = now + every(age);
         let p;
         try { p = await pool(r.currency, r.issuer); } catch { continue; }
-        if (!p) { r.dead = true; r.deadAt = now; r.last = { at: now, xrp: 0, price: 0 }; dirty = true; continue; }
+        if (!p) { r.dead = true; r.deadAt = now; r.last = { at: now, xrp: 0, price: 0 }; dirty = true; markRug(r, 'pool deleted'); continue; }
         const price = p.xrp / p.tok;
         if (r.start.price == null) r.start = { xrp: p.xrp, tok: p.tok, price };
         const snap = { at: now, xrp: +p.xrp.toFixed(3), price };
@@ -224,6 +246,8 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
   }
 
   function finish(r) {
+    // went up, then lost 90 % of it within the day = a slow rug / dev dump
+    if (!r.rugged && r.max && r.last && r.start?.price && r.max.price >= 1.5 * r.start.price && r.last.price <= 0.1 * r.max.price) markRug(r, 'dumped −90 % from the high');
     if (!r.walletsDone) settleWallets(r);
     delete W[r.k];
     if (r.amm) byAmm.delete(r.amm);
@@ -244,7 +268,7 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
       ...Object.fromEntries(MARKS.map(([m]) => [`x_${m}`, mult(r.marks[m])])),
       ...Object.fromEntries(MARKS.map(([m]) => [`pool_${m}`, r.marks[m]?.xrp ?? null])),
       maxX: mult(r.max), maxAfterMin: r.max ? Math.round((r.max.at - r.at) / 60e3) : null,
-      minX: mult(r.min), lastX: mult(r.last), dead: r.dead, deadAfterMin: r.deadAt ? Math.round((r.deadAt - r.at) / 60e3) : null,
+      minX: mult(r.min), lastX: mult(r.last), dead: r.dead, deadAfterMin: r.deadAt ? Math.round((r.deadAt - r.at) / 60e3) : null, rugged: r.rugged || '', funder: r.funder || '',
       buys: f.buys, sells: f.sells, buyers: f.buyers.length, volIn: +f.xrpIn.toFixed(2), volOut: +f.xrpOut.toFixed(2),
       lpAdd: +f.lpAdd.toFixed(2), lpRemove: +f.lpRemove.toFixed(2),
       buys1h: f.h1?.buys ?? null, buyers1h: f.h1?.buyers ?? null, volIn1h: f.h1 ? +f.h1.xrpIn.toFixed(2) : null,
@@ -310,14 +334,17 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
   const timer = setInterval(sample, 10e3);
   const flusher = setInterval(flush, 60e3);
   return {
-    follow, setAmm, checks, decision, wallets: walletList, bookLaunch, booked: (k) => !!WL._booked?.[k], ignoreWallet: (a) => skipWallet.add(a), trade, tx, event, sample, flush, rows, csv, analysis,
+    follow, setAmm, checks, decision,
+    setFunder: (k, f) => { if (W[k] && f) { W[k].funder = f; dirty = true; } },
+    devInfo: (a) => (a && DEV[a]) || null,
+    devs: () => Object.entries(DEV).filter(([, d]) => d.rugs).map(([a, d]) => ({ a, ...d })).sort((x, y) => y.rugs - x.rugs || y.last - x.last), wallets: walletList, bookLaunch, booked: (k) => !!WL._booked?.[k], ignoreWallet: (a) => skipWallet.add(a), trade, tx, event, sample, flush, rows, csv, analysis,
     events: (since) => readJsonl('events', since),
     following: () => Object.keys(W).length,
     // trading so far in one followed pool (for the chart health of a position)
     flowOf: (k) => (W[k] ? { buys: W[k].flow.buys, sells: W[k].flow.sells, buyers: W[k].flow.buyers.length, lpRemove: W[k].flow.lpRemove, xrpIn: W[k].flow.xrpIn, xrpOut: W[k].flow.xrpOut } : null),
     // live view of followed launches (for the crowd entry): start, last sample, trading so far
     live: () => Object.values(W).map((r) => ({
-      k: r.k, kind: r.kind, name: r.name, currency: r.currency, issuer: r.issuer, at: r.at, start: r.start, last: r.last, max: r.max, dead: r.dead,
+      k: r.k, kind: r.kind, name: r.name, currency: r.currency, issuer: r.issuer, creator: r.creator, at: r.at, start: r.start, last: r.last, max: r.max, dead: r.dead,
       buyers: r.flow.buyers.length, buys: r.flow.buys, sells: r.flow.sells, xrpIn: r.flow.xrpIn, decision: r.decision, checks: r.checks,
     })),
     stop() { clearInterval(timer); clearInterval(flusher); flush(); },

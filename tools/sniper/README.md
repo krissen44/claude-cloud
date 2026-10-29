@@ -122,6 +122,23 @@ from the ledger (also launches from before the bot ran) and books its traders th
 CROSS, UBER, XRB, FRIZZY (29 Oct): `rB79X9AE…` was early in 3 of those 4 big launches (+926 XRP), `rP9CDJq4…`,
 `rKs7NssX…` and others in 2.
 
+## Socials, rug memory, bundles
+
+- **Socials** (`SOCIALS_REQUIRED` = `x`): the issuer's domain (FirstLedger: `<id>.toml.firstledger.net`) serves
+  `/.well-known/xrp-ledger.toml`; every link / field in it that looks like X/Twitter, Telegram, Discord or a
+  website is read. Without an X link the launch is checked again for `SOCIALS_WAIT_S` (60 s), then skipped.
+  `any` = X, Telegram, Discord or a website is enough; `off`. If the file can't be fetched at all, socials decide
+  nothing. The links are on the position card and in `launches.csv` (`socials`, `x`, `telegram`, `website`).
+- **Rug memory** (`SKIP_RUGGERS`): a launch whose pool is deleted, loses half its XRP to a withdraw, or falls
+  90 % from a high within the day is a rug; its creator **and the wallet that funded the creator** (its first
+  XRP) are marked in `data/devs.json`. A later launch by a marked creator, by a new wallet funded by a marked
+  wallet, or by a marked issuer is skipped. The status page lists the known ruggers.
+- **Bundle exit** (`BUNDLE_EXIT`): per launch the bot knows the dev's bundle – the creator, wallets whose address
+  starts like the creator's / issuer's, and wallets the dev (or issuer) sent the token to. When one of them sells
+  ≥ `BUNDLE_SELL_PCT` (10 %) of what it holds – seen already in the open ledger, or on the validated ledger –
+  the whole position is sold at once (like a rug: no approval, no chart hold, also ✋ positions). Adding
+  liquidity (the FirstLedger deposit) is not a sale. The position card shows the bundle's wallets and share.
+
 ## FirstLedger two-step launches
 
 FirstLedger creates the pool with about 1 % of the supply and deposits the other 99 % into it (`AMMDeposit`,

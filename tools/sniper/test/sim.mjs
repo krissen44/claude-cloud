@@ -168,7 +168,7 @@ function setup(balance = 50, env = {}, usd = true) {
   const sim = new Sim(balance);
   if (usd) sim.amm[RLUSD] = { xrp: 1e6, tok: 2.5e6, fee: 0 }; // 1 XRP = $2.50
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'snipe-'));
-  const cfg = readConfig({ DATA_DIR: dir, BLACKHOLE_WAIT_S: '6', POOL_WAIT_MIN: '0', SUPPLY_WAIT_S: '0', ...env });
+  const cfg = readConfig({ DATA_DIR: dir, BLACKHOLE_WAIT_S: '6', POOL_WAIT_MIN: '0', SUPPLY_WAIT_S: '0', SOCIALS_REQUIRED: 'off', ...env });
   const bot = createBot({ client: sim, wallet: { address: ME }, cfg, log: (m) => logs.push(m), fetchFn: null });
   return { sim, bot, cfg };
 }
@@ -989,12 +989,128 @@ await test('analyze a launch: whole pool history → early sniper of a big launc
   bot.stop();
 });
 
+await test('socials: links and handles are read from the token file, whatever the field is called', async () => {
+  const { parseSocials, hasSocials } = await import('../socials.mjs');
+  const toml = `[[ISSUERS]]
+address = "rIss"
+twitter = "@crossroads_xrp"
+[[CURRENCIES]]
+code = "CROSS"
+icon = "https://cdn.firstledger.net/icons/cross.png"
+[[CURRENCIES.WEBLINKS]]
+url = "https://t.me/crossxrp"
+[[CURRENCIES.WEBLINKS]]
+url = "https://crossroads.example/"`;
+  const s = parseSocials(toml);
+  assert.equal(s.x, 'https://x.com/crossroads_xrp');
+  assert.equal(s.telegram, 'https://t.me/crossxrp');
+  assert.equal(s.website, 'https://crossroads.example/', 'the icon is not a website');
+  assert.equal(parseSocials('desc = "see https://twitter.com/abc"').x, 'https://twitter.com/abc');
+  assert.ok(hasSocials(s, 'x') && hasSocials({ telegram: 'x' }, 'any') && !hasSocials({ telegram: 'x' }, 'x') && hasSocials(null, 'off'));
+});
+
+const D6 = 1e6;
+function customSetup(env, fetchFn) {
+  const sim = new Sim(100);
+  sim.amm[RLUSD] = { xrp: 1e6, tok: 2.5e6, fee: 0 };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'snipe-'));
+  const cfg = readConfig({ DATA_DIR: dir, BLACKHOLE_WAIT_S: '6', POOL_WAIT_MIN: '0', SUPPLY_WAIT_S: '0', ...env });
+  const bot = createBot({ client: sim, wallet: { address: ME }, cfg, log: (m) => logs.push(m), fetchFn });
+  return { sim, bot, cfg };
+}
+const launchBy = (sim, { name, issuer, creator, poolXrp = 200, poolTok = 1e9, amm, domain }) => {
+  const cur = sim.launch({ name, issuer, poolXrp, poolTok, silent: true });
+  if (domain) sim.acc[issuer].Domain = Buffer.from(domain).toString('hex').toUpperCase();
+  sim.emit('transaction', { validated: true, ledger_index: 9000, hash: 'L' + name, tx_json: { TransactionType: 'AMMCreate', Account: creator, Amount: String(poolXrp * D6), Amount2: { currency: cur, issuer, value: String(poolTok) } }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: amm ? [{ CreatedNode: { LedgerEntryType: 'AccountRoot', NewFields: { Account: amm, AMMID: 'X', Balance: String(poolXrp * D6) } } }] : [] } });
+  return cur;
+};
+
+await test('socials required: a token with an X link is bought, one without is skipped after SOCIALS_WAIT_S', async () => {
+  const files = { 'good.toml.firstledger.net': 'twitter = "goodtoken"', 'bare.toml.firstledger.net': 'code = "BARE"' };
+  const fetchFn = async (url) => { const host = new URL(url).hostname; return files[host] != null ? { ok: true, status: 200, text: async () => files[host] } : { ok: false, status: 404 }; };
+  const { sim, bot } = customSetup({ SOCIALS_WAIT_S: '1' }, fetchFn);
+  await bot.start();
+  const g = launchBy(sim, { name: 'GOODSOC', issuer: 'rGoodSoc111111111111111111111111', creator: 'rCreatorA11111111111111111111111', domain: 'good.toml.firstledger.net' });
+  const n = launchBy(sim, { name: 'BARESOC', issuer: 'rBareSoc111111111111111111111111', creator: 'rCreatorB11111111111111111111111', domain: 'bare.toml.firstledger.net' });
+  await settle(bot);
+  assert.ok(bot.state().positions[`${g}.rGoodSoc111111111111111111111111`], 'has X → bought');
+  assert.equal(bot.state().positions[`${n}.rBareSoc111111111111111111111111`], undefined);
+  await wait(3500); await settle(bot);
+  assert.ok(logs.join('\n').includes('Skip BARESOC: no socials (no X/Twitter)'));
+  const row = bot.rec.rows().find((r) => r.name === 'GOODSOC');
+  assert.equal(row.x, 'https://x.com/goodtoken');
+  bot.stop();
+});
+
+await test('rug memory: a creator that rugged is skipped next time – and so is a new wallet funded by the same wallet', async () => {
+  const realNow = Date.now;
+  let offset = 0;
+  Date.now = () => realNow() + offset;
+  try {
+    const { sim, bot } = customSetup({ SOCIALS_REQUIRED: 'off' }, null);
+    await bot.start();
+    const RUGGER = 'rRuggerA11111111111111111111111', FUNDER = 'rFunderA11111111111111111111111', NEWDEV = 'rNewDevA11111111111111111111111';
+    sim.history = { [RUGGER]: [{ tx: { TransactionType: 'Payment', Account: FUNDER, Destination: RUGGER, Amount: '50000000' }, meta: { TransactionResult: 'tesSUCCESS' } }],
+      [NEWDEV]: [{ tx: { TransactionType: 'Payment', Account: FUNDER, Destination: NEWDEV, Amount: '50000000' }, meta: { TransactionResult: 'tesSUCCESS' } }] };
+    const c1 = launchBy(sim, { name: 'RUGONE', issuer: 'rRugOne111111111111111111111111', creator: RUGGER, amm: 'rAmmRug1' });
+    await settle(bot);
+    assert.ok(bot.state().positions[`${c1}.rRugOne111111111111111111111111`], 'first launch bought');
+    delete sim.amm[`${c1}.rRugOne111111111111111111111111`]; // rug: pool gone
+    offset += 60e3; await bot.rec.sample(); await bot.tick(); await settle(bot);
+    assert.equal(bot.rec.devInfo(RUGGER).rugs, 1);
+    assert.equal(bot.rec.devInfo(FUNDER).rugs, 1, 'the funder is marked too');
+    const c2 = launchBy(sim, { name: 'RUGTWO', issuer: 'rRugTwo111111111111111111111111', creator: RUGGER });
+    const c3 = launchBy(sim, { name: 'RUGTHREE', issuer: 'rRugThree11111111111111111111111', creator: NEWDEV });
+    await settle(bot);
+    assert.equal(bot.state().positions[`${c2}.rRugTwo111111111111111111111111`], undefined);
+    assert.equal(bot.state().positions[`${c3}.rRugThree11111111111111111111111`], undefined);
+    const text = logs.join('\n');
+    assert.ok(text.includes('Skip RUGTWO: dev rugged before (1× – this creator'), 'same creator');
+    assert.ok(text.includes('Skip RUGTHREE: dev rugged before (1× – funded by a rugger'), 'new wallet, same funder');
+    assert.equal(bot.status().ruggers.length, 2);
+    bot.stop();
+  } finally { Date.now = realNow; }
+});
+
+await test('bundle exit: a bundle wallet selling (validated or seen in the open ledger) sells our position at once', async () => {
+  const { sim, bot } = customSetup({ SOCIALS_REQUIRED: 'off', BUNDLE_SELL_PCT: '10' }, null);
+  await bot.start();
+  const DEV = 'rDevBundle1111111111111111111111', BUN = 'rDevBundxxxxxxxxxxxxxxxxxxxxxxxx', iss = 'rBunIss1111111111111111111111111';
+  const cur = launchBy(sim, { name: 'BUNDLY', issuer: iss, creator: DEV });
+  await settle(bot);
+  const k = `${cur}.${iss}`;
+  assert.ok(bot.state().positions[k], 'bought');
+  const line = (holder, before, after) => ({ ModifiedNode: { LedgerEntryType: 'RippleState', FinalFields: { Balance: { currency: cur, value: String(-after) }, LowLimit: { issuer: iss }, HighLimit: { issuer: holder } }, PreviousFields: { Balance: { currency: cur, value: String(-before) } } } });
+  // the bundle wallet buys (the bot learns its holdings) – a small sale of 5 % is ignored
+  sim.emit('transaction', { validated: true, hash: 'B1', tx_json: { TransactionType: 'Payment', Account: BUN, Destination: BUN }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [line(BUN, 0, 1e8)] } });
+  sim.emit('transaction', { validated: true, hash: 'B2', tx_json: { TransactionType: 'Payment', Account: BUN, Destination: BUN }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [line(BUN, 1e8, 9.5e7)] } });
+  await settle(bot);
+  assert.ok(bot.state().positions[k] && !bot.state().positions[k].bundleExit, 'small sale ignored');
+  // the bundle sends a big sell – seen in the open ledger
+  sim.emit('transaction', { validated: false, engine_result: 'tesSUCCESS', ledger_current_index: 9100, tx_json: { TransactionType: 'OfferCreate', Account: BUN, TakerGets: { currency: cur, issuer: iss, value: '50000000' }, TakerPays: '1' } });
+  await settle(bot);
+  assert.equal(bot.state().positions[k], undefined, 'sold at once');
+  assert.ok(logs.join('\n').includes('🚨 BUNDLY: bundle wallet rDevBund… sells 53% of its tokens, open ledger'));
+  assert.match(bot.state().history[0].why, /bundle is selling/);
+  // a second launch: the dev itself sells on the validated ledger
+  const c2 = launchBy(sim, { name: 'BUNDLY2', issuer: 'rBunIss2222222222222222222222222', creator: 'rOtherDev111111111111111111111111' });
+  await settle(bot);
+  const k2 = `${c2}.rBunIss2222222222222222222222222`;
+  assert.ok(bot.state().positions[k2]);
+  const line2 = (holder, before, after) => ({ ModifiedNode: { LedgerEntryType: 'RippleState', FinalFields: { Balance: { currency: c2, value: String(-after) }, LowLimit: { issuer: 'rBunIss2222222222222222222222222' }, HighLimit: { issuer: holder } }, PreviousFields: { Balance: { currency: c2, value: String(-before) } } } });
+  sim.emit('transaction', { validated: true, hash: 'B3', tx_json: { TransactionType: 'Payment', Account: 'rOtherDev111111111111111111111111', Destination: 'rOtherDev111111111111111111111111' }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [line2('rOtherDev111111111111111111111111', 2e8, 1e8)] } });
+  await settle(bot);
+  assert.equal(bot.state().positions[k2], undefined, 'the dev sold half – out');
+  assert.ok(logs.join('\n').includes('the dev sells 50% of its tokens'));
+  bot.stop();
+});
+
 await test('settings change live: pause stops buys, unpause buys again, open trades still sell', async () => {
   const { sim, bot, cfg } = setup();
   await bot.start();
   const a = sim.launch({ name: 'PRE', issuer: 'rPre', poolXrp: 100, poolTok: 1e9 });
   await settle(bot);
-  Object.assign(cfg, readConfig({ DATA_DIR: cfg.dataDir, PAUSE_BUYS: '1' }), { dataDir: cfg.dataDir });
+  Object.assign(cfg, readConfig({ DATA_DIR: cfg.dataDir, PAUSE_BUYS: '1', SOCIALS_REQUIRED: 'off' }), { dataDir: cfg.dataDir });
   const b = sim.launch({ name: 'PAUSED', issuer: 'rPau', poolXrp: 100, poolTok: 1e9 });
   await settle(bot);
   assert.equal(bot.state().positions[`${b}.rPau`], undefined, 'no buy while paused');
@@ -1002,7 +1118,7 @@ await test('settings change live: pause stops buys, unpause buys again, open tra
   sim.trade(a, 'rPre', 150);
   await settle(bot);
   assert.ok(bot.state().positions[`${a}.rPre`].tp1Done, 'still sells while paused');
-  Object.assign(cfg, readConfig({ DATA_DIR: cfg.dataDir, BUY_XRP: '2' }), { dataDir: cfg.dataDir });
+  Object.assign(cfg, readConfig({ DATA_DIR: cfg.dataDir, BUY_XRP: '2', SOCIALS_REQUIRED: 'off' }), { dataDir: cfg.dataDir });
   const c = sim.launch({ name: 'AFTER', issuer: 'rAft', poolXrp: 100, poolTok: 1e9 });
   await settle(bot);
   assert.ok(Math.abs(bot.state().positions[`${c}.rAft`].cost - 2) < 1e-3, 'buys again with the new stake');

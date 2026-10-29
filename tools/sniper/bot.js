@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import { createRecorder, ammAccountOf, ammTokDelta, bundleOf, isBigLaunch } from './recorder.mjs';
 import { chartHealth, createChartLearner } from './chart.mjs';
+import { createSocials, hasSocials, socialsText } from './socials.mjs';
 import path from 'node:path';
 
 const DROPS = 1_000_000;
@@ -83,6 +84,16 @@ export function readConfig(env = process.env) {
     // FirstLedger launches in two steps: the pool is created with ~1 % of the supply, the other 99 % is
     // deposited into it seconds later. A low share is waited for this long (bought the moment it arrives)
     supplyWaitS: num('SUPPLY_WAIT_S', 60),
+    // socials from the issuer's xrp-ledger.toml: 'x' = needs an X/Twitter link, 'any' = X, Telegram,
+    // Discord or a website, 'off'. Waited for SOCIALS_WAIT_S; a file that can't be read decides nothing
+    socials: /^(any|off)$/i.test(env.SOCIALS_REQUIRED || '') ? env.SOCIALS_REQUIRED.toLowerCase() : 'x',
+    socialsWaitS: num('SOCIALS_WAIT_S', 60),
+    // launches by a creator – or a wallet funded by the same wallet – that rugged before are skipped
+    skipRuggers: bool('SKIP_RUGGERS', true),
+    // bundle: the dev's own wallets (same address start, or got the token from the dev). When one of
+    // them sells ≥ BUNDLE_SELL_PCT % of what it holds, everything is sold at once (seen in the open ledger)
+    bundleExit: bool('BUNDLE_EXIT', true),
+    bundleSellPct: num('BUNDLE_SELL_PCT', 10),
     buySlippage: num('BUY_SLIPPAGE', 35),
     sellSlippage: num('SELL_SLIPPAGE', 30),
     tp1: num('TAKE_PROFIT', 100), // percent gain for the first sale
@@ -294,6 +305,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   const SKIP_KINDS = [
     [/blackholed/, 'not blackholed'], [/pool only/, 'pool too small'], [/> max/, 'pool too big'],
     [/clawback/, 'clawback'], [/froze/, 'frozen'], [/transfer fee/, 'transfer fee'], [/AMM fee/, 'AMM fee'],
+    [/rugged before/, 'dev rugged before'], [/no socials/, 'no socials'], [/bundle is selling/, 'bundle selling'],
     [/supply/, 'dev holds the supply'], [/pumped/, 'pumped during protection'], [/pool gone/, 'pool gone'], [/approval/, 'trust lines need approval'],
   ];
   const skipKind = (text) => (SKIP_KINDS.find(([re]) => re.test(text)) || [0, 'other'])[1];
@@ -363,6 +375,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       // open ledger: only launches, to be one of the first buyers
       if (cfg.fastLaunch && tx.TransactionType === 'AMMCreate' && /^tes/.test(ev.engine_result || '')) onLaunch(tx, ev, true);
       if (cfg.fastLaunch && tx.TransactionType === 'AMMDeposit' && /^tes/.test(ev.engine_result || '')) onDeposit(tx, false);
+      if (/^tes/.test(ev.engine_result || '')) bundleProposed(tx);
       return;
     }
     if (ev.meta?.TransactionResult !== 'tesSUCCESS') return;
@@ -374,6 +387,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     const ws = waiters.get(tx.Account);
     if (ws) { waiters.delete(tx.Account); for (const wake of ws) setTimeout(() => wake(true), 50); }
     if (tx.TransactionType === 'AMMDeposit') onDeposit(tx, true);
+    bundleTx(tx, ev.meta);
     if (tx.TransactionType !== 'AMMCreate') return;
     onLaunch(tx, ev, false);
   }
@@ -414,6 +428,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       hash: ev.hash || tx.hash, fast, validated: !fast,
     };
     if (fast) stat('fastLaunches');
+    bundleWatch(launch);
     pending.set(k, launch);
     stat('launches');
     rec.follow({ k, kind: 'launch', name: launch.name, currency: tok.currency, issuer: tok.issuer, creator: tx.Account, poolXrp: launch.poolXrp, poolTok: launch.poolTok, amm: fast ? '' : ammAccountOf(ev.meta), ledger: ev.ledger_index || ev.ledger_current_index || 0, hash: launch.hash || '' });
@@ -442,6 +457,84 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       say(`👀 ${who} bought ${l.name} for ${b.xrp.toFixed(1)} XRP – checking`);
       evaluate(l).catch((e) => { pending.delete(k); say(`⚠️ ${l.name}: check failed – ${e.message}`); });
     }
+  }
+
+  // the wallet that sent a creator its first XRP (activated it) – serial ruggers reuse their funder
+  const funders = new Map();
+  async function funderOf(a) {
+    if (funders.has(a)) return funders.get(a);
+    let f = null;
+    try {
+      const r = await req('account_tx', { account: a, forward: true, limit: 3 });
+      for (const t of r.transactions || []) { const tx = t.tx_json || t.tx; if (tx?.TransactionType === 'Payment' && tx.Destination === a && tx.Account !== a) { f = tx.Account; break; } }
+    } catch {}
+    funders.set(a, f);
+    if (funders.size > 5000) funders.clear();
+    return f;
+  }
+  const socials = createSocials({ fetchFn });
+
+  // ---------- bundles ----------
+  const bundles = new Map(); // launch → {creator, issuer, currency, wallets: Set, hold: Map}
+  function bundleWatch(l) {
+    if (!cfg.bundleExit || !l.creator || bundles.has(l.k)) return;
+    bundles.set(l.k, { k: l.k, name: l.name, creator: l.creator, issuer: l.issuer, currency: l.currency, wallets: new Set([l.creator]), hold: new Map(), at: now() });
+  }
+  const inBundle = (b, a) => b.wallets.has(a) || (a !== b.issuer && bundleOf(a, b.creator, b.issuer));
+  // validated: learn the bundle (wallets the dev sent the token to), see its holdings, catch its sells
+  function bundleTx(tx, meta) {
+    if (!bundles.size) return;
+    const addsLiquidity = /^AMM(Create|Deposit|Vote|Bid)$/.test(tx.TransactionType); // tokens into the pool ≠ a sale
+    for (const n of meta?.AffectedNodes || []) {
+      const m = n.ModifiedNode || n.CreatedNode;
+      const f = m?.FinalFields || m?.NewFields;
+      if (m?.LedgerEntryType !== 'RippleState' || !f?.Balance) continue;
+      for (const b of bundles.values()) {
+        if (f.Balance.currency !== b.currency) continue;
+        const hi = f.HighLimit?.issuer, lo = f.LowLimit?.issuer;
+        if (hi !== b.issuer && lo !== b.issuer) continue;
+        const holder = hi === b.issuer ? lo : hi;
+        const after = Math.abs(Number(f.Balance.value));
+        const before = n.CreatedNode ? 0 : Math.abs(Number(m.PreviousFields?.Balance?.value ?? f.Balance.value));
+        // the dev / a bundle wallet sent tokens to someone (not a pool): that one is part of the bundle
+        if (after > before && holder !== tx.Account && (inBundle(b, tx.Account) || tx.Account === b.issuer) && tx.Destination === holder) b.wallets.add(holder);
+        if (inBundle(b, holder)) {
+          b.wallets.add(holder);
+          b.hold.set(holder, after);
+          const toBundle = tx.Destination && tx.Destination !== tx.Account && inBundle(b, tx.Destination);
+          if (!addsLiquidity && holder === tx.Account && before > 0 && after < before && !toBundle && (before - after) / before * 100 >= cfg.bundleSellPct) {
+            bundleSelling(b, holder, `${Math.round((before - after) / before * 100)}% of its tokens`);
+          }
+        }
+      }
+    }
+  }
+  // open ledger: a bundle wallet sends a sell → out before it lands
+  function bundleProposed(tx) {
+    if (!bundles.size || !cfg.bundleExit) return;
+    for (const b of bundles.values()) {
+      if (!inBundle(b, tx.Account)) continue;
+      const tok = (v) => v && typeof v === 'object' && v.currency === b.currency && v.issuer === b.issuer;
+      const sells = (tx.TransactionType === 'Payment' && tok(tx.SendMax) && (typeof tx.Amount === 'string' || tx.Destination === tx.Account))
+        || (tx.TransactionType === 'OfferCreate' && tok(tx.TakerGets) && typeof tx.TakerPays === 'string');
+      if (!sells) continue;
+      const amt = Number((tx.SendMax || tx.TakerGets).value);
+      const held = b.hold.get(tx.Account);
+      if (held && amt / held * 100 < cfg.bundleSellPct) continue; // a small sale
+      bundleSelling(b, tx.Account, held ? `${Math.round(amt / held * 100)}% of its tokens, open ledger` : 'open ledger');
+    }
+  }
+  function bundleSelling(b, who, what) {
+    const why = `${who === b.creator ? 'the dev' : `bundle wallet ${who.slice(0, 8)}…`} sells ${what}`;
+    stat('bundleSells');
+    rec.event('bundle_sell', { k: b.k, name: b.name, wallet: who, what, wallets: b.wallets.size });
+    const l = pending.get(b.k);
+    if (l) l.bundleSold = why;
+    const pos = S.positions[b.k];
+    if (!pos || pos.bundleExit) return;
+    pos.bundleExit = now();
+    say(`🚨 ${pos.name}: ${why} – selling everything now`);
+    locked(() => (S.positions[b.k] ? sell(pos, 1, `bundle is selling (${why})`) : null)).catch((e) => say(`⚠️ ${pos.name}: bundle exit failed – ${e.message}`));
   }
 
   async function checks(l) {
@@ -480,11 +573,24 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
         } catch {}
       }
     }
+    const domain = info.Domain ? Buffer.from(info.Domain, 'hex').toString('utf8').slice(0, 80) : '';
+    // socials: X / Telegram / … from the issuer's xrp-ledger.toml
+    if (cfg.socials !== 'off') {
+      l.socials = domain ? await socials.get(domain) : { found: false };
+      if (l.socials && !hasSocials(l.socials, cfg.socials)) reasons.push(`no socials (${cfg.socials === 'x' ? 'no X/Twitter' : 'none'}${l.socials.found ? '' : ', no token file'})`);
+    }
+    // the creator, the wallet that funded it, or the issuer rugged before?
+    if (cfg.skipRuggers && l.creator) {
+      if (l.funder === undefined) { l.funder = await funderOf(l.creator); rec.setFunder?.(l.k, l.funder); }
+      const hit = [l.creator, l.funder, l.issuer].map((a) => ({ a, d: rec.devInfo?.(a) })).find((x) => x.d?.rugs > 0);
+      if (hit) reasons.push(`dev rugged before (${hit.d.rugs}× – ${hit.a === l.creator ? 'this creator' : hit.a === l.funder ? 'funded by a rugger' : 'this issuer'}: ${hit.d.names.slice(0, 3).join(' ')})`);
+    }
+    if (l.bundleSold) reasons.push(`bundle is selling (${l.bundleSold})`);
     rec.checks(l.k, {
       blackholed: !!blackholed, clawback: !!(flags & F.clawback), frozen: !!(flags & F.globalFreeze), requireAuth: !!(flags & F.requireAuth),
       transferFee: +fee.toFixed(3), ammFee: p?.fee ?? null, poolAtCheck: p ? +p.xrp.toFixed(2) : null, supplyPct,
-      domain: info.Domain ? Buffer.from(info.Domain, 'hex').toString('utf8').slice(0, 80) : '',
-      checkedAfterS: Math.round((now() - l.at) / 1000),
+      domain, socials: socialsText(l.socials), x: l.socials?.x || '', telegram: l.socials?.telegram || '', website: l.socials?.website || '',
+      funder: l.funder || '', checkedAfterS: Math.round((now() - l.at) / 1000),
     });
     if (supply > 0) l.supply = supply;
     return { blackholed: !!blackholed, reasons, wait, small, pool: p, supply };
@@ -510,10 +616,14 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       }
       const holeBy = l.at + (l.protected ? Math.max(cfg.blackholeWaitS, cfg.protectWaitMin * 60) : cfg.blackholeWaitS) * 1000;
       const poolBy = Math.max(l.at + (l.poolWait ?? cfg.poolWaitMin) * 60000, l.protected ? holeBy : 0);
-      const supplyOnly = c.reasons.length && c.reasons.every((x) => /of supply in the pool/.test(x));
-      if (supplyOnly && now() - l.at < cfg.supplyWaitS * 1000) {
-        if (!l.supplyTold) { l.supplyTold = true; say(`⏳ ${l.name}: ${c.reasons[0]} – waiting up to ${cfg.supplyWaitS}s for the rest to be deposited (FirstLedger launch)`); }
-        l.supplyWait = true;
+      // waitable: the rest of the supply (FirstLedger deposit) and socials that may come a little later
+      const waitS = (x) => (/of supply in the pool/.test(x) ? cfg.supplyWaitS : /no socials/.test(x) ? cfg.socialsWaitS : -1);
+      const softOnly = c.reasons.length && c.reasons.every((x) => waitS(x) >= 0 && now() - l.at < waitS(x) * 1000);
+      if (softOnly) {
+        const sup = c.reasons.find((x) => /of supply/.test(x));
+        if (sup) { l.supplyWait = true; if (!l.supplyTold) { l.supplyTold = true; say(`⏳ ${l.name}: ${sup} – waiting up to ${cfg.supplyWaitS}s for the rest to be deposited (FirstLedger launch)`); } }
+        const soc = c.reasons.find((x) => /no socials/.test(x));
+        if (soc && !l.socialsTold) { l.socialsTold = true; say(`⏳ ${l.name}: ${soc} – checking again for ${cfg.socialsWaitS}s`); }
       } else if (c.reasons.length) {
         pending.delete(l.k);
         stat(0, skipKind(c.reasons[0]));
@@ -568,7 +678,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       if (c.wait.length && !told) { told = true; say(`⏳ ${l.name}: ${c.wait.join(', ')} – launch protection? Waiting up to ${Math.round((holeBy - l.at) / 60000)} min, buying the moment it is lifted`); }
       if (c.small && !told) { told = true; say(`⏳ ${l.name}: ${c.small} – watching for ${l.poolWait ?? cfg.poolWaitMin} min`); }
       // sleep until the next poll – or until the issuer sends a transaction (unfreeze, blackhole, …)
-      const ms = l.supplyWait && !l.supplyOk ? 2000 : now() - l.at < 120000 ? 4000 : 15000;
+      const ms = (l.supplyWait && !l.supplyOk) || l.socialsTold ? 2000 : now() - l.at < 120000 ? 4000 : 15000;
       await new Promise((r) => {
         const t = setTimeout(done, ms);
         function done(fromIssuer) {
@@ -688,6 +798,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       entryPoolXrp: p.xrp, peak: cost, value: cost, tp1Done: false, at: now(), fails: 0, copy: l.copy || '',
       startPoolXrp: l.copy ? null : l.poolXrp, launchedAt: l.at, // pool size at launch (unknown for copies)
       supply: l.supply || null, byHand: !!l.byHand,
+      socials: l.socials ? { x: l.socials.x, telegram: l.socials.telegram, website: l.socials.website, discord: l.socials.discord } : null,
     };
   }
 
@@ -847,11 +958,11 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       stat('crowdSignals');
       rec.event('crowd_signal', { k: r.k, name: r.name, buyers: r.buyers, poolXrp: r.last.xrp, ageMin: +((now() - r.at) / 60000).toFixed(1) });
       say(`👥 ${r.name}: ${why} – checking for a crowd entry`);
-      const l = { k: r.k, currency: r.currency, issuer: r.issuer, name: r.name, at: r.at, poolXrp: r.start?.xrp, poolTok: r.start?.tok, copy: 'crowd', crowd: why, buyXrp: cfg.crowdBuyXrp };
+      const l = { k: r.k, currency: r.currency, issuer: r.issuer, name: r.name, at: r.at, poolXrp: r.start?.xrp, poolTok: r.start?.tok, copy: 'crowd', crowd: why, buyXrp: cfg.crowdBuyXrp, creator: r.creator };
       try {
         const c = await checks(l);
         // the reasons it was skipped for are what the crowd answers; anything else still counts
-        const hard = c.reasons.filter((x) => !/supply|pool only/.test(x));
+        const hard = c.reasons.filter((x) => !/supply|pool only/.test(x));  // socials, rug history, bundle selling still count
         if (!c.pool) hard.push('pool gone');
         if (c.wait.length) hard.push(...c.wait);
         if (cfg.crowdRequireBlackhole && !c.blackholed) hard.push('not blackholed');
@@ -1193,13 +1304,14 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (S.positions[k]) return answer(k, 'buymore', { xrp: x });
     const l = { k, currency: t.currency, issuer: t.issuer, name: currencyName(t.currency), at: now(), buyXrp: x, byHand: true };
     const c = await checks(l);
-    const hard = [...c.reasons.filter((r) => !/supply|pool only|> max/.test(r)), ...c.wait];
+    const warn = c.reasons.filter((r) => /socials|rugged before|bundle/.test(r));
+    const hard = [...c.reasons.filter((r) => !/supply|pool only|> max|socials|rugged before|bundle/.test(r)), ...c.wait];
     if (!c.pool) return `${l.name}: no XRP pool for this token`;
     if (hard.length) return `${l.name}: not bought – ${hard.join(', ')}`;
     l.poolXrp = c.pool.xrp; l.poolTok = c.pool.tok;
     rec.event('buy_by_hand', { k, name: l.name, xrp: x });
     await buy(l, c.pool);
-    return S.positions[k] ? `${l.name}: bought` : `${l.name}: buy didn't go through – see the log`;
+    return S.positions[k] ? `${l.name}: bought${warn.length ? ` – careful: ${warn.join(', ')}` : ''}` : `${l.name}: buy didn't go through – see the log`;
   }
   async function parseToken(s) {
     let m = s.match(/firstledger\.net\/(?:[a-z]{2}\/)?token(?:-v\d)?\/(r[1-9A-HJ-NP-Za-km-z]{24,34})\/([0-9A-Fa-f]{40}|[A-Za-z0-9]{3})/);
@@ -1233,7 +1345,10 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     client.on('transaction', onTransaction);
     await subscribe();
     timer = setInterval(() => { tick(); }, cfg.checkS * 1000);
-    sweepTimer = setInterval(() => { locked(cleanupSweep).catch(() => {}); refreshSmart(); }, 30 * 60e3);
+    sweepTimer = setInterval(() => {
+      locked(cleanupSweep).catch(() => {}); refreshSmart();
+      for (const [k, b] of bundles) if (!S.positions[k] && now() - b.at > 48 * 3600e3) bundles.delete(k);
+    }, 30 * 60e3);
     refreshSmart();
     setTimeout(() => { locked(cleanupSweep).catch(() => {}); }, 60e3);
     say(`🤖 Sniper running${cfg.dryRun ? ' (DRY RUN)' : ''} – wallet ${me}, ${cfg.buyXrp} XRP per launch, ${Object.keys(S.positions).length} open positions`);
@@ -1262,7 +1377,8 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       tracking: [...cfg.track.values()],
       stats: S.stats, following: rec.following(),
       mcapApproval: cfg.mcapApproval, mcapCurrency: cfg.mcapCurrency, paused: cfg.pauseBuys,
-      buysToday: S.buysToday, open: open.map((p) => ({ ...p, hist: undefined, spark: (p.hist || []).filter((_, i, a) => i % Math.ceil(a.length / 60) === 0 || i === a.length - 1).map((x) => x.price) })), history: S.history.slice(0, 50),
+      ruggers: (rec.devs ? rec.devs() : []).slice(0, 15),
+      buysToday: S.buysToday, open: open.map((p) => ({ ...p, hist: undefined, bundle: bundles.get(p.k) ? { wallets: bundles.get(p.k).wallets.size, holds: [...bundles.get(p.k).hold.values()].reduce((a, b) => a + b, 0) } : null, spark: (p.hist || []).filter((_, i, a) => i % Math.ceil(a.length / 60) === 0 || i === a.length - 1).map((x) => x.price) })), history: S.history.slice(0, 50),
       chart: { ...chart.summary(), on: cfg.chartSmart, add: cfg.chartAdd },
       smart: { on: cfg.autoTrack, copying: [...auto.entries()].map(([wallet, label]) => ({ wallet, label })), list: (rec.wallets ? rec.wallets() : []).slice(0, 20).map((w) => ({ ...w, smart: isSmart(w), copied: auto.has(w.wallet), pinned: !!S.walletPin[w.wallet], banned: !!S.walletBan[w.wallet] })), rules: { launches: cfg.autoMinLaunches, win: cfg.autoMinWin, pnl: cfg.autoMinPnl, bigHits: cfg.autoBigHits } },
       cleanup: { on: cfg.cleanup, cleared: S.stats.linesCleared || 0, freed: S.stats.reserveFreed || 0 },
