@@ -80,6 +80,9 @@ export function readConfig(env = process.env) {
     crowdBuyXrp: num('CROWD_BUY_XRP', num('BUY_XRP', 1)),
     crowdRequireBlackhole: bool('CROWD_REQUIRE_BLACKHOLE', false),
     minPoolSupplyPct: num('MIN_POOL_SUPPLY_PCT', 20), // share of the supply that sits in the pool
+    // FirstLedger launches in two steps: the pool is created with ~1 % of the supply, the other 99 % is
+    // deposited into it seconds later. A low share is waited for this long (bought the moment it arrives)
+    supplyWaitS: num('SUPPLY_WAIT_S', 60),
     buySlippage: num('BUY_SLIPPAGE', 35),
     sellSlippage: num('SELL_SLIPPAGE', 30),
     tp1: num('TAKE_PROFIT', 100), // percent gain for the first sale
@@ -356,6 +359,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (!ev.validated) {
       // open ledger: only launches, to be one of the first buyers
       if (cfg.fastLaunch && tx.TransactionType === 'AMMCreate' && /^tes/.test(ev.engine_result || '')) onLaunch(tx, ev, true);
+      if (cfg.fastLaunch && tx.TransactionType === 'AMMDeposit' && /^tes/.test(ev.engine_result || '')) onDeposit(tx, false);
       return;
     }
     if (ev.meta?.TransactionResult !== 'tesSUCCESS') return;
@@ -366,8 +370,25 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     // the issuer of a waiting launch did something (unfreeze, blackhole, fee change) → re-check now
     const ws = waiters.get(tx.Account);
     if (ws) { waiters.delete(tx.Account); for (const wake of ws) setTimeout(() => wake(true), 50); }
+    if (tx.TransactionType === 'AMMDeposit') onDeposit(tx, true);
     if (tx.TransactionType !== 'AMMCreate') return;
     onLaunch(tx, ev, false);
+  }
+  // a deposit into the pool of a launch that waits for its supply: check again at once
+  // (from the open ledger: on the open ledger, so the buy can follow the deposit straight away)
+  function onDeposit(tx, validated) {
+    const a = [tx.Asset, tx.Asset2].find((x) => x && x.currency && x.currency !== 'XRP' && x.issuer);
+    if (!a) return;
+    const k = key(a.currency, a.issuer);
+    const l = pending.get(k);
+    if (!l || !l.supplyWait) return;
+    if (validated) {
+      l.validated = true;
+      const wake = launchValidated.get(k);
+      if (wake) { launchValidated.delete(k); wake.forEach((f) => f()); }
+    } else { l.fast = true; l.validated = false; stat('depositSeenOpen'); }
+    const ws = waiters.get(k);
+    if (ws) { waiters.delete(k); for (const w of ws) setTimeout(() => w(), 0); }
   }
   function onLaunch(tx, ev, fast) {
     const xrpAmt = typeof tx.Amount === 'string' ? tx.Amount : typeof tx.Amount2 === 'string' ? tx.Amount2 : null;
@@ -486,7 +507,11 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       }
       const holeBy = l.at + (l.protected ? Math.max(cfg.blackholeWaitS, cfg.protectWaitMin * 60) : cfg.blackholeWaitS) * 1000;
       const poolBy = Math.max(l.at + (l.poolWait ?? cfg.poolWaitMin) * 60000, l.protected ? holeBy : 0);
-      if (c.reasons.length) {
+      const supplyOnly = c.reasons.length && c.reasons.every((x) => /of supply in the pool/.test(x));
+      if (supplyOnly && now() - l.at < cfg.supplyWaitS * 1000) {
+        if (!l.supplyTold) { l.supplyTold = true; say(`⏳ ${l.name}: ${c.reasons[0]} – waiting up to ${cfg.supplyWaitS}s for the rest to be deposited (FirstLedger launch)`); }
+        l.supplyWait = true;
+      } else if (c.reasons.length) {
         pending.delete(l.k);
         stat(0, skipKind(c.reasons[0]));
         rec.decision(l.k, 'skipped', skipKind(c.reasons[0]));
@@ -506,7 +531,14 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
         rec.decision(l.k, 'skipped', 'blocked at launch');
         return say(`⛔ Skip ${l.name}: buy was blocked (${l.blocked}) and nothing changed for ${Math.round((holeBy - l.at) / 60000)} min`);
       }
-      if (hole && !c.small && !c.wait.length && !stillBlocked) {
+      if (l.supplyWait && !c.reasons.length && c.pool && !l.supplyOk) {
+        l.supplyOk = true;
+        l.poolXrp = c.pool.xrp; l.poolTok = c.pool.tok; // the real launch price is after the deposit
+        stat('supplyDeposited');
+        rec.event('supply_deposited', { k: l.k, name: l.name, afterS: Math.round((now() - l.at) / 1000), poolXrp: c.pool.xrp, poolTok: c.pool.tok });
+        say(`📥 ${l.name}: the rest of the supply is in the pool now (after ${Math.round((now() - l.at) / 1000)}s)`);
+      }
+      if (hole && !c.small && !c.wait.length && !c.reasons.length && !stillBlocked) {
         pending.delete(l.k);
         // bought late after a protection: the early buyers may have pumped it already
         const x0 = l.poolXrp && l.poolTok ? l.poolXrp / l.poolTok : null;
@@ -533,15 +565,14 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       if (c.wait.length && !told) { told = true; say(`⏳ ${l.name}: ${c.wait.join(', ')} – launch protection? Waiting up to ${Math.round((holeBy - l.at) / 60000)} min, buying the moment it is lifted`); }
       if (c.small && !told) { told = true; say(`⏳ ${l.name}: ${c.small} – watching for ${l.poolWait ?? cfg.poolWaitMin} min`); }
       // sleep until the next poll – or until the issuer sends a transaction (unfreeze, blackhole, …)
-      const ms = now() - l.at < 120000 ? 4000 : 15000;
+      const ms = l.supplyWait && !l.supplyOk ? 2000 : now() - l.at < 120000 ? 4000 : 15000;
       await new Promise((r) => {
         const t = setTimeout(done, ms);
         function done(fromIssuer) {
           if (fromIssuer === true) l.issuerMoved = now();
-          clearTimeout(t); waiters.get(l.issuer)?.delete(done); r();
+          clearTimeout(t); waiters.get(l.issuer)?.delete(done); waiters.get(l.k)?.delete(done); r();
         }
-        if (!waiters.has(l.issuer)) waiters.set(l.issuer, new Set());
-        waiters.get(l.issuer).add(done);
+        for (const w of [l.issuer, l.k]) { if (!waiters.has(w)) waiters.set(w, new Set()); waiters.get(w).add(done); }
       });
     }
   }

@@ -167,7 +167,7 @@ function setup(balance = 50, env = {}, usd = true) {
   const sim = new Sim(balance);
   if (usd) sim.amm[RLUSD] = { xrp: 1e6, tok: 2.5e6, fee: 0 }; // 1 XRP = $2.50
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'snipe-'));
-  const cfg = readConfig({ DATA_DIR: dir, BLACKHOLE_WAIT_S: '6', POOL_WAIT_MIN: '0', ...env });
+  const cfg = readConfig({ DATA_DIR: dir, BLACKHOLE_WAIT_S: '6', POOL_WAIT_MIN: '0', SUPPLY_WAIT_S: '0', ...env });
   const bot = createBot({ client: sim, wallet: { address: ME }, cfg, log: (m) => logs.push(m), fetchFn: null });
   return { sim, bot, cfg };
 }
@@ -901,6 +901,48 @@ await test('smart wallets: a wallet that buys early and sells with profit across
     assert.deepEqual(bot.status().smart.copying.map((c) => c.wallet), [DUMB]);
     bot.stop();
   } finally { Date.now = realNow; }
+});
+
+await test('FirstLedger two-step launch: pool created with 1 % of the supply, the rest deposited seconds later → bought right after the deposit', async () => {
+  const { sim, bot } = setup(100, { SUPPLY_WAIT_S: '30', MIN_POOL_XRP: '20' });
+  await bot.start();
+  const iss = 'rCross11111111111111111111111111';
+  const cur = sim.launch({ name: 'CROSSY', issuer: iss, poolXrp: 30, poolTok: 1000, supply: 100000, silent: true });
+  const create = { TransactionType: 'AMMCreate', Account: 'rDEV', Amount: '30000000', Amount2: { currency: cur, issuer: iss, value: '1000' } };
+  sim.emit('transaction', { validated: true, ledger_index: 7000, hash: 'CR1', tx_json: create, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [{ CreatedNode: { LedgerEntryType: 'AccountRoot', NewFields: { Account: 'rAmmCross', AMMID: 'X', Balance: '30000000' } } }] } });
+  await settle(bot);
+  const k = `${cur}.${iss}`;
+  assert.equal(bot.state().positions[k], undefined, 'not bought at the 1 % pool (100× too expensive)');
+  assert.ok(!logs.join('\n').includes('Skip CROSSY'), 'not skipped either');
+  assert.ok(logs.join('\n').includes('waiting up to 30s'));
+  // the dev deposits the other 99 % – seen in the open ledger first
+  sim.amm[k].tok += 99000;
+  const dep = { TransactionType: 'AMMDeposit', Account: 'rDEV', Asset: { currency: 'XRP' }, Asset2: { currency: cur, issuer: iss }, Amount: { currency: cur, issuer: iss, value: '99000' } };
+  const t0 = Date.now();
+  sim.emit('transaction', { validated: false, engine_result: 'tesSUCCESS', ledger_current_index: 7002, tx_json: dep });
+  await settle(bot);
+  const pos = bot.state().positions[k];
+  assert.ok(pos, 'bought right after the deposit');
+  assert.ok(Date.now() - t0 < 1500, 'at once, not at the next poll');
+  assert.ok(pos.amount > 1000, 'at the real price: ' + pos.amount);
+  // the recorder takes the price after the deposit as the start
+  sim.emit('transaction', { validated: true, ledger_index: 7002, hash: 'DEP1', tx_json: dep, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [{ ModifiedNode: { LedgerEntryType: 'RippleState', FinalFields: { Balance: { currency: cur, value: '-100000' }, LowLimit: { issuer: iss }, HighLimit: { issuer: 'rAmmCross' } }, PreviousFields: { Balance: { currency: cur, value: '-1000' } } } }] } });
+  const row = bot.rec.rows().find((r) => r.name === 'CROSSY');
+  assert.ok(Math.abs(row.startPrice - 30 / 100000) < 1e-9, 'start price after the deposit: ' + row.startPrice);
+  assert.equal(bot.status().stats.supplyDeposited, 1);
+  bot.stop();
+});
+
+await test('low supply share and no deposit comes → skipped after SUPPLY_WAIT_S', async () => {
+  const { sim, bot } = setup(100, { SUPPLY_WAIT_S: '1', MIN_POOL_XRP: '20' });
+  await bot.start();
+  const cur = sim.launch({ name: 'NODEP', issuer: 'rNoDep1111111111111111111111111', poolXrp: 50, poolTok: 1e7, supply: 1e9 });
+  await settle(bot);
+  assert.ok(!logs.join('\n').includes('Skip NODEP'));
+  await wait(2500); await settle(bot);
+  assert.ok(logs.join('\n').includes('Skip NODEP: only 1% of supply'), 'skipped after the wait');
+  assert.equal(bot.state().positions[`${cur}.rNoDep1111111111111111111111111`], undefined);
+  bot.stop();
 });
 
 await test('settings change live: pause stops buys, unpause buys again, open trades still sell', async () => {

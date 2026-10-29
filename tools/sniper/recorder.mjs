@@ -78,9 +78,27 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
   }
 
   // ---------- live stream: trading in followed pools ----------
+  // FirstLedger: the rest of the supply is deposited seconds after the create – the real start is after it
+  function earlyDeposit(ev) {
+    for (const m of ev.meta?.AffectedNodes || []) {
+      const rs = m.ModifiedNode;
+      const ff = rs?.FinalFields;
+      if (rs?.LedgerEntryType !== 'RippleState' || !ff?.Balance) continue;
+      const k = byAmm.get(ff.HighLimit?.issuer) || byAmm.get(ff.LowLimit?.issuer);
+      const r = k && W[k];
+      if (!r || r.startFixed || Date.now() - r.at > 10 * 60e3 || !r.start.tok) continue;
+      const tokNow = Math.abs(Number(ff.Balance.value));
+      const tokBefore = Math.abs(Number(rs.PreviousFields?.Balance?.value ?? tokNow));
+      if (tokNow > tokBefore * 2) {
+        r.start = { xrp: r.start.xrp, tok: tokNow, price: r.start.xrp / tokNow };
+        r.startFixed = true; r.max = null; r.min = null; dirty = true;
+      }
+    }
+  }
   function tx(ev) {
     if (!byAmm.size) return;
     const t = ev.tx_json || ev.transaction;
+    if (t?.TransactionType === 'AMMDeposit') earlyDeposit(ev);
     for (const n of ev.meta?.AffectedNodes || []) {
       const node = n.ModifiedNode || n.DeletedNode;
       if (!node || node.LedgerEntryType !== 'AccountRoot') continue;

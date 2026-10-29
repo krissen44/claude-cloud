@@ -113,6 +113,16 @@ put in) and XRP out − in. Every 30 min the best wallets that pass `AUTO_MIN_LA
 rules and `COPY_BUY_XRP`). The status page lists the top 20 with **📌 Copy** (always) and **🚫 Never**. Note: a
 wallet that still holds counts its buy as a loss until it sells – the ranking prefers traders who take profit.
 
+## FirstLedger two-step launches
+
+FirstLedger creates the pool with about 1 % of the supply and deposits the other 99 % into it (`AMMDeposit`,
+single-sided) one or two ledgers later. Checked right after the create, such a launch looked like "dev holds
+the supply" and was skipped – CROSS (29 Oct, ≈ 56× from the real start) and UBER were missed that way. Now a
+low supply share is waited for (`SUPPLY_WAIT_S`, 60 s): the deposit is seen in the open ledger and the launch
+is checked and bought at once, at the price after the deposit (bought before it, the price would be ~100×
+higher – the buy's minimum amount makes such a fill fail, and it is retried after the deposit). The recorder
+takes the price after the deposit as the launch price.
+
 ## Crowd entry and protection cap
 
 - **Crowd entry** (`CROWD_BUY`, on): a launch that was skipped for "dev holds the supply", "pool too small"
@@ -120,8 +130,8 @@ wallet that still holds counts its buy as a loss until it sells – the ranking 
   (100) different wallets bought it and the pool holds `CROWD_MIN_POOL_XRP` (500) XRP. All other checks
   (clawback, freeze, approval, transfer fee) still apply; `CROWD_REQUIRE_BLACKHOLE` (off) adds the blackhole.
   It sells by the copy rules (half at +100 %, rest on a 30 % trailing stop, −50 %, rug alarm, 24 h). Data
-  from 27–28 Oct: the "dev holds the supply" rugs had 11–23 buyers; UBER (dumped −80 % in its first minute,
-  then 15× from the dip) had 558 buyers and 1,383 XRP in the pool after 1 h.
+  from 27–28 Oct: the "dev holds the supply" rugs had 11–23 buyers; UBER had 558 buyers and 1,383 XRP in the
+  pool after 1 h (UBER was really a FirstLedger two-step launch – see below).
 - **Protection cap** (`PROTECT_MAX_X`, 12): after a launch protection ends, the token is skipped if the
   early (approved) buyers already pumped it above 12× the launch price. FRIZZY was bought at ≈ 25× after its
   protection and hit the stop loss; XRB at ≈ 9× ran on.

@@ -27,6 +27,7 @@ export const GROUPS = [
     ['PROTECT_WAIT_MIN', 'Wait for a launch protection to end (min)', 'num', '60', 'frozen / approval-only / fee at launch – bought the moment it is lifted', 0, 1440],
     ['PROTECT_MAX_X', 'After a protection: skip above x × launch price', 'num', '12', 'early buyers already pumped it; 0 = off', 0, 100000],
     ['MIN_POOL_SUPPLY_PCT', 'Min. share of all tokens in the pool (%)', 'num', '20', '', 0, 100],
+    ['SUPPLY_WAIT_S', 'Wait for the rest of the supply (s)', 'num', '60', 'FirstLedger creates the pool with ~1 % and deposits the rest seconds later – bought the moment it arrives', 0, 3600],
     ['MAX_TRANSFER_FEE', 'Max. transfer fee (%)', 'num', '0', '', 0, 100],
     ['MAX_AMM_FEE', 'Max. AMM fee (%)', 'num', '1', '', 0, 1],
     ['BUY_SLIPPAGE', 'Max. buy slippage (%)', 'num', '35', 'higher = fewer missed buys, but worse prices', 1, 90],
