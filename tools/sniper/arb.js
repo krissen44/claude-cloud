@@ -47,6 +47,7 @@ export const ARB_GROUPS = [
     ['ARB_TOKENS', 'The list', 'tokens', DEFAULT_TOKENS, 'One per line: NAME.rIssuer – suggestions to add are on the arb page'],
     ['ARB_LIVE', 'Live mode (react to the open ledger)', 'bool', '1', 'Sees trades ≈ 5 s before they are validated and sends into the same / next ledger'],
     ['ARB_LIVE_SEND', 'Live: when to send', 'text', 'next', '“next” = the moment the next ledger opens (lands right after the move, like bwif); “now” = into the same ledger'],
+    ['ARB_BOOKS', 'Use the DEX order books too', 'bool', '1', 'The XRP order books of the list tokens are part of the price model (like the ledger: offer or AMM, whichever is better) – finds loops through cheap resting offers'],
     ['ARB_MULTI_SUBMIT', 'Send every batch to all servers at once', 'bool', '1', 'Each batch goes to every server in ARB_XRPL_WS in parallel (s1, s2, xrplcluster) – whichever relays fastest gets it to the validators'],
     ['ARB_LIVE_MAX_PER_LEDGER', 'Live pool reads per ledger', 'num', '15', 'server load', 1, 200],
     ['ARB_BRIDGE', 'Loops may pass through big tokens', 'bool', '1', 'Inside the same all-or-nothing batch only – never held, no trust line (e.g. FUZZY → WIND → DROP). Off = only list tokens in a loop'],

@@ -408,6 +408,26 @@ asks, as long as it stays within `ARB_FEE_SHARE` (50 %) of its expected gain (le
 `ARB_MAX_FEE_DROPS` (200k = 0.2 XRP). A refused batch is re-sent up to twice with the fee read again
 (×1.5, at least double). A loop that can't pay the current fee is not sent (`skippedFeeHigh`).
 
+**All servers at once (`ARB_MULTI_SUBMIT`, on):** every signed batch goes to every server in `ARB_XRPL_WS`
+(s2, s1, xrplcluster) in parallel over its own connection. Each server relays it to its own peers, so it
+reaches the validators by the shortest way, and a slow, busy or disconnected main server doesn't lose it. The
+first `tesSUCCESS`/`terQUEUED` counts; the same blob can only be applied once.
+
+## Order books (`ARB_BOOKS`, on)
+
+The ledger's payment engine fills a payment from the AMM *and* the DEX order book of the same pair, whichever
+gives more for the next bit. The model now does the same: both XRP books of every list token are read with
+`book_offers` (funded amounts, our own offers left out), every `ARB_BOOK_REFRESH_MIN` (10) minutes and right
+after an offer of that pair changed in a ledger (at most once per ledger); in live mode offers entering the
+open ledger are read on the `current` ledger. A hop takes offers while they are better than the AMM's price
+and the AMM in between (`hopOut` in `arb/engine.mjs`), so:
+- prices of every loop include the resting offers (top tokens have 1–12k XRP of offers within ~1 % of the AMM),
+- a new loop type: XRP → token from a cheap offer → back into the AMM (or the other way), same pair, one batch,
+- after our own batch took offers, those books are dropped until they are read again (no trading on gone offers).
+Measured on 29 Oct: at rest the best offers sit right at the AMM fee edge (market makers), so a gap needs the
+AMM to move. Page: "📗 Order books" (tokens, offers, loops via an offer); `trades.csv` / `opportunities.csv`
+have a `book` column.
+
 ## Fees and sequence numbers
 
 A busy ledger costs more than the minimum: the bot reads the open-ledger fee level every ledger and pays what

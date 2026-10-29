@@ -25,6 +25,14 @@ class Ledger {
     this.beforeApply = null;
     this.tickets = new Set();
     this.ticketErrors = 0;
+    this.books = new Map(); // "pays>gets" → [{in, out, acct}] resting offers (taker view)
+  }
+  // a resting offer: a taker pays `pays` (amount inn) and gets `gets` (amount out)
+  offer(pays, gets, inn, out, acct = 'rMaker') {
+    const k = `${pays}>${gets}`;
+    (this.books.get(k) || this.books.set(k, []).get(k)).push({ in: inn, out, acct });
+    const amt = (a, v) => (a === 'XRP' ? String(Math.round(v * D)) : { currency: a.split('.')[0], issuer: a.split('.')[1], value: String(v) });
+    this.emit('transaction', { validated: true, ledger_index: ++this.index, hash: 'O' + this.index, tx_json: { TransactionType: 'OfferCreate', Account: acct }, meta: { TransactionResult: 'tesSUCCESS', TransactionIndex: 0, AffectedNodes: [{ CreatedNode: { LedgerEntryType: 'Offer', NewFields: { Account: acct, TakerPays: amt(pays, inn), TakerGets: amt(gets, out) } } }] } });
   }
   on(ev, fn) { (this.handlers[ev] ||= []).push(fn); }
   emit(ev, x) { for (const fn of this.handlers[ev] || []) fn(x); }
@@ -52,7 +60,7 @@ class Ledger {
   }
 
   // run a path payment on a copy of the pools; returns {ok, spent, got, touched}
-  pay(pools, route, { exactOut, maxIn, partialIn, minOut }) {
+  pay(pools, route, { exactOut, maxIn, partialIn, minOut }, books = new Map()) {
     const hops = [];
     for (let i = 0; i < route.length - 1; i++) {
       const p = [...pools.values()].find((q) => (q.a === route[i] && q.b === route[i + 1]) || (q.b === route[i] && q.a === route[i + 1]));
@@ -73,8 +81,29 @@ class Ledger {
     let amt = input;
     for (const h of hops) {
       const fi = this.res(h.p, h.from), ti = this.res(h.p, h.to);
-      const out = swapOut(amt, h.p[fi], h.p[ti], h.p.fee);
-      h.p[fi] += amt; h.p[ti] -= out; amt = out;
+      const book = books.get(`${h.from}>${h.to}`);
+      if (!book?.length) {
+        const out = swapOut(amt, h.p[fi], h.p[ti], h.p.fee);
+        h.p[fi] += amt; h.p[ti] -= out; amt = out;
+        continue;
+      }
+      // like the payment engine: every small piece goes where it gets more – AMM or the best offer
+      const N = 4000, piece = amt / N;
+      let out = 0;
+      for (let i = 0; i < N; i++) {
+        book.sort((a, b) => b.out / b.in - a.out / a.in);
+        const o = book[0];
+        const viaAmm = swapOut(piece, h.p[fi], h.p[ti], h.p.fee);
+        if (o && (o.out / o.in) * piece > viaAmm) {
+          const take = Math.min(piece, o.in), got = take * (o.out / o.in);
+          out += got; o.out -= got; o.in -= take;
+          if (o.in <= 1e-12) book.shift();
+          if (take < piece) { const rest = piece - take, d = swapOut(rest, h.p[fi], h.p[ti], h.p.fee); h.p[fi] += rest; h.p[ti] -= d; out += d; }
+          (this.offersTaken ||= []).push(o.acct);
+          (this.booksTaken ||= new Set()).add(`${h.from}>${h.to}`);
+        } else { h.p[fi] += piece; h.p[ti] -= viaAmm; out += viaAmm; }
+      }
+      amt = out;
     }
     if (minOut != null && amt < minOut) return { ok: false };
     return { ok: true, spent: input, got: exactOut ?? amt, touched: hops.map((h) => h.p) };
@@ -101,6 +130,11 @@ class Ledger {
       return ok({ amm: { account: p.id, amount: amt(p.a, p.ra), amount2: amt(p.b, p.rb), trading_fee: Math.round(p.fee * 1e5) } });
     }
     if (c === 'submit') return ok(this.submit(r.tx_blob));
+    if (c === 'book_offers') {
+      const list = this.books.get(`${key(r.taker_pays)}>${key(r.taker_gets)}`) || [];
+      const amt = (a, v) => (a === 'XRP' ? String(Math.round(v * D)) : { currency: a.split('.')[0], issuer: a.split('.')[1], value: String(v) });
+      return ok({ offers: list.map((o) => ({ Account: o.acct, TakerPays: amt(key(r.taker_pays), o.in), TakerGets: amt(key(r.taker_gets), o.out) })) });
+    }
     if (c === 'account_tx' && r.account !== this.me) { if (this.rivalTxs?.[r.account]) return ok({ transactions: this.rivalTxs[r.account] }); throw new Error('no history'); }
     if (c === 'account_tx') return ok({ transactions: (this.history || []).filter((e) => e.ledger_index === r.ledger_index_min).map((e) => ({ tx: e.tx_json, meta: e.meta })) });
     if (c === 'account_objects') return ok({ account_objects: r.type === 'ticket' ? [...this.tickets].map((t) => ({ LedgerEntryType: 'Ticket', TicketSequence: t })) : [] });
@@ -128,6 +162,7 @@ class Ledger {
     // a rival's trade lands in the same ledger just before our batch
     if (this.rivalFirst) { const r = this.rivalFirst; this.rivalFirst = null; this.trade(r.pool, r.from, r.amount, r.acct, true); }
     const clone = new Map([...this.pools].map(([k, p]) => [k, { ...p }]));
+    const books = new Map([...this.books].map(([k, l]) => [k, l.map((o) => ({ ...o }))]));
     const lines = new Map(this.lines);
     let xrp = this.acct.balance - Number(tx.Fee) / D;
     let ok = true;
@@ -140,7 +175,7 @@ class Ledger {
       const have = src === 'XRP' ? xrp : lines.get(src) ?? -1;
       if (dst !== 'XRP' && !lines.has(dst)) { ok = false; break; }
       const r = partial
-        ? this.pay(clone, route, { partialIn: Math.min(val(p.SendMax), have), minOut: p.DeliverMin != null ? val(p.DeliverMin) : null })
+        ? this.pay(clone, route, { partialIn: Math.min(val(p.SendMax), have), minOut: p.DeliverMin != null ? val(p.DeliverMin) : null }, books)
         : this.pay(clone, route, { exactOut: val(p.Amount), maxIn: Math.min(val(p.SendMax), have) });
       if (!r.ok) { ok = false; break; }
       r.touched.forEach((q) => touched.add(q.id));
@@ -158,7 +193,7 @@ class Ledger {
     for (const t of used) this.tickets.delete(t);
     this.acct.owners -= used.length;
     if (ok) {
-      this.pools = clone; this.lines = lines;
+      this.pools = clone; this.lines = lines; this.books = books;
       if (!tks) this.acct.seq += 1 + tx.RawTransactions.length;
     } else {
       xrp = afterFee;
@@ -169,6 +204,7 @@ class Ledger {
       let first = true;
       for (const id of touched) {
         const ev = { validated: true, ledger_index: this.index, hash: 'I' + id + this.index, tx_json: { TransactionType: 'Payment', Account: this.me }, meta: { TransactionResult: 'tesSUCCESS', ParentBatchID: hash, AffectedNodes: [...this.nodesFor(this.pools.get(id)), ...(first ? [meNode(afterFee, xrp)] : [])] } };
+        if (first && this.booksTaken) { const as = (k) => (k === 'XRP' ? '1' : { currency: k.split('.')[0], issuer: k.split('.')[1], value: '0' }); for (const bk of this.booksTaken) { const [pays, gets] = bk.split('>'); ev.meta.AffectedNodes.push({ DeletedNode: { LedgerEntryType: 'Offer', FinalFields: { Account: 'rMaker', TakerPays: as(pays), TakerGets: as(gets) } } }); } this.booksTaken = null; }
         (this.history ||= []).push(ev);
         if (!this.hideInner) this.emit('transaction', ev);
         first = false;
@@ -856,6 +892,52 @@ await test('multi-submit: the batch goes to every server at once; a slow / refus
   const r2 = setup({ ARB_LIVE: '0', ARB_MULTI_SUBMIT: '0' }, { also: () => () => { throw new Error('must not be called'); } });
   assert.equal(r2.cfg.multiSubmit, false);
   r2.bot.stop();
+});
+
+await test('order book: a cheap resting sell offer is bought and sold into the AMM in one batch (same pair, two ways)', async () => {
+  const { L, bot } = setup({ ARB_LIVE: '0' });
+  await bot.start();
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(300); // makes AAA hot → trust line
+  await bot._manageLines();
+  assert.ok(bot._lines.has(A), 'line for AAA');
+  // AMM: 1 XRP ≈ 10,000 AAA (after the loop above a little different). Someone offers 30,000 AAA for 2 XRP.
+  L.offer('XRP', A, 2, 30000);
+  await wait(500);
+  const st = bot.status();
+  assert.ok(st.stats.booksRead >= 2, 'book read after the offer showed up');
+  assert.ok(st.stats.bookOpps >= 1, 'loop through the offer found ' + JSON.stringify(st.stats));
+  const b = L.sent.at(-1);
+  const legs = b.RawTransactions.map((r) => r.RawTransaction);
+  assert.ok(!legs[0].Paths, 'leg 1 direct XRP → AAA (book + AMM), the payment engine takes the offer');
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  const t = bot.status().trades.find((x) => x.book);
+  assert.ok(t && t.applied && t.pnl > 0.3, 'won through the offer: ' + JSON.stringify(bot.status().trades[0]));
+  assert.ok(Math.abs(t.pnl - t.expected) < 0.01, `model = ledger (${t.expected} vs ${t.pnl})`);
+  assert.ok(L.offersTaken?.includes('rMaker'), 'the offer was taken');
+  bot.stop();
+});
+
+await test('order book in a longer loop: offer better than the AMM is counted in the price', async () => {
+  const { L, bot } = setup({ ARB_LIVE: '0' });
+  const { createGraph, cycleOut } = await import('../arb/engine.mjs');
+  const g = createGraph();
+  g.upsert({ id: 'P1', a: 'XRP', b: A, ra: 500, rb: 5e6, fee: 0.003 });
+  g.upsert({ id: 'P2', a: A, b: B, ra: 5e6, rb: 1e7, fee: 0.003 });
+  g.upsert({ id: 'P3', a: B, b: 'XRP', ra: 1e7, rb: 500, fee: 0.003 });
+  const hops = [{ pool: 'P1', from: 'XRP', to: A }, { pool: 'P2', from: A, to: B }, { pool: 'P3', from: B, to: 'XRP' }];
+  const amm = cycleOut(g, hops, 1);
+  g.setBook('XRP', A, [{ in: 0.5, out: 6000 }]);
+  const withBook = cycleOut(g, hops, 1);
+  assert.ok(withBook > amm && withBook - amm > 0.08, `${amm} → ${withBook}`);
+  assert.ok(Math.abs(cycleOut(g, hops, 1, false) - amm) < 1e-12, 'books off = AMM only');
+  // an offer worse than the AMM changes nothing at small size
+  g.setBook('XRP', A, [{ in: 0.5, out: 4000 }]);
+  assert.ok(Math.abs(cycleOut(g, hops, 1) - amm) < 1e-9);
+  // ARB_BOOKS=0: no book requests
+  const r = setup({ ARB_BOOKS: '0' });
+  assert.equal(r.cfg.books, false);
+  r.bot.stop(); bot.stop();
 });
 
 console.log(`\n${passed} arb scenarios passed`);

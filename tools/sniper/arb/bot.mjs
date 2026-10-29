@@ -113,6 +113,8 @@ export function readArbConfig(env = process.env) {
     // speed: watch transactions while they enter the open ledger, read the touched pools' live state
     // and send into the same / next ledger – instead of waiting for validation (one ledger late)
     live: bool('ARB_LIVE', true),
+    books: bool('ARB_BOOKS', true), // DEX order books of the list tokens (XRP pair) are part of the model
+    bookRefreshMin: num('ARB_BOOK_REFRESH_MIN', 10),
     multiSubmit: bool('ARB_MULTI_SUBMIT', true), // every batch to all servers in ARB_XRPL_WS at once
     liveMaxPerLedger: num('ARB_LIVE_MAX_PER_LEDGER', 15), // pool reads per open ledger (server load)
     // 'next': collect what moved during a ledger and send the moment the next ledger opens (lands right
@@ -312,6 +314,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       if (!id) { await new Promise((r) => setTimeout(r, 500)); continue; }
       queued.delete(id);
       try {
+        if (id.startsWith('book:')) { await readBooks(id.slice(5), 'validated'); await new Promise((r) => setTimeout(r, 1000 / cfg.fetchPerSec)); continue; }
         const pair = id.startsWith('pair:') ? id.slice(5).split('|') : null;
         const r = await req('amm_info', pair ? { asset: assetObj(pair[0]), asset2: assetObj(pair[1]), ledger_index: 'validated' } : { amm_account: id, ledger_index: 'validated' });
         const am = r.amm;
@@ -335,6 +338,47 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
         } else if (!id.startsWith('pair:') && /actNotFound|ammNotFound/i.test(err)) g.remove(id);
       }
       await new Promise((r) => setTimeout(r, 1000 / cfg.fetchPerSec));
+    }
+  }
+
+  // ---------- order books ----------
+  // Both XRP books of a list token (buy side and sell side), read with book_offers. An offer that
+  // changed in a ledger re-reads its book; a book that changed = its XRP pool counts as moved.
+  const bookAt = new Map(); // token → last read
+  const amt = (x) => (typeof x === 'string' ? Number(x) / DROPS : Number(x?.value || 0));
+  async function readBook(from, to, at) {
+    const r = await req('book_offers', { taker_pays: assetObj(from), taker_gets: assetObj(to), limit: 20, ledger_index: at });
+    const offers = [];
+    for (const o of r.offers || []) {
+      if (o.Account === me) continue;
+      const pays = amt(o.taker_pays_funded ?? o.TakerPays), gets = amt(o.taker_gets_funded ?? o.TakerGets);
+      if (pays > 0 && gets > 0) offers.push({ in: pays, out: gets, owner: o.Account });
+    }
+    stat('booksRead');
+    return g.setBook(from, to, offers);
+  }
+  async function readBooks(t, at = 'validated') {
+    if (!cfg.books || !g.xrpPool.get(t)) return false;
+    bookAt.set(t, now());
+    const ch = (await Promise.all([readBook(XRP, t, at), readBook(t, XRP, at)])).some(Boolean);
+    if (ch && at === 'validated') { stat('bookChanged'); queueSearch(new Set([g.xrpPool.get(t)]), { lls: ledger + 1 + cfg.lastLedgers, view: ledger, live: false }); }
+    return ch;
+  }
+  const bookTokens = () => [...uni.set()].filter((a) => a !== XRP && g.xrpPool.get(a));
+  function refreshBooks() {
+    if (!cfg.books) return;
+    for (const t of bookTokens()) if (now() - (bookAt.get(t) || 0) > cfg.bookRefreshMin * 60e3) want('book:' + t);
+  }
+  // offers of our tokens that changed in this transaction → read those books again
+  function offersMoved(meta) {
+    if (!cfg.books) return;
+    for (const n of meta?.AffectedNodes || []) {
+      const node = n.ModifiedNode || n.CreatedNode || n.DeletedNode;
+      if (node?.LedgerEntryType !== 'Offer') continue;
+      const f = node.FinalFields || node.NewFields || {};
+      const a = assetKey(f.TakerGets), b = assetKey(f.TakerPays);
+      const t = a === XRP ? b : b === XRP ? a : null;
+      if (t && t !== XRP && uni.has(t) && g.xrpPool.get(t) && now() - (bookAt.get(t) || 0) > 3000) want('book:' + t, true); // at most once per ledger
     }
   }
 
@@ -375,6 +419,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (seenValidated.size > 20000) seenValidated.clear();
     if (ev.ledger_index > ledger) ledger = ev.ledger_index;
     const moved = applyMeta(g, ev.meta, (nid) => want(nid, true));
+    offersMoved(ev.meta);
     // a pool read live from a newer open ledger keeps that newer state
     for (const id of moved) {
       const fr = fresh.get(id);
@@ -409,6 +454,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   // pools it can have moved (amm_info on the open ledger), search on that, send at once.
   const fresh = new Map(); // pool → {ra, rb, idx} read live from open ledger idx
   const liveWant = new Set();
+  const liveBooks = new Set(); // tokens whose books to read live (offers placed / taken)
   let liveTimer = null;
   let liveBudget = { idx: 0, n: 0 };
   const assetsOf = (t, out = new Set()) => {
@@ -429,6 +475,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (!toks.length) return;
     // the XRP pool of each token, and pools between the tokens it names
     for (const a of toks) { const id = g.xrpPool.get(a); if (id) liveWant.add(id); }
+    if (cfg.books && /^(OfferCreate|OfferCancel|Payment)$/.test(tx.TransactionType)) for (const a of toks) if (g.xrpPool.get(a) && (tx.TransactionType !== 'Payment' || g.books.has(`${XRP}>${a}`) || g.books.has(`${a}>${XRP}`))) liveBooks.add(a);
     for (const a of toks) for (const id of g.adj.get(a) || []) { const p = g.pools.get(id); if (p && as.includes(g.other(p, a))) liveWant.add(id); }
     stat('liveSeen');
     const cur = ev.ledger_current_index || ledger + 1;
@@ -444,15 +491,17 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (!i || i <= openIdx) return;
     const had = openIdx;
     openIdx = i;
-    if (had && cfg.liveSend === 'next' && liveWant.size) { clearTimeout(liveTimer); stat('liveRollover'); liveRead(i); }
+    if (had && cfg.liveSend === 'next' && (liveWant.size || liveBooks.size)) { clearTimeout(liveTimer); stat('liveRollover'); liveRead(i); }
   }
   async function liveRead(cur) {
-    if (stopped || !liveWant.size) return;
+    if (stopped || (!liveWant.size && !liveBooks.size)) return;
     if (liveBudget.idx !== cur) liveBudget = { idx: cur, n: 0 };
     const ids = [...liveWant].filter((id) => g.pools.get(id)?.ready).slice(0, Math.max(0, cfg.liveMaxPerLedger - liveBudget.n));
     liveWant.clear();
-    if (!ids.length) { stat('liveSkippedBudget'); return; }
-    liveBudget.n += ids.length;
+    const bt = [...liveBooks].slice(0, Math.max(0, Math.floor((cfg.liveMaxPerLedger - liveBudget.n - ids.length) / 2)));
+    liveBooks.clear();
+    if (!ids.length && !bt.length) { stat('liveSkippedBudget'); return; }
+    liveBudget.n += ids.length + 2 * bt.length;
     const t0 = now();
     const ch = new Set();
     let idx = cur;
@@ -468,7 +517,9 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
         if (Math.abs(ra - p.ra) > 1e-12 || Math.abs(rb - p.rb) > 1e-12) { g.upsert({ id, ra, rb, fee: (am.trading_fee || 0) / 1e5 }); ch.add(id); }
         fresh.set(id, { ra, rb, idx: r.ledger_current_index || cur });
       } catch { stat('liveReadFailed'); }
-    }));
+    }).concat(bt.map(async (t) => {
+      try { if (await readBooks(t, 'current')) { ch.add(g.xrpPool.get(t)); stat('liveBookChanged'); } } catch { stat('liveReadFailed'); }
+    })));
     S.stats.liveReadMs = now() - t0;
     stat('liveReads', ids.length);
     if (!ch.size) return;
@@ -523,14 +574,17 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       if (net < cfg.minProfit) continue;
       const assets = c.hops.slice(0, -1).map((h) => h.to);
       const held = assets.findIndex((a) => lines.has(a));
-      opps.push({ ...c, x, profit, net, assets, held });
+      // does an offer make it pay? (same loop through the AMMs alone earns less)
+      const book = !!(g.books.size && cycleOut(g, c.hops, x) - cycleOut(g, c.hops, x, false) > 1e-9);
+      opps.push({ ...c, x, profit, net, assets, held, book });
     }
     S.stats.lastSearchMs = now() - t0;
     if (!opps.length) return;
     opps.sort((a, b) => b.net - a.net);
     stat('opportunities', opps.length);
+    if (opps.some((o) => o.book)) stat('bookOpps');
     for (const o of opps.slice(0, 5)) {
-      append('opps', { t: now(), ledger, live: ctx.live, route: ['XRP', ...o.assets.map(name), 'XRP'].join('>'), hops: o.hops.length, x: +o.x.toFixed(4), profit: +o.profit.toFixed(6), net: +o.net.toFixed(6), executable: o.held >= 0, room: +room.toFixed(3) });
+      append('opps', { t: now(), ledger, live: ctx.live, route: ['XRP', ...o.assets.map(name), 'XRP'].join('>'), hops: o.hops.length, x: +o.x.toFixed(4), profit: +o.profit.toFixed(6), net: +o.net.toFixed(6), executable: o.held >= 0, room: +room.toFixed(3), book: o.book });
       for (const a of o.assets) S.hot[a] = (S.hot[a] || 0) + o.net; // tokens worth a trust line
     }
     const usable = opps.filter((o) => !blocked(o));
@@ -583,7 +637,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     const T = o.assets[i];
     const first = o.hops.slice(0, i + 1);
     const second = o.hops.slice(i + 1);
-    const outExp = cycleOut(g, second, cycleOut(g, first, o.x));
+    const outExp = cycleOut(g, o.hops, o.x); // both legs in one go: a pool used twice sees its own first leg
     const feeXrp = feeDrops / DROPS;
     const minBack = o.x + feeXrp + cfg.lockProfit;
     if (outExp < minBack) return null;
@@ -710,6 +764,8 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       flights.delete(f.hash);
       done++;
       const applied = f.inner > 0;
+      // our batch took offers: forget those books until they are read again (no trading on gone offers)
+      if (applied && f.o.book) for (const h of f.o.hops) { const t = h.from === XRP ? h.to : h.to === XRP ? h.from : null; if (t) { g.setBook(XRP, t, []); g.setBook(t, XRP, []); want('book:' + t, true); } }
       if (f.tk) {
         for (const t of f.tk) busyTickets.delete(t);
         if (!applied) for (const t of f.outer ? f.tk.slice(1) : f.tk) tickets.add(t); // unused tickets come back
@@ -746,7 +802,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       else if (!applied) failed(f.o, 'expired');
       if (applied) S.stats.profit = (S.stats.profit || 0) + pnl;
       S.stats.fees = (S.stats.fees || 0) + feeXrp;
-      const rec = { t: now(), route: f.route, hops: f.o.hops.length, x: +f.o.x.toFixed(4), expected: +f.o.net.toFixed(6), pnl: +pnl.toFixed(6), applied, result: f.outer || 'expired', ledgers: ledger - f.sentLedger, held: name(f.o.assets[f.o.held]), ticket: !!f.tk, mode: f.mode, p: f.o.p, why, by, live: f.live, late: why === 'beaten' && late, landedAfter: f.vLedger ? f.vLedger - f.sentLedger : null };
+      const rec = { t: now(), route: f.route, hops: f.o.hops.length, x: +f.o.x.toFixed(4), expected: +f.o.net.toFixed(6), pnl: +pnl.toFixed(6), applied, result: f.outer || 'expired', ledgers: ledger - f.sentLedger, held: name(f.o.assets[f.o.held]), ticket: !!f.tk, mode: f.mode, p: f.o.p, why, by, live: f.live, book: !!f.o.book, late: why === 'beaten' && late, landedAfter: f.vLedger ? f.vLedger - f.sentLedger : null };
       S.trades.unshift(rec);
       append('trades', rec);
       if (applied) say(`✅ ${f.route}: ${pnl >= 0 ? '+' : ''}${pnl.toFixed(6)} XRP (size ${f.o.x.toFixed(2)}, expected +${f.o.net.toFixed(6)})`);
@@ -992,7 +1048,8 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     timers.push(setInterval(() => uni.snapshot(), 300000));
     timers.push(setInterval(() => refocus(), 120000));
     timers.push(setInterval(() => refreshLines().catch(() => {}), 600000));
-    setTimeout(() => { uni.snapshot(); refocus(); }, 20000);
+    timers.push(setInterval(refreshBooks, 60000));
+    setTimeout(() => { uni.snapshot(); refocus(); refreshBooks(); }, 20000);
     timers.push(setInterval(() => { save(); savePools(); }, 600000));
     say(`🤖 Arb bot running${cfg.dryRun ? ' (DRY RUN)' : ''} – wallet ${me}, ${acct.balance.toFixed(2)} XRP, ${lines.size} trust lines`);
   }
@@ -1021,6 +1078,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       watching: [...cfg.watch.values()], inFlight: [...flights.values()].map((f) => f.route), activated: activated !== false,
       parallel: useTickets() ? cfg.parallel : 1, tickets: { free: tickets.size, busy: busyTickets.size, target: useTickets() ? ticketTarget() : 0 },
       learn: { target: cfg.targetWin, exploreDay: cfg.exploreDay, exploredToday: S.dayExplore || 0, classes: learn.table(), why: learn.why(), worstRoutes: learn.worst('r:').map((r) => ({ ...r, key: routeName(r.key) })), worstTokens: learn.worst('t:').map((r) => ({ ...r, key: name(r.key) })), worstPools: learn.worst('p:').map((r) => ({ ...r, key: poolName(r.key) })) },
+      books: { on: cfg.books, tokens: bookTokens().filter((t) => g.books.has(`${XRP}>${t}`) || g.books.has(`${t}>${XRP}`)).length, offers: [...g.books.values()].reduce((a, b) => a + b.length, 0) },
       sizes: { min: cfg.minSize, max: cfg.maxSize }, minProfit: cfg.minProfit, topN: cfg.topN, focusOnly: cfg.focusOnly,
     };
   }
@@ -1032,5 +1090,5 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     return out;
   };
 
-  return { start, stop, resubscribe, status, onTransaction, onLedgerDone, readJsonl, graph: g, say, _manageLines: manageLines, _ensureTickets: ensureTickets, _loadWallet: loadWallet, _refocus: refocus, _uni: uni, _state: () => S, _lines: lines, _acct: () => acct };
+  return { start, stop, resubscribe, status, onTransaction, onLedgerDone, readJsonl, graph: g, say, _manageLines: manageLines, _ensureTickets: ensureTickets, _loadWallet: loadWallet, _refocus: refocus, _refreshBooks: refreshBooks, _uni: uni, _state: () => S, _lines: lines, _acct: () => acct };
 }

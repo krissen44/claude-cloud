@@ -1,5 +1,8 @@
 // Arbitrage engine (pure, no I/O): a graph of AMM pools kept exact from ledger metadata, cycle
 // search XRP → … → XRP through the pools that just moved, and the best input size per cycle.
+// Order books (DEX offers) of a pair are merged with its AMM like the ledger's payment engine
+// does: each bit of input goes to whichever is better – the AMM at its current price or the best
+// offer – so a cheap resting offer is bought first and the AMM takes the rest.
 //
 // Asset key: 'XRP' or '<currency>.<issuer>'. A pool joins two assets; reserves are what the AMM
 // account holds. Swap math = XRPL AMM constant product with the trading fee taken from the input.
@@ -61,7 +64,18 @@ export function createGraph() {
   // pool depth in XRP (both sides valued)
   const depth = (p) => (p.a === XRP || p.b === XRP ? 2 * xrpSide(p) : inXrp(p.a, p.ra) + inXrp(p.b, p.rb));
 
-  return { pools, adj, xrpPool, upsert, remove, resOf, other, xrpSide, inXrp, depth };
+  // order books: "from>to" → offers best first; a taker pays `in` of `from` and gets `out` of `to`
+  const books = new Map();
+  function setBook(from, to, offers) {
+    const list = (offers || []).filter((o) => o.in > 0 && o.out > 0).map((o) => ({ ...o, q: o.out / o.in })).sort((a, b) => b.q - a.q);
+    const k = `${from}>${to}`;
+    const before = (books.get(k) || []).map((o) => `${o.in}:${o.out}`).join(',');
+    if (list.length) books.set(k, list); else books.delete(k);
+    return before !== list.map((o) => `${o.in}:${o.out}`).join(','); // changed?
+  }
+  const bestQ = (from, to) => books.get(`${from}>${to}`)?.[0]?.q || 0;
+
+  return { pools, adj, xrpPool, upsert, remove, resOf, other, xrpSide, inXrp, depth, books, setBook, bestQ };
 }
 
 // ---------- reading pool balances from transaction metadata ----------
@@ -118,23 +132,55 @@ export function applyMeta(g, meta, onNewPool) {
   return changed;
 }
 
+// ---------- one hop: AMM + order book ----------
+// st = what the hops before already did (pool reserves, offers taken), so a pool or book used twice
+// in one loop sees its own earlier effect. books=false → AMM only.
+export const newState = () => ({ r: new Map(), u: new Map() });
+export function hopOut(g, h, x, st, books = true) {
+  const p = g.pools.get(h.pool);
+  let s = st.r.get(p.id);
+  if (!s) { s = { ra: p.ra, rb: p.rb }; st.r.set(p.id, s); }
+  const fi = p.a === h.from ? 'ra' : 'rb', fo = fi === 'ra' ? 'rb' : 'ra';
+  const amm = (dx) => { const d = swapOut(dx, s[fi], s[fo], p.fee); s[fi] += dx; s[fo] -= d; return d; };
+  const bk = `${h.from}>${h.to}`;
+  const book = books ? g.books?.get(bk) : null;
+  if (!book?.length) return amm(x);
+  let u = st.u.get(bk);
+  if (!u) { u = { i: 0, left: book[0].in }; st.u.set(bk, u); }
+  const k = 1 - p.fee;
+  let rest = x, out = 0;
+  while (rest > 1e-12) {
+    while (u.i < book.length && u.left <= 1e-12) { u.i++; u.left = book[u.i]?.in || 0; }
+    const o = book[u.i];
+    if (!o) { out += amm(rest); break; }
+    // AMM better than this offer: AMM until its price has come down to the offer's
+    if ((s[fo] * k) / s[fi] > o.q) {
+      const dx = Math.min(rest, Math.max(0, (Math.sqrt((s[fo] * s[fi] * k) / o.q) - s[fi]) / k));
+      if (dx > 0) { out += amm(dx); rest -= dx; }
+      if (rest <= 1e-12) break;
+    }
+    const take = Math.min(rest, u.left);
+    out += take * o.q; rest -= take; u.left -= take;
+  }
+  return out;
+}
+// marginal rate of a hop at size 0: the better of AMM and best offer
+export function hopRate(g, h) {
+  const p = g.pools.get(h.pool);
+  return Math.max((g.resOf(p, h.to) / g.resOf(p, h.from)) * (1 - p.fee), g.bestQ ? g.bestQ(h.from, h.to) : 0);
+}
+
 // ---------- cycles ----------
 // A cycle = list of hops {pool, from, to}, starting and ending at XRP.
-export function cycleOut(g, hops, x) {
+export function cycleOut(g, hops, x, books = true, st = newState()) {
   let amt = x;
-  for (const h of hops) {
-    const p = g.pools.get(h.pool);
-    amt = swapOut(amt, g.resOf(p, h.from), g.resOf(p, h.to), p.fee);
-  }
+  for (const h of hops) amt = hopOut(g, h, amt, st, books);
   return amt;
 }
 // product of marginal rates – > 1 means the loop pays at very small size
 export function cycleRate(g, hops) {
   let r = 1;
-  for (const h of hops) {
-    const p = g.pools.get(h.pool);
-    r *= (g.resOf(p, h.to) / g.resOf(p, h.from)) * (1 - p.fee);
-  }
+  for (const h of hops) r *= hopRate(g, h);
   return r;
 }
 // best input in [lo, hi] (profit is concave in x for constant-product chains)
@@ -181,6 +227,16 @@ export function findCycles(g, changed, { maxHops = 4, minDepthXrp = 0, minRate =
   for (const id of changed) {
     const p = g.pools.get(id);
     if (!ok(p)) continue;
+    // one pair, two ways: buy from an offer, sell into the AMM (or the other way round)
+    if ((p.a === XRP || p.b === XRP) && g.books?.size) {
+      const t = p.a === XRP ? p.b : p.a;
+      if (g.books.has(`${XRP}>${t}`) || g.books.has(`${t}>${XRP}`)) {
+        const hops = [{ pool: id, from: XRP, to: t }, { pool: id, from: t, to: XRP }];
+        const rate = cycleRate(g, hops);
+        const key = `${id}:${t}>${id}:${XRP}`;
+        if (rate > minRate) found.set(key, { key, hops, rate, book: true });
+      }
+    }
     for (const [u, v] of [[p.a, p.b], [p.b, p.a]]) {
       const lefts = u === XRP ? [[]] : pathsTo(g, u, maxHops - 1, ok);
       const rights = v === XRP ? [[]] : pathsFrom(g, v, maxHops - 1, ok);
