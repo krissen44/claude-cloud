@@ -94,7 +94,8 @@ export function readArbConfig(env = process.env) {
     minPoolXrp: num('ARB_MIN_POOL_XRP', 20), // pool depth (both sides, in XRP)
     slip: num('ARB_SLIP', 0.15), // % under the expected amount for the first payment
     feeDrops: num('ARB_FEE_DROPS', 50), // minimum fee per batch
-    maxFeeDrops: num('ARB_MAX_FEE_DROPS', 20000), // never pay more than this per batch; a loop must still earn after the fee
+    maxFeeDrops: num('ARB_MAX_FEE_DROPS', 200000), // never more than this per batch …
+    feeShare: num('ARB_FEE_SHARE', 50) / 100, // … nor more than this share of what the loop is expected to earn (chance × profit)
     maxFeesDay: num('ARB_MAX_FEES_DAY', 2), // XRP of fees per day, then pause until tomorrow
     maxLines: num('ARB_MAX_LINES', 50),
     // focus: only trade the top tokens by XRP liquidity + hyped ones + the rivals' + your own list
@@ -175,6 +176,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       feeLvl = { base: Number(r.drops?.base_fee || 10), open: Number(r.levels?.open_ledger_level || 256), ref: Number(r.levels?.reference_level || 256), at: now() };
     } catch {}
   }
+  const feeCap = (o) => Math.min(cfg.maxFeeDrops, Math.max(cfg.feeDrops, Math.floor(cfg.feeShare * (o.p ?? 0.25) * o.profit * DROPS)));
   const batchFee = () => Math.ceil(Math.max(cfg.feeDrops, feeLvl.base * 4 * (feeLvl.open / feeLvl.ref) * 1.25));
   // Sequence numbers: a trust line or a refused batch makes our cached sequence stale.
   let seqDirty = true;
@@ -611,9 +613,15 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
   async function execute(o, feeDrops = cfg.feeDrops, ctx = {}) {
     if (!acct.seq) return false; // wallet not activated yet
     // a big loop may pay more to be sure to get in (up to 10 % of what it should earn)
-    const paid = feeDrops;
-    if (!ctx.feeRetry) feeDrops = Math.max(feeDrops, Math.min(cfg.maxFeeDrops, Math.floor(o.net * DROPS * 0.1)));
-    if (feeDrops !== paid) o.net -= (feeDrops - paid) / DROPS; // expected profit after the higher fee
+    // The fee the open ledger asks for right now (busy moments: 20–30k drops, bwif pays that for big
+    // loops), at most ARB_FEE_SHARE of what the loop should earn on average (chance × profit).
+    const cap = feeCap(o);
+    if (!ctx.feeTry) {
+      if (now() - feeLvl.at > 1000) await updateFee();
+      feeDrops = Math.max(feeDrops, batchFee(), Math.min(cap, Math.floor(o.profit * DROPS * 0.1)));
+      if (feeDrops > cap) { stat('skippedFeeHigh'); return false; }
+    }
+    o.net = o.profit - feeDrops / DROPS; // expected profit after this fee
     let tk = null;
     if (useTickets()) {
       tk = [...tickets].sort((x, y) => x - y).slice(0, 3);
@@ -640,10 +648,11 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
         flights.delete(f.hash);
         release(tk);
         // fee too low for the open ledger right now: read the fee again and try once more
-        if (/CAN_NOT_QUEUE|INSUF_FEE/.test(r.engine_result) && !ctx.feeRetry) {
+        if (/CAN_NOT_QUEUE|INSUF_FEE/.test(r.engine_result) && (ctx.feeTry || 0) < 2) {
           await updateFee();
-          const nf = Math.min(cfg.maxFeeDrops, Math.ceil(Math.max(batchFee(), feeDrops) * 1.5));
-          if (nf > feeDrops && o.profit - nf / DROPS >= cfg.minProfit) { stat('feeRetry'); o.net = o.profit - nf / DROPS; return execute(o, nf, { ...ctx, feeRetry: true }); }
+          const nf = Math.min(cap, Math.max(Math.ceil(batchFee() * 1.5), feeDrops * 2));
+          if (nf > feeDrops && o.profit - nf / DROPS >= cfg.minProfit) { stat('feeRetry'); return execute(o, nf, { ...ctx, feeTry: (ctx.feeTry || 0) + 1 }); }
+          stat('feeTooHighForLoop');
         }
         if (tk && /TICKET|PAST_SEQ/.test(r.engine_result)) syncTickets().catch(() => {});
         if (!tk) seqDirty = true;

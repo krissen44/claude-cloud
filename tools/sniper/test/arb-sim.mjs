@@ -117,6 +117,7 @@ class Ledger {
       if (this.pending?.some((p) => all.some((t) => p.includes(t.TicketSequence)))) { this.ticketErrors++; return { engine_result: 'tefNO_TICKET' }; }
       (this.pending ||= []).push(all.map((t) => t.TicketSequence));
     } else if (tx.Sequence !== this.acct.seq) { this.pastSeq = (this.pastSeq || 0) + 1; return { engine_result: 'tefPAST_SEQ' }; }
+    if (this.minFee && Number(tx.Fee) < this.minFee) { if (this.pending) this.pending.pop(); return { engine_result: 'telCAN_NOT_QUEUE' }; }
     if (this.refuseNext) { this.refuseNext--; if (this.pending) this.pending.pop(); return { engine_result: 'telCAN_NOT_QUEUE' }; }
     if (this.beforeApply) this.beforeApply(tx);
     // apply in the next ledger
@@ -769,6 +770,30 @@ await test('fee too low for a busy open ledger → fee read again, sent once mor
   assert.equal(bot.status().stats.feeRetry, 1);
   L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
   assert.ok(bot.status().stats.wins >= 1, JSON.stringify(bot.status().stats));
+  bot.stop();
+});
+
+await test('fee spike: a big loop pays what the open ledger asks (above the old 20k cap) and gets in; a loop that would not earn it is not sent', async () => {
+  const { L, bot, cfg } = setup({ ARB_LIVE: '0' });
+  await bot.start();
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(300);
+  await bot._manageLines();
+  L.openLevel = 256 * 750; // ledger full: 10 × 4 × 750 × 1.25 = 37,500 drops for a batch
+  L.minFee = 37500;
+  const sent0 = L.sent.length;
+  L.trade('rPoolAB', B, 1e6); await wait(500);
+  const now = L.sent.slice(sent0);
+  assert.ok(now.length >= 1 && Number(now.at(-1).Fee) >= 37500, 'paid the spike fee: ' + now.map((t) => t.Fee));
+  L.trade('rPoolXA', 'XRP', 0.001); await wait(300);
+  assert.ok(bot.status().stats.wins >= 1, JSON.stringify(bot.status().stats));
+  // the same spike, but the loop may only spend 1 % of its expected gain → not sent at all
+  cfg.feeShare = 0.01;
+  const sent1 = L.sent.length;
+  const skipped0 = bot.status().stats.skippedFeeHigh || 0;
+  L.trade('rPoolAB', B, 1e6); await wait(400);
+  assert.equal(L.sent.length, sent1, 'not sent');
+  assert.ok((bot.status().stats.skippedFeeHigh || 0) > skipped0);
   bot.stop();
 });
 

@@ -67,7 +67,8 @@ export const ARB_GROUPS = [
   ]],
   ['⛽ Fees & lines', [
     ['ARB_FEE_DROPS', 'Min. fee per batch (drops)', 'num', '50', 'raised automatically when the ledger is busy; 1 XRP = 1,000,000 drops', 40, 100000],
-    ['ARB_MAX_FEE_DROPS', 'Max. fee per batch (drops)', 'num', '20000', 'busy ledgers cost more – a loop is only sent if it still earns after the fee', 40, 1000000],
+    ['ARB_MAX_FEE_DROPS', 'Max. fee per batch (drops)', 'num', '200000', 'busy ledgers cost 20–30k drops – the fee also never exceeds the share below', 40, 10000000],
+    ['ARB_FEE_SHARE', 'Max. fee as share of the expected gain (%)', 'num', '50', 'expected gain = chance × profit; a big loop may pay more to get in', 1, 100],
     ['ARB_MAX_FEES_DAY', 'Max. fees per day (XRP)', 'num', '2', 'then it pauses until tomorrow', 0, 1000],
     ['ARB_MAX_LINES', 'Max. trust lines', 'num', '50', 'each locks 0.2 XRP', 0, 500],
   ]],
