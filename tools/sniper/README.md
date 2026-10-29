@@ -122,11 +122,21 @@ from the ledger (also launches from before the bot ran) and books its traders th
 CROSS, UBER, XRB, FRIZZY (29 Oct): `rB79X9AE…` was early in 3 of those 4 big launches (+926 XRP), `rP9CDJq4…`,
 `rKs7NssX…` and others in 2.
 
+## Speed: big launches first
+
+All checks of a launch run at once (issuer, pool, supply, the creator's funder) instead of one after the other;
+socials don't wait (see below). A launch with `BIG_LAUNCH_XRP` (300) or more in its pool is bought with
+`BIG_BUY_XRP` and skips the queue of other buys. The transaction queue only waits until a transaction is in the
+open ledger (its successor's sequence comes from there) – waiting for validation happens outside the queue, so a
+buy never sits ~4 s behind a sale. From a launch seen in the open ledger to our buy: a few round trips (well
+under a second on a VPS near the servers); `checkMs` / `delayS` in the data show it per launch.
+
 ## Socials, rug memory, bundles
 
-- **Socials** (`SOCIALS_REQUIRED` = `x`): the issuer's domain (FirstLedger: `<id>.toml.firstledger.net`) serves
+- **Socials** (`SOCIALS_REQUIRED`, default `off` = never hold up a buy; read in the background and shown on
+  the card; `x` / `any` = required): the issuer's domain (FirstLedger: `<id>.toml.firstledger.net`) serves
   `/.well-known/xrp-ledger.toml`; every link / field in it that looks like X/Twitter, Telegram, Discord or a
-  website is read. Without an X link the launch is checked again for `SOCIALS_WAIT_S` (60 s), then skipped.
+  website is read. If required and there is no X link, the launch is checked again for `SOCIALS_WAIT_S` (60 s), then skipped.
   `any` = X, Telegram, Discord or a website is enough; `off`. If the file can't be fetched at all, socials decide
   nothing. The links are on the position card and in `launches.csv` (`socials`, `x`, `telegram`, `website`).
 - **Rug memory** (`SKIP_RUGGERS`): a launch whose pool is deleted, loses half its XRP to a withdraw, or falls

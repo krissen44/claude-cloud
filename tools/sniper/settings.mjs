@@ -11,6 +11,8 @@ export const GROUPS = [
   ['💰 Money', [
     ['PAUSE_BUYS', 'Pause buying', 'bool', '0', 'No new buys; open positions are still sold by the rules'],
     ['BUY_XRP', 'Stake per launch (XRP)', 'num', '1', '', 0.1, 1000],
+    ['BIG_LAUNCH_XRP', 'Big launch from (XRP in the pool)', 'num', '300', 'bought first, skipping the queue of other buys', 0, 1e9],
+    ['BIG_BUY_XRP', 'Stake for a big launch (XRP)', 'num', '1', 'more supply where it counts', 0.1, 100000],
     ['BUY_SUPPLY_PCT', 'Or buy this % of the supply', 'num', '0', '0 = off (stake above). e.g. 1 = 1 % of all tokens', 0, 50],
     ['BUY_MAX_XRP', 'Max. XRP for the supply buy', 'num', '10', 'a bigger pool costs more for the same %', 0.1, 100000],
     ['FAST_LAUNCH', 'First buyers: buy from the open ledger', 'bool', '1', 'sees a launch ≈ 4–6 s before it is validated'],
@@ -28,7 +30,7 @@ export const GROUPS = [
     ['PROTECT_MAX_X', 'After a protection: skip above x × launch price', 'num', '12', 'early buyers already pumped it; 0 = off', 0, 100000],
     ['MIN_POOL_SUPPLY_PCT', 'Min. share of all tokens in the pool (%)', 'num', '20', '', 0, 100],
     ['SUPPLY_WAIT_S', 'Wait for the rest of the supply (s)', 'num', '60', 'FirstLedger creates the pool with ~1 % and deposits the rest seconds later – bought the moment it arrives', 0, 3600],
-    ['SOCIALS_REQUIRED', 'Socials needed', 'text', 'x', '“x” = an X/Twitter link in the token file, “any” = X, Telegram, Discord or a website, “off”'],
+    ['SOCIALS_REQUIRED', 'Socials needed to buy', 'text', 'off', '“off” = never hold up a buy (read in the background, shown on the card); “x” = needs an X/Twitter link; “any” = X, Telegram, Discord or a website'],
     ['SOCIALS_WAIT_S', 'Wait for socials (s)', 'num', '60', '', 0, 3600],
     ['SKIP_RUGGERS', 'Skip creators who rugged before', 'bool', '1', 'also new wallets funded by the same wallet'],
     ['BUNDLE_EXIT', 'Sell when the bundle sells', 'bool', '1', 'the dev and its wallets (same address start / got the token from the dev): we sell at once, also from the open ledger'],

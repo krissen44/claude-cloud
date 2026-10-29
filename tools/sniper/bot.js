@@ -42,6 +42,10 @@ export function readConfig(env = process.env) {
     buyXrp: num('BUY_XRP', 1),
     // size by share of the supply instead: buy this percent of all tokens (0 = off → BUY_XRP), at most BUY_MAX_XRP
     buySupplyPct: num('BUY_SUPPLY_PCT', 0),
+    // big launches (this much XRP in the pool): bought first – they skip the queue of other buys –
+    // with their own stake
+    bigLaunchXrp: num('BIG_LAUNCH_XRP', 300),
+    bigBuyXrp: num('BIG_BUY_XRP', num('BUY_XRP', 1)),
     buyMaxXrp: num('BUY_MAX_XRP', 10),
     // first buyers: see a launch while it enters the open ledger (≈ 4–6 s before it is validated),
     // check it on that ledger and buy at once – one ledger earlier than before
@@ -86,7 +90,8 @@ export function readConfig(env = process.env) {
     supplyWaitS: num('SUPPLY_WAIT_S', 60),
     // socials from the issuer's xrp-ledger.toml: 'x' = needs an X/Twitter link, 'any' = X, Telegram,
     // Discord or a website, 'off'. Waited for SOCIALS_WAIT_S; a file that can't be read decides nothing
-    socials: /^(any|off)$/i.test(env.SOCIALS_REQUIRED || '') ? env.SOCIALS_REQUIRED.toLowerCase() : 'x',
+    // default 'off' = socials never hold up a buy: they're read in the background and shown
+    socials: /^(x|any)$/i.test(env.SOCIALS_REQUIRED || '') ? env.SOCIALS_REQUIRED.toLowerCase() : 'off',
     socialsWaitS: num('SOCIALS_WAIT_S', 60),
     // launches by a creator – or a wallet funded by the same wallet – that rugged before are skipped
     skipRuggers: bool('SKIP_RUGGERS', true),
@@ -282,17 +287,39 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       pump();
     });
   }
+  // Sequence numbers need one transaction at a time – but only until it is in the open ledger:
+  // the next one can be signed then (its sequence comes from the open ledger). Waiting for the
+  // validation happens outside the queue, so a big launch's buy never waits ~4 s behind a sale.
   async function pump() {
     if (busy) return;
     const job = queue.shift();
     if (!job) return;
     busy = true;
-    try {
-      const r = await client.submitAndWait(job.tx, { wallet, autofill: true });
-      job.resolve(r.result);
-    } catch (e) { job.reject(e); }
+    if (typeof client.submit !== 'function') { // simple clients: one after another until validated
+      try { job.resolve((await client.submitAndWait(job.tx, { wallet, autofill: true })).result); } catch (e) { job.reject(e); }
+      busy = false;
+      return pump();
+    }
+    let sub;
+    try { sub = (await client.submit(job.tx, { wallet, autofill: true })).result; } catch (e) { busy = false; job.reject(e); return pump(); }
     busy = false;
     pump();
+    const code = sub.engine_result || '';
+    const hash = sub.tx_json?.hash || sub.hash;
+    // not applied at all (tel/tem/tef): final now
+    if (!/^(tes|tec|ter)/.test(code) || !hash) return job.resolve({ meta: { TransactionResult: code || 'not submitted' }, hash });
+    job.resolve(await validated(hash, sub.tx_json?.LastLedgerSequence));
+  }
+  async function validated(hash, last) {
+    for (let i = 0; i < 200; i++) {
+      try {
+        const r = await req('tx', { transaction: hash });
+        if (r.validated) return r;
+      } catch {}
+      if (last && i % 4 === 3) { try { if ((await req('ledger_current')).ledger_current_index > last + 1) return { meta: { TransactionResult: 'expired' }, hash }; } catch {} }
+      await new Promise((res) => setTimeout(res, 500));
+    }
+    return { meta: { TransactionResult: 'not validated' }, hash };
   }
   const okResult = (r) => r?.meta?.TransactionResult === 'tesSUCCESS';
 
@@ -542,9 +569,18 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     let small = '';
     let supplyPct = null;
     let supply = null;
+    const t0 = now();
     // a launch seen in the open ledger isn't validated yet: check it on the open ledger
     const li = l.fast && !l.validated ? 'current' : 'validated';
-    const info = (await req('account_info', { account: l.issuer, ledger_index: li })).account_data;
+    // everything at once – a big launch must be bought within seconds
+    const [infoR, p, gb, funder] = await Promise.all([
+      req('account_info', { account: l.issuer, ledger_index: li }),
+      pool(l.currency, l.issuer, li),
+      cfg.minPoolSupplyPct > 0 ? req('gateway_balances', { account: l.issuer, ledger_index: li }).catch(() => null) : null,
+      cfg.skipRuggers && l.creator && l.funder === undefined ? funderOf(l.creator) : l.funder,
+    ]);
+    const info = infoR.account_data;
+    if (l.funder === undefined && funder !== undefined) { l.funder = funder; rec.setFunder?.(l.k, funder); }
     const flags = info.Flags || 0;
     const blackholed = (flags & F.disableMaster) && (!info.RegularKey || BLACKHOLES.has(info.RegularKey));
     // Launch protections (anti-snipe phases) – freeze, transfer fee, authorized trust lines – can
@@ -557,31 +593,36 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (flags & F.requireAuth) soft('trust lines need the issuer\'s approval');
     const fee = info.TransferRate ? (info.TransferRate / 1e9 - 1) * 100 : 0;
     if (fee > cfg.maxTransferFee + 1e-9) soft(`transfer fee ${fee.toFixed(2)}%`);
-    const p = await pool(l.currency, l.issuer, li);
     if (!p) reasons.push('pool gone');
     else {
       if (p.xrp < (l.minPool ?? cfg.minPoolXrp)) small = `pool only ${p.xrp.toFixed(1)} XRP`;
       if (cfg.maxPoolXrp && p.xrp > cfg.maxPoolXrp) reasons.push(`pool ${p.xrp.toFixed(0)} XRP > max`);
       if (p.fee > cfg.maxAmmFee) reasons.push(`AMM fee ${p.fee}%`);
-      if (cfg.minPoolSupplyPct > 0) {
-        try {
-          const g = await req('gateway_balances', { account: l.issuer, ledger_index: li });
-          supply = Number(g.obligations?.[l.currency] || 0);
-          const pct = supply > 0 ? (p.tok / supply) * 100 : 100;
-          supplyPct = +pct.toFixed(1);
-          if (pct < cfg.minPoolSupplyPct) reasons.push(`only ${pct.toFixed(0)}% of supply in the pool`);
-        } catch {}
+      if (gb) {
+        supply = Number(gb.obligations?.[l.currency] || 0);
+        const pct = supply > 0 ? (p.tok / supply) * 100 : 100;
+        supplyPct = +pct.toFixed(1);
+        if (pct < cfg.minPoolSupplyPct) reasons.push(`only ${pct.toFixed(0)}% of supply in the pool`);
       }
+      l.big = p.xrp >= cfg.bigLaunchXrp;
     }
     const domain = info.Domain ? Buffer.from(info.Domain, 'hex').toString('utf8').slice(0, 80) : '';
-    // socials: X / Telegram / … from the issuer's xrp-ledger.toml
+    // socials: X / Telegram / … from the issuer's xrp-ledger.toml. They only hold up a buy if
+    // SOCIALS_REQUIRED says so – otherwise they are read in the background and shown.
     if (cfg.socials !== 'off') {
       l.socials = domain ? await socials.get(domain) : { found: false };
       if (l.socials && !hasSocials(l.socials, cfg.socials)) reasons.push(`no socials (${cfg.socials === 'x' ? 'no X/Twitter' : 'none'}${l.socials.found ? '' : ', no token file'})`);
+    } else if (!l.socialsAsked) {
+      l.socialsAsked = true;
+      (domain ? socials.get(domain) : Promise.resolve({ found: false })).then((so) => {
+        l.socials = so;
+        const pos = S.positions[l.k];
+        if (pos && so) pos.socials = { x: so.x, telegram: so.telegram, website: so.website, discord: so.discord };
+        rec.addChecks?.(l.k, { socials: socialsText(so), x: so?.x || '', telegram: so?.telegram || '', website: so?.website || '' });
+      }).catch(() => {});
     }
     // the creator, the wallet that funded it, or the issuer rugged before?
     if (cfg.skipRuggers && l.creator) {
-      if (l.funder === undefined) { l.funder = await funderOf(l.creator); rec.setFunder?.(l.k, l.funder); }
       const hit = [l.creator, l.funder, l.issuer].map((a) => ({ a, d: rec.devInfo?.(a) })).find((x) => x.d?.rugs > 0);
       if (hit) reasons.push(`dev rugged before (${hit.d.rugs}× – ${hit.a === l.creator ? 'this creator' : hit.a === l.funder ? 'funded by a rugger' : 'this issuer'}: ${hit.d.names.slice(0, 3).join(' ')})`);
     }
@@ -590,9 +631,10 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       blackholed: !!blackholed, clawback: !!(flags & F.clawback), frozen: !!(flags & F.globalFreeze), requireAuth: !!(flags & F.requireAuth),
       transferFee: +fee.toFixed(3), ammFee: p?.fee ?? null, poolAtCheck: p ? +p.xrp.toFixed(2) : null, supplyPct,
       domain, socials: socialsText(l.socials), x: l.socials?.x || '', telegram: l.socials?.telegram || '', website: l.socials?.website || '',
-      funder: l.funder || '', checkedAfterS: Math.round((now() - l.at) / 1000),
+      funder: l.funder || '', checkedAfterS: Math.round((now() - l.at) / 1000), checkMs: now() - t0,
     });
     if (supply > 0) l.supply = supply;
+    if (p) { l.lastPool = p; l.lastPoolAt = now(); }
     return { blackholed: !!blackholed, reasons, wait, small, pool: p, supply };
   }
 
@@ -694,6 +736,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   // Buys run one after another so limits and the balance floor see the previous buy.
   let buyChain = Promise.resolve();
   function buy(l, p) {
+    if (l.big) { stat('bigLaunchBuys'); return buyNow(l, p); } // big launch: no waiting behind other buys
     const run = buyChain.then(() => buyNow(l, p));
     buyChain = run.catch(() => {});
     return run;
@@ -704,9 +747,16 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (S.day !== day()) { S.day = day(); S.buysToday = 0; }
     const open = Object.values(S.positions).filter((x) => !isMoonbag(x)).length; // moonbags don't count
     if (open >= cfg.maxOpen && !l.byHand) return stat(0, 'max open trades'), rec.decision(l.k, 'skipped', 'max open trades'), say(`⏸ ${l.name}: ${open} positions open (max ${cfg.maxOpen})`);
-    let stake = l.buyXrp ?? cfg.buyXrp;
+    let stake = l.buyXrp ?? (l.big ? cfg.bigBuyXrp : cfg.buyXrp);
     if (S.buysToday >= cfg.maxBuysPerDay && !l.byHand) return stat(0, 'daily buy limit'), rec.decision(l.k, 'skipped', 'daily buy limit'), say(`⏸ ${l.name}: daily buy limit reached`);
-    p = (await pool(l.currency, l.issuer, l.fast && !l.validated ? 'current' : 'validated')) || p; // fresh price, the queue may have waited
+    // fresh price (the queue may have waited) and the free balance – both at once; a pool read
+    // less than 1.5 s ago by the checks is fresh enough
+    const freshPool = l.lastPool && now() - l.lastPoolAt < 1500 && p === l.lastPool;
+    const [pNow, freeNow] = await Promise.all([
+      freshPool ? p : pool(l.currency, l.issuer, l.fast && !l.validated ? 'current' : 'validated'),
+      spendable(),
+    ]);
+    p = pNow || p;
     if (!p) return stat(0, 'pool gone'), rec.decision(l.k, 'skipped', 'pool gone'), say(`⛔ ${l.name}: pool gone`);
     // size by share of the supply: XRP needed for BUY_SUPPLY_PCT % of all tokens, capped at BUY_MAX_XRP
     if (cfg.buySupplyPct > 0 && !l.copy && !l.byHand && l.supply > 0) {
@@ -715,7 +765,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       stake = Math.max(0.1, Math.min(need * 1.01, cfg.buyMaxXrp));
       l.sizing = need <= cfg.buyMaxXrp ? `${cfg.buySupplyPct}% of the supply` : `capped at ${cfg.buyMaxXrp} XRP (${cfg.buySupplyPct}% would cost ${need === Infinity ? 'more than the pool' : need.toFixed(1) + ' XRP'})`;
     }
-    const free = await spendable();
+    const free = freeNow;
     if (free - reserves.inc - stake < cfg.minBalanceXrp) {
       stat(0, 'balance floor');
       rec.decision(l.k, 'skipped', 'balance floor');
@@ -781,7 +831,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     S.positions[l.k] = position(l, cost, got, p);
     save();
     const buyInfo = {
-      fast: !!l.fast, sizing: l.sizing || '', supplyPct: l.supply ? +((got / l.supply) * 100).toFixed(3) : null,
+      fast: !!l.fast, big: !!l.big, sizing: l.sizing || '', supplyPct: l.supply ? +((got / l.supply) * 100).toFixed(3) : null,
       cost: +cost.toFixed(6), tokens: got, expected: expect, slipPct: +((1 - got / expect) * 100).toFixed(2),
       entryPoolXrp: +p.xrp.toFixed(2), entryPrice: cost / got, delayS: +((now() - l.at) / 1000).toFixed(1),
       ledger: r.ledger_index || null, hash: r.hash || r.tx_json?.hash || '',

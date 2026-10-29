@@ -63,6 +63,7 @@ class Sim {
       const lines = Object.entries(this.lines).filter(([k]) => !r.peer || k.endsWith('.' + r.peer)).map(([k, b]) => ({ currency: k.split('.')[0], account: k.split('.')[1], balance: String(b) }));
       return { result: { lines } };
     }
+    if (c === 'tx') { const x = this.results?.[r.transaction]; if (!x || Date.now() < x.at) throw Object.assign(new Error('txnNotFound'), { data: { error: 'txnNotFound' } }); return { result: { ...x, validated: true } }; }
     if (c === 'account_tx') return { result: { transactions: (this.history?.[r.account] || []) } };
     if (c === 'gateway_balances') {
       const obligations = {};
@@ -72,6 +73,13 @@ class Sim {
     throw new Error('unknown ' + c);
   }
 
+  // like the real client: submit returns once the tx is in the open ledger; 'tx' tells when it's validated
+  async submit(tx) {
+    const r = await this.submitAndWait(tx);
+    const hash = 'S' + (this.nSub = (this.nSub || 0) + 1);
+    (this.results ||= {})[hash] = { ...r.result, hash, at: Date.now() + (this.validateDelay?.(tx) || 0) };
+    return { result: { engine_result: r.result.meta?.TransactionResult || 'tesSUCCESS', tx_json: { hash } } };
+  }
   async submitAndWait(tx) {
     this.txs.push(tx);
     const me = this.acc[ME];
@@ -1028,7 +1036,7 @@ const launchBy = (sim, { name, issuer, creator, poolXrp = 200, poolTok = 1e9, am
 await test('socials required: a token with an X link is bought, one without is skipped after SOCIALS_WAIT_S', async () => {
   const files = { 'good.toml.firstledger.net': 'twitter = "goodtoken"', 'bare.toml.firstledger.net': 'code = "BARE"' };
   const fetchFn = async (url) => { const host = new URL(url).hostname; return files[host] != null ? { ok: true, status: 200, text: async () => files[host] } : { ok: false, status: 404 }; };
-  const { sim, bot } = customSetup({ SOCIALS_WAIT_S: '1' }, fetchFn);
+  const { sim, bot } = customSetup({ SOCIALS_REQUIRED: 'x', SOCIALS_WAIT_S: '1' }, fetchFn);
   await bot.start();
   const g = launchBy(sim, { name: 'GOODSOC', issuer: 'rGoodSoc111111111111111111111111', creator: 'rCreatorA11111111111111111111111', domain: 'good.toml.firstledger.net' });
   const n = launchBy(sim, { name: 'BARESOC', issuer: 'rBareSoc111111111111111111111111', creator: 'rCreatorB11111111111111111111111', domain: 'bare.toml.firstledger.net' });
@@ -1039,6 +1047,30 @@ await test('socials required: a token with an X link is bought, one without is s
   assert.ok(logs.join('\n').includes('Skip BARESOC: no socials (no X/Twitter)'));
   const row = bot.rec.rows().find((r) => r.name === 'GOODSOC');
   assert.equal(row.x, 'https://x.com/goodtoken');
+  bot.stop();
+});
+
+await test('big launch: bought at once – not held up by socials (read in the background) or by another buy still waiting', async () => {
+  let slowSocials = 0;
+  const fetchFn = async () => { slowSocials++; await wait(3000); return { ok: true, status: 200, text: async () => 'twitter = "bigone"' }; };
+  const { sim, bot } = customSetup({ BIG_BUY_XRP: '4' }, fetchFn);
+  await bot.start();
+  // a small launch's buy hangs in the network for 2 s
+  let first = true;
+  sim.validateDelay = (tx) => (tx.TransactionType === 'OfferCreate' && first ? ((first = false), 2000) : 0);
+  const sm = launchBy(sim, { name: 'SMALLER', issuer: 'rSmallL111111111111111111111111', creator: 'rCrSmall11111111111111111111111', poolXrp: 150, domain: 'small.toml.firstledger.net' });
+  await wait(50);
+  const t0 = Date.now();
+  const big = launchBy(sim, { name: 'BIGONE', issuer: 'rBigOne1111111111111111111111111', creator: 'rCrBig111111111111111111111111', poolXrp: 400, domain: 'big.toml.firstledger.net' });
+  for (let i = 0; i < 40 && !bot.state().positions[`${big}.rBigOne1111111111111111111111111`]; i++) await wait(25);
+  const pos = bot.state().positions[`${big}.rBigOne1111111111111111111111111`];
+  assert.ok(pos, 'big launch bought');
+  assert.ok(Date.now() - t0 < 1000, `within a second, not after the socials (3 s) or the other buy (2 s): ${Date.now() - t0} ms`);
+  assert.ok(Math.abs(pos.cost - 4) < 0.01, 'BIG_BUY_XRP stake');
+  assert.ok(!bot.state().positions[`${sm}.rSmallL111111111111111111111111`], 'the small one is still waiting');
+  await wait(3300);
+  assert.equal(bot.state().positions[`${big}.rBigOne1111111111111111111111111`].socials?.x, 'https://x.com/bigone', 'socials arrive later on the position');
+  assert.ok(bot.state().positions[`${sm}.rSmallL111111111111111111111111`], 'the small one bought too');
   bot.stop();
 });
 

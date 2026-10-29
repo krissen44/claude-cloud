@@ -65,6 +65,7 @@ async function connect() {
 const proxy = {
   request: (r) => client.request(r),
   submitAndWait: (tx, o) => client.submitAndWait(tx, o),
+  submit: (tx, o) => client.submit(tx, o),
   on: (ev, fn) => { handlers.push([ev, fn]); client.on(ev, fn); },
 };
 const handlers = [];

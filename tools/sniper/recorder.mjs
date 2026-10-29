@@ -104,7 +104,8 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
 
   // pool account learned later (a launch first seen in the open ledger has no metadata yet)
   function setAmm(k, amm) { if (amm && W[k] && !W[k].amm) { W[k].amm = amm; byAmm.set(amm, k); dirty = true; } }
-  const checks = (k, c) => { if (W[k]) { W[k].checks = c; dirty = true; } };
+  const checks = (k, c) => { if (W[k]) { W[k].checks = { ...(W[k].checks || {}), ...c }; dirty = true; } };
+  const addChecks = (k, c) => { if (W[k]) { W[k].checks = { ...(W[k].checks || {}), ...c }; dirty = true; } };
   function decision(k, result, reason = '') {
     // first decision counts – except a buy that finally works after a blocked/failed try
     if (W[k] && (!W[k].decision || (result === 'bought' && W[k].decision.result !== 'bought'))) { W[k].decision = { result, reason, at: Date.now() }; dirty = true; }
@@ -334,7 +335,7 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
   const timer = setInterval(sample, 10e3);
   const flusher = setInterval(flush, 60e3);
   return {
-    follow, setAmm, checks, decision,
+    follow, setAmm, checks, addChecks, decision,
     setFunder: (k, f) => { if (W[k] && f) { W[k].funder = f; dirty = true; } },
     devInfo: (a) => (a && DEV[a]) || null,
     devs: () => Object.entries(DEV).filter(([, d]) => d.rugs).map(([a, d]) => ({ a, ...d })).sort((x, y) => y.rugs - x.rugs || y.last - x.last), wallets: walletList, bookLaunch, booked: (k) => !!WL._booked?.[k], ignoreWallet: (a) => skipWallet.add(a), trade, tx, event, sample, flush, rows, csv, analysis,
