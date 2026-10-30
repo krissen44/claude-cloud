@@ -39,11 +39,11 @@ export const socialsText = (s) => (s ? ['x', 'telegram', 'discord', 'website'].f
 // cached lookups; null = couldn't read the file (then nothing is decided on socials)
 export function createSocials({ fetchFn = globalThis.fetch, timeoutMs = 4000, ttlMs = 60e3 } = {}) {
   const cache = new Map();
-  async function get(domain) {
+  async function get(domain, maxAgeMs = ttlMs) {
     const d = String(domain || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
     if (!d) return { ...parseSocials(''), none: true, found: false };
     const c = cache.get(d);
-    if (c && Date.now() - c.at < ttlMs) return c.v;
+    if (c && Date.now() - c.at < maxAgeMs) return c.v;
     let v = null;
     if (fetchFn) {
       try {

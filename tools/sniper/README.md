@@ -103,6 +103,18 @@ trend, liquidity, higher lows, drawdown from the high, buy vs. sell pressure, ne
   decision?). Under 50 % good calls → the score needed goes up 5; over 75 % → down 3 (55–95). The status page
   shows the score per position (📈) and the learned thresholds.
 
+## Watchlist (expected launches)
+
+`WATCH_TOKENS` (⚙️ Settings → 🎯 Watchlist), one per line: `NAME | handle | min XRP | max XRP`, default
+`NEXY | nexyonxrp | 25 | 50`. When a token of that name launches (also seen in the open ledger) the bot checks
+its token file (`xrp-ledger.toml` of the issuer's domain, read fresh every 2 s) and buys only if it names the
+handle (X or Telegram) – a same-named fake with other socials is skipped at once, one without a token file is
+waited for `WATCH_VERIFY_S` (90 s), then you get a message with `NAME.rIssuer` to buy it by hand. The hard checks
+(clawback, freeze, transfer fee, rugger, FirstLedger supply deposit, blackhole) still apply; pool size, max open
+trades and the daily limit don't. Stake: everything free between min and max (above the balance floor); below
+min it is not bought and you are told. One buy per name, then later launches with that name are normal
+launches again. The status page shows the list (⏳ waiting / ✅ bought).
+
 ## Smart wallets (find good traders and copy them)
 
 The recorder follows every launch for 24 h and now also notes every wallet that trades its pool (not the dev

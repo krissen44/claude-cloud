@@ -1124,7 +1124,7 @@ function customSetup(env, fetchFn) {
 const launchBy = (sim, { name, issuer, creator, poolXrp = 200, poolTok = 1e9, amm, domain }) => {
   const cur = sim.launch({ name, issuer, poolXrp, poolTok, silent: true });
   if (domain) sim.acc[issuer].Domain = Buffer.from(domain).toString('hex').toUpperCase();
-  sim.emit('transaction', { validated: true, ledger_index: 9000, hash: 'L' + name, tx_json: { TransactionType: 'AMMCreate', Account: creator, Amount: String(poolXrp * D6), Amount2: { currency: cur, issuer, value: String(poolTok) } }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: amm ? [{ CreatedNode: { LedgerEntryType: 'AccountRoot', NewFields: { Account: amm, AMMID: 'X', Balance: String(poolXrp * D6) } } }] : [] } });
+  sim.emit('transaction', { validated: true, ledger_index: 9000, hash: 'L' + name + issuer, tx_json: { TransactionType: 'AMMCreate', Account: creator, Amount: String(poolXrp * D6), Amount2: { currency: cur, issuer, value: String(poolTok) } }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: amm ? [{ CreatedNode: { LedgerEntryType: 'AccountRoot', NewFields: { Account: amm, AMMID: 'X', Balance: String(poolXrp * D6) } } }] : [] } });
   return cur;
 };
 
@@ -1142,6 +1142,54 @@ await test('socials required: a token with an X link is bought, one without is s
   assert.ok(logs.join('\n').includes('Skip BARESOC: no socials (no X/Twitter)'));
   const row = bot.rec.rows().find((r) => r.name === 'GOODSOC');
   assert.equal(row.x, 'https://x.com/goodtoken');
+  bot.stop();
+});
+
+await test('watchlist: NEXY – a same-named fake is skipped, the real one (its token file names @nexyonxrp) is bought with 25–50 XRP at once; later NEXYs are ignored', async () => {
+  const files = {
+    'fake.toml.firstledger.net': 'twitter = "nexy_real_official"',
+    'real.toml.firstledger.net': '[[TOKENS]]\ncode = "NEXY"\nx = "https://x.com/nexyonxrp"\ntelegram = "https://t.me/nexyonxrp"',
+  };
+  const fetchFn = async (url) => { const host = new URL(url).hostname; return files[host] != null ? { ok: true, status: 200, text: async () => files[host] } : { ok: false, status: 404 }; };
+  const { sim, bot, cfg } = customSetup({ MAX_OPEN: '1', WATCH_VERIFY_S: '2' }, fetchFn);
+  assert.deepEqual(cfg.watch, [{ name: 'NEXY', handles: ['nexyonxrp'], min: 25, max: 50 }], 'default watchlist');
+  await bot.start();
+  // an open position already fills MAX_OPEN=1 – the watchlist buy still goes through
+  const o = launchBy(sim, { name: 'OTHER', issuer: 'rOther11111111111111111111111111', creator: 'rCrOther1111111111111111111111', domain: 'nothing.toml.firstledger.net' });
+  await settle(bot);
+  assert.ok(bot.state().positions[`${o}.rOther11111111111111111111111111`]);
+  const fake = launchBy(sim, { name: 'NEXY', issuer: 'rFakeNexy11111111111111111111111', creator: 'rCrFake111111111111111111111111', poolXrp: 30, domain: 'fake.toml.firstledger.net' });
+  await settle(bot);
+  assert.equal(bot.state().positions[`${fake}.rFakeNexy11111111111111111111111`], undefined, 'fake not bought');
+  assert.match(logs.join('\n'), /NOT bought: not the real NEXY/);
+  // no token file at all → waits WATCH_VERIFY_S, then tells the owner
+  const nof = launchBy(sim, { name: 'NEXY', issuer: 'rNoFile111111111111111111111111', creator: 'rCrNoFile11111111111111111111111', poolXrp: 30, domain: 'missing.toml.firstledger.net' });
+  await settle(bot);
+  assert.equal(bot.state().positions[`${nof}.rNoFile111111111111111111111111`], undefined);
+  await wait(2600); await settle(bot);
+  assert.match(logs.join('\n'), /NOT bought: watch: real NEXY not verified yet.*buy it by hand/s);
+  // the real one: small pool (30 XRP < MIN_POOL_XRP) and MAX_OPEN reached – bought anyway, 50 XRP (100 XRP balance)
+  const real = launchBy(sim, { name: 'NEXY', issuer: 'rReaLNexy11111111111111111111111', creator: 'rCrReal111111111111111111111111', poolXrp: 30, domain: 'real.toml.firstledger.net' });
+  await settle(bot);
+  const pos = bot.state().positions[`${real}.rReaLNexy11111111111111111111111`];
+  assert.ok(pos, 'real NEXY bought');
+  assert.ok(Math.abs(pos.cost - 50) < 0.01, 'max stake: ' + pos.cost);
+  assert.equal(bot.status().watch[0].done.k, `${real}.rReaLNexy11111111111111111111111`);
+  // a later NEXY is a normal launch again (no watchlist buy)
+  launchBy(sim, { name: 'NEXY', issuer: 'rLateNexy11111111111111111111111', creator: 'rCrLate111111111111111111111111', poolXrp: 30, domain: 'real.toml.firstledger.net' });
+  await settle(bot);
+  assert.equal(bot.state().positions[`${real}.rLateNexy11111111111111111111111`], undefined);
+  bot.stop();
+});
+
+await test('watchlist: not enough XRP for the minimum → not bought, owner told; stake = what there is between min and max', async () => {
+  const fetchFn = async () => ({ ok: true, status: 200, text: async () => 'x = "https://x.com/nexyonxrp"' });
+  const { sim, bot } = customSetup({ WATCH_TOKENS: 'NEXY | nexyonxrp | 25 | 50;BIGDOG | bigdogxrp | 30 | 40', MIN_BALANCE_XRP: '2' }, fetchFn);
+  sim.acc[ME].Balance = String(20 * D);
+  await bot.start();
+  launchBy(sim, { name: 'NEXY', issuer: 'rPoorNexy11111111111111111111111', creator: 'rCrPoor111111111111111111111111', domain: 'p.toml.firstledger.net' });
+  await settle(bot);
+  assert.match(logs.join('\n'), /NEXY \(watchlist\): only .* needs 25 XRP/);
   bot.stop();
 });
 

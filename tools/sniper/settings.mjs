@@ -39,6 +39,10 @@ export const GROUPS = [
     ['MAX_AMM_FEE', 'Max. AMM fee (%)', 'num', '1', '', 0, 1],
     ['BUY_SLIPPAGE', 'Max. buy slippage (%)', 'num', '35', 'higher = fewer missed buys, but worse prices', 1, 90],
   ]],
+  ['🎯 Watchlist (expected launches)', [
+    ['WATCH_TOKENS', 'Expected launches', 'watch', 'NEXY | nexyonxrp | 25 | 50', 'One per line: NAME | X or Telegram handle | min XRP | max XRP. Bought at once when it launches – only if its token file names that handle (same-named fakes are skipped). Pool size, open-trade and daily limits don’t apply; one buy per name'],
+    ['WATCH_VERIFY_S', 'Wait for the token file (s)', 'num', '90', 'how long to wait for the socials that prove it is the real one', 5, 3600],
+  ]],
   ['👥 Crowd entry (skipped launches that take off)', [
     ['CROWD_BUY', 'Buy a skipped launch when a crowd comes', 'bool', '1', 'dev holds the supply / pool too small / not blackholed at launch – but then many buyers: bought with the copy exits'],
     ['CROWD_MIN_BUYERS', 'Min. different buyers', 'num', '100', 'the rugs in the data had 11–23', 1, 100000],
@@ -138,6 +142,15 @@ function clean(f, raw) {
     }
     return { v: parts.map((p) => p.split(':').map((x) => x.trim()).filter(Boolean).join(':')).join(',') };
   }
+  if (type === 'watch') { // NAME | handle | min | max, one per line
+    const lines = v.split(/[;\n]+/).map((x) => x.trim()).filter(Boolean);
+    for (const l of lines) {
+      const [name, , min = '25', max = ''] = l.split('|').map((x) => x.trim());
+      if (!name || name.length > 40) return { err: `${label}: “${l.slice(0, 40)}” – write NAME | handle | min | max` };
+      if (!(Number(min) > 0) || (max && !(Number(max) >= Number(min)))) return { err: `${label}: “${l.slice(0, 40)}” – min and max are XRP amounts, max ≥ min` };
+    }
+    return { v: lines.map((l) => l.split('|').map((x) => x.trim()).join(' | ')).join(';') };
+  }
   if (type === 'tokens') { // NAME.rIssuer, one per line (or comma-separated)
     const parts = v.split(/[\s,]+/).filter(Boolean);
     for (const p of parts) if (!/^[^.:\s]{1,40}[.:]r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(p)) return { err: `${label}: “${p.slice(0, 50)}” – write NAME.rIssuerAddress` };
@@ -182,7 +195,7 @@ export function makeSettings(GROUPS, { file = 'settings.json', title = '⚙️ S
       const raw = f[2] === 'bool' ? (form.get(k) ? '1' : '0') : form.get(k);
       if (raw === null) continue;
       // an empty number/choice field = back to the standard value
-      const r = String(raw).trim() === '' && !['wallets', 'text', 'bool'].includes(f[2]) ? { v: baseValue(env, k) } : clean(f, raw);
+      const r = String(raw).trim() === '' && !['wallets', 'text', 'bool', 'watch'].includes(f[2]) ? { v: baseValue(env, k) } : clean(f, raw);
       if (r.err) { errors.push(r.err); continue; }
       const before = current[k] ?? baseValue(env, k);
       const base = baseValue(env, k);
@@ -202,6 +215,7 @@ export function makeSettings(GROUPS, { file = 'settings.json', title = '⚙️ S
       if (type === 'bool') el = `<label class="sw"><input type="checkbox" name="${k}" value="1"${v === '1' ? ' checked' : ''}> on</label>`;
       else if (type === 'cur') el = `<select name="${k}">${['USD', 'XRP'].map((c) => `<option${c === v ? ' selected' : ''}>${c}</option>`).join('')}</select>`;
       else if (type === 'tokens') el = `<textarea name="${k}" rows="10" placeholder="FUZZY.rhCAT…">${esc(v.split(',').filter(Boolean).join('\n'))}</textarea>`;
+      else if (type === 'watch') el = `<textarea name="${k}" rows="4" placeholder="NEXY | nexyonxrp | 25 | 50">${esc(v.split(';').filter(Boolean).join('\n'))}</textarea>`;
       else if (type === 'wallets') el = `<textarea name="${k}" rows="4" placeholder="rAbc…:Name">${esc(v.split(',').filter(Boolean).join('\n'))}</textarea>`;
       else el = `<input name="${k}" value="${esc(v)}" ${type === 'num' ? 'inputmode="decimal"' : ''} autocomplete="off">`;
       return `<div class="f"><div class="l">${esc(label)}${mark}${help ? `<small>${esc(help)}</small>` : ''}<small class="d">Default: ${esc(def === '' ? '–' : type === 'tokens' ? `${def.split(',').length} tokens (empty field = back to them)` : def)}</small></div><div class="i">${el}</div></div>`;

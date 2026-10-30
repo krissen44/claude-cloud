@@ -94,6 +94,8 @@ export function readConfig(env = process.env) {
     // default 'off' = socials never hold up a buy: they're read in the background and shown
     socials: /^(x|any)$/i.test(env.SOCIALS_REQUIRED || '') ? env.SOCIALS_REQUIRED.toLowerCase() : 'off',
     socialsWaitS: num('SOCIALS_WAIT_S', 60),
+    watch: parseWatch(env.WATCH_TOKENS ?? DEFAULT_WATCH),
+    watchVerifyS: num('WATCH_VERIFY_S', 90), // how long to wait for the token file with the right socials
     // launches by a creator – or a wallet funded by the same wallet – that rugged before are skipped
     skipRuggers: bool('SKIP_RUGGERS', true),
     // bundle: the dev's own wallets (same address start, or got the token from the dev). When one of
@@ -168,6 +170,19 @@ export function readConfig(env = process.env) {
 }
 
 // ---------- helpers ----------
+// WATCH_TOKENS: expected launches, one per line "NAME | handle/handle | min XRP | max XRP" (lines
+// joined with ";"). The handle (X or Telegram, without @) must be in the token's socials – a
+// same-named fake launched before the real one is never bought.
+export const DEFAULT_WATCH = 'NEXY | nexyonxrp | 25 | 50';
+export function parseWatch(s) {
+  return String(s || '').split(/[;\n]+/).map((line) => line.split('|').map((x) => x.trim())).filter((p) => p[0]).map(([name, handles = '', min = '25', max = '']) => ({
+    name: name.replace(/^\$/, '').toUpperCase(), handles: handles.split(/[\/\s,]+/).map((h) => h.replace(/^@/, '').toLowerCase()).filter(Boolean),
+    min: Number(min) || 25, max: Math.max(Number(max) || Number(min) || 25, Number(min) || 25),
+  }));
+}
+// does a socials object carry one of the handles? (x.com/handle, twitter.com/handle, t.me/handle)
+export const socialsHave = (so, handles) => !!so && ['x', 'telegram', 'website', 'discord'].some((k) => so[k] && handles.some((h) => new RegExp(`/${h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[/?#]|$)`, 'i').test(so[k])));
+
 function parseTrack(s) {
   const m = new Map();
   for (const part of s.split(',').map((x) => x.trim()).filter(Boolean)) {
@@ -346,7 +361,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   const SKIP_KINDS = [
     [/blackholed/, 'not blackholed'], [/pool only/, 'pool too small'], [/> max/, 'pool too big'],
     [/clawback/, 'clawback'], [/froze/, 'frozen'], [/transfer fee/, 'transfer fee'], [/AMM fee/, 'AMM fee'],
-    [/rugged before/, 'dev rugged before'], [/no socials/, 'no socials'], [/bundle is selling/, 'bundle selling'],
+    [/not the real|watch: /, 'watchlist: not verified'], [/rugged before/, 'dev rugged before'], [/no socials/, 'no socials'], [/bundle is selling/, 'bundle selling'],
     [/supply/, 'dev holds the supply'], [/pumped/, 'pumped during protection'], [/pool gone/, 'pool gone'], [/approval/, 'trust lines need approval'],
   ];
   const skipKind = (text) => (SKIP_KINDS.find(([re]) => re.test(text)) || [0, 'other'])[1];
@@ -504,6 +519,15 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       hash: ev.hash || tx.hash, fast, validated: !fast,
     };
     if (fast) stat('fastLaunches');
+    const w = cfg.watch.find((x) => x.name === launch.name.toUpperCase().replace(/^\$/, ''));
+    S.watchDone ||= {};
+    if (w && !S.watchDone[w.name]) {
+      launch.watch = w;
+      launch.minPool = 0; // its own pool size, whatever it is
+      stat('watchSeen');
+      say(`🎯 ${launch.name} launched – on your watchlist! Checking it's the real one (${w.handles.map((h) => '@' + h).join(' / ') || 'no handle set'}) and buying ${w.min}–${w.max} XRP`);
+      rec.event('watch_seen', { k, name: launch.name, issuer: launch.issuer, creator: tx.Account });
+    }
     bundleWatch(launch);
     pending.set(k, launch);
     stat('launches');
@@ -697,7 +721,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (!p) reasons.push('pool gone');
     else {
       if (p.xrp < (l.minPool ?? cfg.minPoolXrp)) small = `pool only ${p.xrp.toFixed(1)} XRP`;
-      if (cfg.maxPoolXrp && p.xrp > cfg.maxPoolXrp) reasons.push(`pool ${p.xrp.toFixed(0)} XRP > max`);
+      if (cfg.maxPoolXrp && p.xrp > cfg.maxPoolXrp && !l.watch) reasons.push(`pool ${p.xrp.toFixed(0)} XRP > max`);
       if (p.fee > cfg.maxAmmFee) reasons.push(`AMM fee ${p.fee}%`);
       if (gb) {
         supply = Number(gb.obligations?.[l.currency] || 0);
@@ -710,7 +734,14 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     const domain = info.Domain ? Buffer.from(info.Domain, 'hex').toString('utf8').slice(0, 80) : '';
     // socials: X / Telegram / … from the issuer's xrp-ledger.toml. They only hold up a buy if
     // SOCIALS_REQUIRED says so – otherwise they are read in the background and shown.
-    if (cfg.socials !== 'off') {
+    if (l.watch) {
+      // watchlist: it must be the real one – its token file names the handle we know (read fresh each poll)
+      l.socials = domain ? await socials.get(domain, 1500) : { found: false };
+      if (!l.watch.handles.length) l.watchOk = true;
+      else if (socialsHave(l.socials, l.watch.handles)) l.watchOk = true;
+      else if (l.socials?.found && (l.socials.x || l.socials.telegram)) reasons.push(`not the real ${l.watch.name}: its socials are ${socialsText(l.socials)} (${l.socials.x || l.socials.telegram}), not @${l.watch.handles.join(' / @')}`);
+      else reasons.push(`watch: real ${l.watch.name} not verified yet (${l.socials?.found ? 'token file without X/Telegram' : 'no token file yet'})`);
+    } else if (cfg.socials !== 'off') {
       l.socials = domain ? await socials.get(domain) : { found: false };
       if (l.socials && !hasSocials(l.socials, cfg.socials)) reasons.push(`no socials (${cfg.socials === 'x' ? 'no X/Twitter' : 'none'}${l.socials.found ? '' : ', no token file'})`);
     } else if (!l.socialsAsked) {
@@ -760,17 +791,20 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       const holeBy = l.at + (l.protected ? Math.max(cfg.blackholeWaitS, cfg.protectWaitMin * 60) : cfg.blackholeWaitS) * 1000;
       const poolBy = Math.max(l.at + (l.poolWait ?? cfg.poolWaitMin) * 60000, l.protected ? holeBy : 0);
       // waitable: the rest of the supply (FirstLedger deposit) and socials that may come a little later
-      const waitS = (x) => (/of supply in the pool/.test(x) ? cfg.supplyWaitS : /no socials/.test(x) ? cfg.socialsWaitS : -1);
+      const waitS = (x) => (/of supply in the pool/.test(x) ? cfg.supplyWaitS : /no socials/.test(x) ? cfg.socialsWaitS : /^watch: /.test(x) ? cfg.watchVerifyS : -1);
       const softOnly = c.reasons.length && c.reasons.every((x) => waitS(x) >= 0 && now() - l.at < waitS(x) * 1000);
       if (softOnly) {
         const sup = c.reasons.find((x) => /of supply/.test(x));
         if (sup) { l.supplyWait = true; if (!l.supplyTold) { l.supplyTold = true; say(`⏳ ${l.name}: ${sup} – waiting up to ${cfg.supplyWaitS}s for the rest to be deposited (FirstLedger launch)`); } }
+        const wv = c.reasons.find((x) => /^watch: /.test(x));
+        if (wv && !l.watchTold) { l.watchTold = true; say(`⏳ ${l.name}: ${wv.slice(7)} – checking every few seconds for ${cfg.watchVerifyS}s`); }
         const soc = c.reasons.find((x) => /no socials/.test(x));
         if (soc && !l.socialsTold) { l.socialsTold = true; say(`⏳ ${l.name}: ${soc} – checking again for ${cfg.socialsWaitS}s`); }
       } else if (c.reasons.length) {
         pending.delete(l.k);
         stat(0, skipKind(c.reasons[0]));
         rec.decision(l.k, 'skipped', skipKind(c.reasons[0]));
+        if (l.watch) say(`🎯 ${l.name} (watchlist) NOT bought: ${c.reasons.join(', ')}.${/not verified/.test(c.reasons.join()) ? ` If it is the real one, buy it by hand on the page: ${l.name}.${l.issuer}` : ''}`);
         return say(`⛔ Skip ${l.name}: ${c.reasons.join(', ')}`);
       }
       if (c.wait.length && now() > holeBy) {
@@ -821,7 +855,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       if (c.wait.length && !told) { told = true; say(`⏳ ${l.name}: ${c.wait.join(', ')} – launch protection? Waiting up to ${Math.round((holeBy - l.at) / 60000)} min, buying the moment it is lifted`); }
       if (c.small && !told) { told = true; say(`⏳ ${l.name}: ${c.small} – watching for ${l.poolWait ?? cfg.poolWaitMin} min`); }
       // sleep until the next poll – or until the issuer sends a transaction (unfreeze, blackhole, …)
-      const ms = (l.supplyWait && !l.supplyOk) || l.socialsTold ? 2000 : now() - l.at < 120000 ? 4000 : 15000;
+      const ms = (l.supplyWait && !l.supplyOk) || l.socialsTold || l.watchTold ? 2000 : now() - l.at < 120000 ? 4000 : 15000;
       await new Promise((r) => {
         const t = setTimeout(done, ms);
         function done(fromIssuer) {
@@ -837,7 +871,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   // Buys run one after another so limits and the balance floor see the previous buy.
   let buyChain = Promise.resolve();
   function buy(l, p) {
-    if (l.big) { stat('bigLaunchBuys'); return buyNow(l, p); } // big launch: no waiting behind other buys
+    if (l.big || l.watch) { stat(l.watch ? 'watchBuys' : 'bigLaunchBuys'); return buyNow(l, p); } // big launch / watchlist: no waiting behind other buys
     const run = buyChain.then(() => buyNow(l, p));
     buyChain = run.catch(() => {});
     return run;
@@ -847,9 +881,9 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (cfg.pauseBuys && !l.byHand) return stat(0, 'paused'), rec.decision(l.k, 'skipped', 'paused'), say(`⏸ ${l.name}: buying is paused`);
     if (S.day !== day()) { S.day = day(); S.buysToday = 0; }
     const open = Object.values(S.positions).filter((x) => !isMoonbag(x)).length; // moonbags don't count
-    if (open >= cfg.maxOpen && !l.byHand) return stat(0, 'max open trades'), rec.decision(l.k, 'skipped', 'max open trades'), say(`⏸ ${l.name}: ${open} positions open (max ${cfg.maxOpen})`);
+    if (open >= cfg.maxOpen && !l.byHand && !l.watch) return stat(0, 'max open trades'), rec.decision(l.k, 'skipped', 'max open trades'), say(`⏸ ${l.name}: ${open} positions open (max ${cfg.maxOpen})`);
     let stake = l.buyXrp ?? (l.big ? cfg.bigBuyXrp : cfg.buyXrp);
-    if (S.buysToday >= cfg.maxBuysPerDay && !l.byHand) return stat(0, 'daily buy limit'), rec.decision(l.k, 'skipped', 'daily buy limit'), say(`⏸ ${l.name}: daily buy limit reached`);
+    if (S.buysToday >= cfg.maxBuysPerDay && !l.byHand && !l.watch) return stat(0, 'daily buy limit'), rec.decision(l.k, 'skipped', 'daily buy limit'), say(`⏸ ${l.name}: daily buy limit reached`);
     // fresh price (the queue may have waited) and the free balance – both at once; a pool read
     // less than 1.5 s ago by the checks is fresh enough
     const freshPool = l.lastPool && now() - l.lastPoolAt < 1500 && p === l.lastPool;
@@ -860,13 +894,24 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     p = pNow || p;
     if (!p) return stat(0, 'pool gone'), rec.decision(l.k, 'skipped', 'pool gone'), say(`⛔ ${l.name}: pool gone`);
     // size by share of the supply: XRP needed for BUY_SUPPLY_PCT % of all tokens, capped at BUY_MAX_XRP
-    if (cfg.buySupplyPct > 0 && !l.copy && !l.byHand && l.supply > 0) {
+    if (cfg.buySupplyPct > 0 && !l.copy && !l.byHand && !l.watch && l.supply > 0) {
       const want = (l.supply * cfg.buySupplyPct) / 100;
       const need = want < p.tok * 0.95 ? (p.xrp * want) / (p.tok - want) / (1 - p.fee / 100) : Infinity;
       stake = Math.max(0.1, Math.min(need * 1.01, cfg.buyMaxXrp));
       l.sizing = need <= cfg.buyMaxXrp ? `${cfg.buySupplyPct}% of the supply` : `capped at ${cfg.buyMaxXrp} XRP (${cfg.buySupplyPct}% would cost ${need === Infinity ? 'more than the pool' : need.toFixed(1) + ' XRP'})`;
     }
     const free = freeNow;
+    if (l.watch) {
+      // watchlist: as much as there is between min and max, never below min
+      const room = free - reserves.inc - cfg.minBalanceXrp;
+      stake = Math.min(l.watch.max, Math.floor(room * 100) / 100);
+      if (stake < l.watch.min) {
+        stat(0, 'balance floor');
+        rec.decision(l.k, 'skipped', 'balance floor');
+        return say(`🎯 ${l.name} (watchlist): only ${free.toFixed(2)} XRP free – needs ${l.watch.min} XRP (+ ${cfg.minBalanceXrp} floor). Not bought – top up and buy by hand: ${l.name}.${l.issuer}`);
+      }
+      l.sizing = `watchlist ${l.watch.min}–${l.watch.max} XRP`;
+    }
     if (free - reserves.inc - stake < cfg.minBalanceXrp) {
       stat(0, 'balance floor');
       rec.decision(l.k, 'skipped', 'balance floor');
@@ -940,6 +985,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     rec.decision(l.k, 'bought', l.crowd ? `crowd entry: ${l.crowd}` : l.retried ? 'after launch protection' : '');
     rec.trade(l.k, buyInfo);
     rec.event('buy', { k: l.k, name: l.name, copy: l.copy || '', ...buyInfo });
+    if (l.watch) { S.watchDone ||= {}; S.watchDone[l.watch.name] = { k: l.k, at: now() }; save(); say(`🎯 ${l.name}: watchlist buy done – later launches with this name are ignored`); }
     say(`🟢 Bought ${l.name}${l.byHand ? ' (by hand)' : ''}${l.crowd ? ` (crowd entry – ${l.crowd})` : l.copy ? ` (copy ${l.copy})` : ''}: ${cost.toFixed(4)} XRP → ${got.toPrecision(6)} tokens${buyInfo.supplyPct != null ? ` = ${buyInfo.supplyPct}% of the supply` : ''}${l.fast ? ' ⚡' : ''} after ${buyInfo.delayS}s`);
   }
 
@@ -1545,6 +1591,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       moonValue: open.filter(isMoonbag).reduce((s, p) => s + (p.value - p.proceeds), 0),
       tracking: [...cfg.track.values()],
       stats: S.stats, following: rec.following(),
+      watch: cfg.watch.map((w) => ({ ...w, done: S.watchDone?.[w.name] || null })),
       mcapApproval: cfg.mcapApproval, mcapCurrency: cfg.mcapCurrency, paused: cfg.pauseBuys,
       ruggers: (rec.devs ? rec.devs() : []).slice(0, 15),
       buysToday: S.buysToday, open: open.map((p) => ({ ...p, hist: undefined, bundle: bundles.get(p.k) ? { wallets: bundles.get(p.k).wallets.size, holds: [...bundles.get(p.k).hold.values()].reduce((a, b) => a + b, 0) } : null, spark: (p.hist || []).filter((_, i, a) => i % Math.ceil(a.length / 60) === 0 || i === a.length - 1).map((x) => x.price) })), history: S.history.slice(0, 50),
