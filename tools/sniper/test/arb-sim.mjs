@@ -918,6 +918,31 @@ await test('order book: a cheap resting sell offer is bought and sold into the A
   bot.stop();
 });
 
+await test('order book: a trade that takes the offer and moves the AMM in one go is no phantom gap (book dropped until read again)', async () => {
+  const { L, bot } = setup({ ARB_LIVE: '0' });
+  await bot.start();
+  await ready(bot);
+  L.trade('rPoolAB', B, 2e6); await wait(300);
+  await bot._manageLines();
+  // a resting ask at the AMM price, read into the book
+  L.offer('XRP', A, 2, 19000);
+  await wait(400);
+  const opps0 = bot.status().stats.bookOpps || 0;
+  const sent0 = L.sent.length;
+  // someone buys: takes the offer AND pushes the AMM price up 20 % – one transaction
+  L.books.set(`XRP>${A}`, []);
+  const p = L.pools.get('rPoolXA');
+  const out = swapOut(55, p.ra, p.rb, p.fee); p.ra += 55; p.rb -= out;
+  const amt = { currency: 'AAA', issuer: IA, value: '0' };
+  L.emit('transaction', { validated: true, ledger_index: ++L.index, hash: 'EAT' + L.index, tx_json: { TransactionType: 'Payment', Account: 'rEater' }, meta: { TransactionResult: 'tesSUCCESS', TransactionIndex: 0, AffectedNodes: [...L.nodesFor(p), { DeletedNode: { LedgerEntryType: 'Offer', FinalFields: { Account: 'rMaker', TakerPays: '0', TakerGets: amt } } }] } });
+  await wait(400);
+  const st = bot.status().stats;
+  assert.ok(st.bookDropped >= 1, 'book dropped');
+  assert.equal(st.bookOpps || 0, opps0, 'no loop through the offer that is gone');
+  assert.ok(!L.sent.slice(sent0).some((b) => !b.RawTransactions[1].RawTransaction.Paths && b.RawTransactions.length === 2 && key(b.RawTransactions[0].RawTransaction.Amount) === A && key(b.RawTransactions[1].RawTransaction.Amount) === 'XRP' && !b.RawTransactions[0].RawTransaction.Paths), 'no XRP → AAA → XRP book batch sent');
+  bot.stop();
+});
+
 await test('order book in a longer loop: offer better than the AMM is counted in the price', async () => {
   const { L, bot } = setup({ ARB_LIVE: '0' });
   const { createGraph, cycleOut } = await import('../arb/engine.mjs');

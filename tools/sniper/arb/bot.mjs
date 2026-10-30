@@ -378,9 +378,20 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       const f = node.FinalFields || node.NewFields || {};
       const a = assetKey(f.TakerGets), b = assetKey(f.TakerPays);
       const t = a === XRP ? b : b === XRP ? a : null;
-      if (t && t !== XRP && uni.has(t) && g.xrpPool.get(t) && now() - (bookAt.get(t) || 0) > 3000) want('book:' + t, true); // at most once per ledger
+      if (t && t !== XRP && uni.has(t) && g.xrpPool.get(t)) dropBook(t);
     }
   }
+  // offers of t changed (taken, cancelled, new): the AMM side is already updated from the same
+  // transaction, the book would be stale until read again → a phantom gap ("buy the offer someone
+  // just took"). So the book is dropped at once and only used again after a fresh read.
+  function dropBook(t) {
+    const had = g.books.has(`${XRP}>${t}`) || g.books.has(`${t}>${XRP}`);
+    if (had) { g.setBook(XRP, t, []); g.setBook(t, XRP, []); stat('bookDropped'); }
+    want('book:' + t, true);
+  }
+  // our book loop failed although nobody else moved the pool → don't trust that book for an hour
+  S.bookBan ||= {};
+  const bookBanned = (assets) => assets.some((a) => now() - (S.bookBan[a] || 0) < 3600e3);
 
   // ---------- account ----------
   async function refreshAccount() {
@@ -475,7 +486,8 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (!toks.length) return;
     // the XRP pool of each token, and pools between the tokens it names
     for (const a of toks) { const id = g.xrpPool.get(a); if (id) liveWant.add(id); }
-    if (cfg.books && /^(OfferCreate|OfferCancel|Payment)$/.test(tx.TransactionType)) for (const a of toks) if (g.xrpPool.get(a) && (tx.TransactionType !== 'Payment' || g.books.has(`${XRP}>${a}`) || g.books.has(`${a}>${XRP}`))) liveBooks.add(a);
+    // offers may change with it: drop those books now, read them live on the open ledger
+    if (cfg.books && /^(OfferCreate|OfferCancel|Payment|Batch)$/.test(tx.TransactionType)) for (const a of toks) if (g.xrpPool.get(a) && (tx.TransactionType !== 'Payment' || g.books.has(`${XRP}>${a}`) || g.books.has(`${a}>${XRP}`))) { if (g.books.has(`${XRP}>${a}`) || g.books.has(`${a}>${XRP}`)) { g.setBook(XRP, a, []); g.setBook(a, XRP, []); stat('bookDropped'); } liveBooks.add(a); }
     for (const a of toks) for (const id of g.adj.get(a) || []) { const p = g.pools.get(id); if (p && as.includes(g.other(p, a))) liveWant.add(id); }
     stat('liveSeen');
     const cur = ev.ledger_current_index || ledger + 1;
@@ -576,6 +588,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
       const held = assets.findIndex((a) => lines.has(a));
       // does an offer make it pay? (same loop through the AMMs alone earns less)
       const book = !!(g.books.size && cycleOut(g, c.hops, x) - cycleOut(g, c.hops, x, false) > 1e-9);
+      if (book && bookBanned(assets)) { stat('skippedBookBan'); continue; }
       opps.push({ ...c, x, profit, net, assets, held, book });
     }
     S.stats.lastSearchMs = now() - t0;
@@ -788,6 +801,7 @@ export function createArb({ client, wallet, cfg, log = console.log, fetchFn = gl
         why = beat.length ? 'beaten' : 'model';
         f.o.beatenPools = beat;
         stat(why === 'beaten' ? 'missBeaten' : 'missModel');
+        if (f.o.book) for (const t of f.o.assets) { S.bookBan[t] = now(); dropBook(t); } // its offers weren't what we read
         if (late) stat('missLate');
       }
       if (applied || f.outer) {

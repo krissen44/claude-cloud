@@ -466,6 +466,11 @@ and the AMM in between (`hopOut` in `arb/engine.mjs`), so:
 - prices of every loop include the resting offers (top tokens have 1–12k XRP of offers within ~1 % of the AMM),
 - a new loop type: XRP → token from a cheap offer → back into the AMM (or the other way), same pair, one batch,
 - after our own batch took offers, those books are dropped until they are read again (no trading on gone offers).
+- **any change to an offer of a pair** (a trade that took it, a cancel, a new one – validated or entering the open
+  ledger) drops that pair's books at once until they are read again. Before (29/30 Oct), the AMM side was
+  updated from the same transaction instantly but the book seconds later → 34,600 phantom "loops through an
+  offer" someone had just taken; all 8 book batches failed ("model"). A book loop that still fails without
+  anyone else touching the pool bans that token's book for 1 h.
 Measured on 29 Oct: at rest the best offers sit right at the AMM fee edge (market makers), so a gap needs the
 AMM to move. Page: "📗 Order books" (tokens, offers, loops via an offer); `trades.csv` / `opportunities.csv`
 have a `book` column.
