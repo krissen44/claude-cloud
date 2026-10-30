@@ -499,7 +499,7 @@ await test('auto first sale: stake back without asking, later sales of a big tok
   const p2 = bot.state().positions[k];
   assert.ok(p2 && p2.ask, 'the second sale waits for OK');
   const st = bot.status().stats;
-  assert.equal(st.copySignals, 1); assert.equal(st.bought, 1); assert.ok(st.asks >= 1);
+  assert.equal(st.copySignals, 1); assert.equal(st.copyBought, 1); assert.ok(st.asks >= 1);
   bot.stop();
 });
 
@@ -861,7 +861,7 @@ await test('clean-up: a dead pool\'s tokens go back to the issuer and the line i
   bot.stop();
 });
 
-await test('smart wallets: a wallet that buys early and sells with profit across launches is found and copied; a loser is not', async () => {
+await test('smart wallets: a good trader is found and only suggested; copied after ✅ Verify; master switch off = no copy buys', async () => {
   const realNow = Date.now;
   let offset = 0;
   Date.now = () => realNow() + offset;
@@ -894,17 +894,42 @@ await test('smart wallets: a wallet that buys early and sells with profit across
     assert.ok(smart && smart.launches === 3 && smart.winRate === 1 && smart.pnl > 20 && smart.early === 3, JSON.stringify(smart));
     assert.ok(dumb && dumb.pnl < 0 && dumb.winRate === 0);
     bot._refreshSmart();
-    const sm = bot.status().smart;
-    assert.deepEqual(sm.copying.map((c) => c.wallet), [SMART], 'only the good trader is copied');
-    // the smart wallet buys a new token → the bot copies it
-    const cur = sim.launch({ name: 'NEXTUP', issuer: 'rNext', poolXrp: 400, poolTok: 1e9, silent: true });
-    sim.emit('transaction', { validated: true, hash: 'SMARTBUY', tx_json: { TransactionType: 'Payment', Account: SMART, Fee: '12' }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [
-      { ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: SMART, Balance: '80000000' }, PreviousFields: { Balance: '100000012' } } },
-      { ModifiedNode: { LedgerEntryType: 'RippleState', FinalFields: { Balance: { currency: cur, value: '-50000000' }, LowLimit: { issuer: 'rNext' }, HighLimit: { issuer: SMART } }, PreviousFields: { Balance: { currency: cur, value: '0' } } } },
-    ] } });
+    let sm = bot.status().smart;
+    assert.deepEqual(sm.copying, [], 'nothing copied automatically');
+    assert.deepEqual(sm.suggested.map((c) => c.wallet), [SMART], 'only the good trader is suggested');
+    assert.ok(logs.join('\n').includes('press ✅ Verify'), 'owner is told');
+    const smartBuys = (name, iss, hash) => {
+      const cur = sim.launch({ name, issuer: iss, poolXrp: 400, poolTok: 1e9, silent: true });
+      sim.emit('transaction', { validated: true, hash, tx_json: { TransactionType: 'Payment', Account: SMART, Fee: '12' }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [
+        { ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: SMART, Balance: '80000000' }, PreviousFields: { Balance: '100000012' } } },
+        { ModifiedNode: { LedgerEntryType: 'RippleState', FinalFields: { Balance: { currency: cur, value: '-50000000' }, LowLimit: { issuer: iss }, HighLimit: { issuer: SMART } }, PreviousFields: { Balance: { currency: cur, value: '0' } } } },
+      ] } });
+      return `${cur}.${iss}`;
+    };
+    // not verified yet → its buy is not copied
+    let k = smartBuys('EARLYONE', 'rEarly', 'SMARTBUY0');
     await settle(bot);
-    const pos = bot.state().positions[`${cur}.rNext`];
-    assert.ok(pos && /🕵️/.test(pos.copy), 'copied the smart wallet: ' + (pos && pos.copy));
+    assert.equal(bot.state().positions[k], undefined, 'suggested wallet is not copied');
+    // verified → copied
+    assert.match(await bot.answer(SMART, 'wpin'), /verified: copied from now on/);
+    sm = bot.status().smart;
+    assert.deepEqual(sm.copying.map((c) => c.wallet), [SMART]);
+    assert.deepEqual(sm.suggested, []);
+    k = smartBuys('NEXTUP', 'rNext', 'SMARTBUY');
+    await settle(bot);
+    const pos = bot.state().positions[k];
+    assert.ok(pos && /✅/.test(pos.copy), 'copied the verified wallet: ' + (pos && pos.copy));
+    assert.equal(bot.status().stats.copyBought, 1, 'counted as copy buy, not as a launch buy');
+    assert.ok(!bot.status().stats.bought, 'launch stats clean');
+    assert.equal(bot.status().copyTrades.open, 1);
+    assert.equal(bot.rec.analysis(7).total, 3, 'launch outcomes: only the 3 launches, no copy row');
+    // master switch off → no copy buys, wallet stays verified
+    bot._cfg.copyOn = false;
+    k = smartBuys('OFFTOK', 'rOff', 'SMARTBUY2');
+    await settle(bot);
+    assert.equal(bot.state().positions[k], undefined, 'copy trading off');
+    assert.equal(bot.status().smart.copyOn, false);
+    bot._cfg.copyOn = true;
     // never: ban → no longer copied; pin works for any wallet
     assert.match(await bot.answer(SMART, 'wban'), /never copied/);
     assert.equal(bot.status().smart.copying.length, 0);
@@ -992,7 +1017,8 @@ await test('analyze a launch: whole pool history → early sniper of a big launc
   assert.equal(ws.find((w) => w.wallet === DEV), undefined);
   const late = ws.find((w) => w.wallet === LATE);
   assert.ok(late && late.bigHits === 0 && late.pnl < 0);
-  assert.ok(bot.status().smart.copying.some((c) => c.wallet === SNIPER), 'sniper copied');
+  assert.ok(bot.status().smart.suggested.some((c) => c.wallet === SNIPER), 'sniper suggested');
+  assert.ok(!bot.status().smart.copying.some((c) => c.wallet === SNIPER), 'not copied before ✅ Verify');
   assert.match(await bot.answer(`BIGGY.${iss}`, 'analyze'), /already/);
   bot.stop();
 });

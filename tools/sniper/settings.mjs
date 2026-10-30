@@ -72,7 +72,8 @@ export const GROUPS = [
     ['MAX_HOLD_H', 'Max. hold before the stake is back (h)', 'num', '24', '0 = off', 0, 10000],
     ['SELL_SLIPPAGE', 'Max. sell slippage (%)', 'num', '30', '', 1, 90],
   ]],
-  ['👀 Wallet tracking', [
+  ['👀 Wallet tracking / copy trading', [
+    ['COPY_TRADING', 'Copy trading ON (master switch)', 'bool', '1', 'Off = no copy buys at all (tracked or verified wallets). Wallets are still scored and suggested; open copy positions are still sold by the rules'],
     ['TRACK_WALLETS', 'Tracked wallets', 'wallets', '', 'One per line: rAddress:Name'],
     ['COPY_BUY_XRP', 'Stake per copy buy (XRP)', 'num', '1', '', 0.1, 1000],
     ['COPY_MIN_XRP', 'Only if the wallet buys at least (XRP)', 'num', '5', '', 0, 1e6],
@@ -85,13 +86,13 @@ export const GROUPS = [
     ['COPY_MAX_HOLD_H', 'Copy: max. hold (h)', 'num', '24', '0 = off', 0, 10000],
   ]],
   ['🕵️ Smart wallets (copy the good traders)', [
-    ['AUTO_TRACK', 'Copy the best wallets automatically', 'bool', '1', 'found from the launches the bot follows; bought with the copy rules above'],
+    ['AUTO_TRACK', 'Suggest the best wallets', 'bool', '1', 'found from the launches the bot follows – only suggested (message + page). A wallet is copied only after you press ✅ Verify'],
     ['AUTO_BIG_HITS', 'Or: early + ≥ 2× in this many big launches 🚀', 'num', '2', 'big = 5× / 1,000 XRP pool / 150 buyers; 0 = off', 0, 1000],
     ['AUTO_MIN_LAUNCHES', 'Min. launches traded', 'num', '3', '', 1, 1000],
     ['AUTO_MIN_WIN', 'Min. wins (%)', 'num', '60', 'win = took out ≥ 10 % more XRP than it put in', 0, 100],
     ['AUTO_MIN_PNL', 'Min. profit over all (XRP)', 'num', '5', '', -1e6, 1e9],
     ['AUTO_MIN_EARLY', 'Min. early entries (≤ 2 min)', 'num', '0', 'e.g. 2 = only snipers', 0, 1000],
-    ['AUTO_MAX', 'Max. wallets copied at once', 'num', '5', '', 0, 100],
+    ['AUTO_MAX', 'Max. wallets suggested at once', 'num', '5', '', 0, 100],
   ]],
   ['🙋 Approval', [
     ['AUTO_FIRST_SALE', 'First sale never waits', 'bool', '1', 'Stake back / first take profit goes through without asking; later sales still ask'],

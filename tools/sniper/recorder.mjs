@@ -340,7 +340,7 @@ export function createRecorder({ dir, pool, log = () => {}, ignore = [] }) {
     devInfo: (a) => (a && DEV[a]) || null,
     devs: () => Object.entries(DEV).filter(([, d]) => d.rugs).map(([a, d]) => ({ a, ...d })).sort((x, y) => y.rugs - x.rugs || y.last - x.last), wallets: walletList, bookLaunch, booked: (k) => !!WL._booked?.[k], ignoreWallet: (a) => skipWallet.add(a), trade, tx, event, sample, flush, rows, csv, analysis,
     events: (since) => readJsonl('events', since),
-    following: () => Object.keys(W).length,
+    following: () => Object.values(W).filter((r) => r.kind === 'launch').length,
     // trading so far in one followed pool (for the chart health of a position)
     flowOf: (k) => (W[k] ? { buys: W[k].flow.buys, sells: W[k].flow.sells, buyers: W[k].flow.buyers.length, lpRemove: W[k].flow.lpRemove, xrpIn: W[k].flow.xrpIn, xrpOut: W[k].flow.xrpOut } : null),
     // live view of followed launches (for the crowd entry): start, last sample, trading so far

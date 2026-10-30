@@ -113,11 +113,13 @@ export function readConfig(env = process.env) {
     maxHoldH: num('MAX_HOLD_H', 24), // 0 = off
     // moonbags: only a dead pool is cleared, to free the 0.2 XRP trust line reserve
     deadPoolDrop: num('DEAD_POOL_DROP', 90),
+    // master switch for every copy buy (tracked + verified wallets); off = wallets are still scored
+    copyOn: bool('COPY_TRADING', true),
     // wallet tracking: TRACK_WALLETS=rAbc…:Name,rDef… → buy what these wallets buy
     track: parseTrack(env.TRACK_WALLETS || ''),
     copyBuyXrp: num('COPY_BUY_XRP', num('BUY_XRP', 1)),
-    // smart wallets: found from the launches we follow, then copied like TRACK_WALLETS
-    autoTrack: bool('AUTO_TRACK', true),
+    // smart wallets: found from the launches we follow and suggested – copied only after you verify one
+    autoTrack: bool('AUTO_TRACK', true), // suggest (never copies by itself)
     autoMinLaunches: num('AUTO_MIN_LAUNCHES', 3),
     autoMinWin: num('AUTO_MIN_WIN', 60), // percent of launches with ≥ 10 % more XRP out than in
     autoMinPnl: num('AUTO_MIN_PNL', 5), // XRP taken out minus put in, over all followed launches
@@ -252,6 +254,9 @@ export function buysOf(meta, account, feeDrops = 0) {
 }
 
 export const isMoonbag = (p) => p.tp1Done && !p.copy;
+// a copy trade (bought because a tracked / verified wallet bought) – kept out of the launch statistics.
+// Crowd entries are launches (copy = 'crowd') and stay in.
+export const isCopyTrade = (p) => !!p?.copy && p.copy !== 'crowd';
 
 // ---------- the bot ----------
 export function createBot({ client, wallet, cfg, log = console.log, fetchFn = globalThis.fetch, record = true }) {
@@ -361,20 +366,35 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   const chart = createChartLearner(S, cfg, { now, log: (m) => say(m) });
 
   // ---------- smart wallets ----------
-  // Ranked from the followed launches; the best ones (and the ones you pinned) are copied.
-  S.walletPin ||= {}; S.walletBan ||= {};
-  let auto = new Map(); // wallet → label
+  // Ranked from the followed launches. The best ones are only *suggested*: a wallet is copied after
+  // you verified it on the page (S.walletPin = verified), never automatically.
+  S.walletPin ||= {}; S.walletBan ||= {}; S.walletSuggested ||= {};
+  // older closed copy trades (before they were marked): mark them from the recorder's copy rows
+  if (!S.copyMarked) {
+    try { const ks = new Set((rec.rows ? rec.rows() : []).filter((r) => r.kind === 'copy').map((r) => r.k)); for (const h of S.history || []) if (!h.copy && ks.has(h.k)) h.copy = 'copy'; S.copyMarked = true; } catch {}
+  }
+  let auto = new Map(); // verified wallet → label
+  let suggested = new Map(); // candidate → label (not copied)
   const isSmart = (w) => (cfg.autoBigHits > 0 && w.bigHits >= cfg.autoBigHits && w.pnl > 0)
     || (w.launches >= cfg.autoMinLaunches && w.winRate * 100 >= cfg.autoMinWin && w.pnl >= cfg.autoMinPnl && w.early >= cfg.autoMinEarly);
   function refreshSmart() {
     const list = rec.wallets ? rec.wallets() : [];
     const next = new Map();
-    for (const a of Object.keys(S.walletPin)) next.set(a, `📌 ${a.slice(0, 6)}`);
-    if (cfg.autoTrack) for (const w of list.filter((x) => isSmart(x) && !S.walletBan[x.wallet]).slice(0, cfg.autoMax)) next.set(w.wallet, `🕵️ ${w.wallet.slice(0, 6)} (${w.launches} launches${w.bigHits ? `, ${w.bigHits}× early in a 🚀` : ''}, ${Math.round(w.winRate * 100)}%, ${w.pnl >= 0 ? '+' : ''}${w.pnl} XRP)`);
-    for (const a of next.keys()) if (!auto.has(a)) { say(`🕵️ Now copying ${next.get(a)}`); rec.event('smart_wallet', { wallet: a, label: next.get(a) }); }
+    const byWallet = new Map(list.map((w) => [w.wallet, w]));
+    const label = (w, a) => (w ? `✅ ${a.slice(0, 6)} (${w.launches} launches${w.bigHits ? `, ${w.bigHits}× early in a 🚀` : ''}, ${Math.round(w.winRate * 100)}%, ${w.pnl >= 0 ? '+' : ''}${w.pnl} XRP)` : `✅ ${a.slice(0, 6)}`);
+    for (const a of Object.keys(S.walletPin)) next.set(a, label(byWallet.get(a), a));
     auto = next;
+    const sug = new Map();
+    if (cfg.autoTrack) for (const w of list.filter((x) => isSmart(x) && !S.walletBan[x.wallet] && !S.walletPin[x.wallet]).slice(0, cfg.autoMax)) sug.set(w.wallet, label(w, w.wallet).replace('✅', '🕵️'));
+    for (const a of sug.keys()) if (!S.walletSuggested[a]) {
+      S.walletSuggested[a] = now();
+      say(`🕵️ New smart wallet ${sug.get(a)} – not copied yet: check it and press ✅ Verify on the page to copy it`);
+      rec.event('smart_wallet', { wallet: a, label: sug.get(a), suggested: true });
+    }
+    suggested = sug;
   }
-  const tracked = (a) => cfg.track.has(a) || auto.has(a);
+  // copied: wallets from TRACK_WALLETS (entered by you) and verified ones – only with copy trading on
+  const tracked = (a) => cfg.copyOn !== false && (cfg.track.has(a) || auto.has(a));
   const trackedName = (a) => cfg.track.get(a) || auto.get(a) || a.slice(0, 8);
 
   async function refreshReserves() {
@@ -826,7 +846,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       await dropTrustLine(l.currency, l.issuer).catch(() => {});
       return say(`❌ Buy ${l.name} failed (${r?.meta?.TransactionResult || 'no fill'}) – price moved more than ${cfg.buySlippage}%`);
     }
-    stat('bought');
+    stat(isCopyTrade(l) ? 'copyBought' : 'bought');
     const cost = Math.max(0, -fx.xrpDelta) || stake;
     S.positions[l.k] = position(l, cost, got, p);
     save();
@@ -905,7 +925,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     delete S.positions[pos.k];
     const pnl = pos.proceeds - pos.cost;
     S.realized += pnl;
-    S.history.unshift({ name: pos.name, k: pos.k, cost: pos.cost, proceeds: pos.proceeds, pnl, why, at: pos.at, closed: now() });
+    S.history.unshift({ name: pos.name, k: pos.k, cost: pos.cost, proceeds: pos.proceeds, pnl, why, at: pos.at, closed: now(), ...(isCopyTrade(pos) ? { copy: pos.copy } : {}) });
     S.history = S.history.slice(0, 500);
     save();
     rec.trade(pos.k, { proceeds: +pos.proceeds.toFixed(6), pnl: +pnl.toFixed(6), closeWhy: why, heldMin: Math.round((now() - pos.at) / 60000), peak: +pos.peak.toFixed(6), runner: !!pos.runner });
@@ -1339,7 +1359,8 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (what === 'wpin') S.walletPin[a] = now();
     if (what === 'wban') S.walletBan[a] = now();
     save(); refreshSmart();
-    return what === 'wpin' ? `📌 ${a.slice(0, 8)}…: copied from now on` : what === 'wban' ? `🚫 ${a.slice(0, 8)}…: never copied` : `${a.slice(0, 8)}…: automatic again`;
+    if (what === 'wpin') rec.event('wallet_verified', { wallet: a });
+    return what === 'wpin' ? `✅ ${a.slice(0, 8)}… verified: copied from now on${cfg.copyOn === false ? ' (copy trading is OFF – switch it on to buy)' : ''}` : what === 'wban' ? `🚫 ${a.slice(0, 8)}…: never copied` : `${a.slice(0, 8)}…: not verified any more (not copied)`;
   }
 
   // Buy any token from the status page: a FirstLedger link, NAME.rIssuer, or only the issuer
@@ -1430,11 +1451,14 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       ruggers: (rec.devs ? rec.devs() : []).slice(0, 15),
       buysToday: S.buysToday, open: open.map((p) => ({ ...p, hist: undefined, bundle: bundles.get(p.k) ? { wallets: bundles.get(p.k).wallets.size, holds: [...bundles.get(p.k).hold.values()].reduce((a, b) => a + b, 0) } : null, spark: (p.hist || []).filter((_, i, a) => i % Math.ceil(a.length / 60) === 0 || i === a.length - 1).map((x) => x.price) })), history: S.history.slice(0, 50),
       chart: { ...chart.summary(), on: cfg.chartSmart, add: cfg.chartAdd },
-      smart: { on: cfg.autoTrack, copying: [...auto.entries()].map(([wallet, label]) => ({ wallet, label })), list: (rec.wallets ? rec.wallets() : []).slice(0, 20).map((w) => ({ ...w, smart: isSmart(w), copied: auto.has(w.wallet), pinned: !!S.walletPin[w.wallet], banned: !!S.walletBan[w.wallet] })), rules: { launches: cfg.autoMinLaunches, win: cfg.autoMinWin, pnl: cfg.autoMinPnl, bigHits: cfg.autoBigHits } },
+      smart: { on: cfg.autoTrack, copyOn: cfg.copyOn !== false, tracked: [...cfg.track.values()], copying: [...auto.entries()].map(([wallet, label]) => ({ wallet, label })), suggested: [...suggested.entries()].map(([wallet, label]) => ({ wallet, label })), list: (rec.wallets ? rec.wallets() : []).slice(0, 20).map((w) => ({ ...w, smart: isSmart(w), suggested: suggested.has(w.wallet), copied: auto.has(w.wallet), pinned: !!S.walletPin[w.wallet], banned: !!S.walletBan[w.wallet] })), rules: { launches: cfg.autoMinLaunches, win: cfg.autoMinWin, pnl: cfg.autoMinPnl, bigHits: cfg.autoBigHits } },
       cleanup: { on: cfg.cleanup, cleared: S.stats.linesCleared || 0, freed: S.stats.reserveFreed || 0 },
-      wins: S.history.filter((h) => h.pnl > 0).length, losses: S.history.filter((h) => h.pnl <= 0).length,
+      // launch trades only – copy trades have their own line
+      wins: S.history.filter((h) => !isCopyTrade(h) && h.pnl > 0).length, losses: S.history.filter((h) => !isCopyTrade(h) && h.pnl <= 0).length,
+      launchCash: all.filter((p) => !isCopyTrade(p)).reduce((s, p) => s + p.proceeds - p.cost, 0),
+      copyTrades: (() => { const h = S.history.filter(isCopyTrade); return { n: h.length, open: open.filter(isCopyTrade).length, wins: h.filter((x) => x.pnl > 0).length, losses: h.filter((x) => x.pnl <= 0).length, cash: all.filter(isCopyTrade).reduce((s, p) => s + p.proceeds - p.cost, 0) }; })(),
     };
   }
 
-  return { start, stop, resubscribe, tick, status, answer, say, rec, onTransaction, state: () => S, _pending: pending, _refreshSmart: refreshSmart };
+  return { start, stop, resubscribe, tick, status, answer, say, rec, onTransaction, state: () => S, _pending: pending, _refreshSmart: refreshSmart, _cfg: cfg };
 }

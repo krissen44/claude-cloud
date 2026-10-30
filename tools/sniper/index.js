@@ -120,7 +120,7 @@ function statsBlock(s) {
   const skips = Object.entries(s.skipped || {}).sort((a, b) => b[1] - a[1]);
   const total = skips.reduce((n, [, v]) => n + v, 0);
   return `<h3>📊 Stats <small>since ${new Date(s.since).toISOString().slice(0, 16).replace('T', ' ')} UTC</small></h3>
-<div><span class="k">Launches seen <b>${s.launches || 0}</b></span><span class="k">Copy signals <b>${s.copySignals || 0}</b></span><span class="k">Bought <b>${s.bought || 0}</b></span><span class="k">Buys failed (slippage) <b>${s.buyFailed || 0}</b> <small>(${pct(s.buyFailed || 0, tries)} of tries)</small></span><span class="k">Blocked by launch protection <b>${s.buyBlocked || 0}</b></span><span class="k">Approval requests <b>${s.asks || 0}</b></span></div>
+<div><span class="k">Launches seen <b>${s.launches || 0}</b></span><span class="k">Copy signals <b>${s.copySignals || 0}</b></span><span class="k">Bought <b>${s.bought || 0}</b>${s.copyBought ? ` <small>(+ ${s.copyBought} copy buys)</small>` : ''}</span><span class="k">Buys failed (slippage) <b>${s.buyFailed || 0}</b> <small>(${pct(s.buyFailed || 0, tries)} of tries)</small></span><span class="k">Blocked by launch protection <b>${s.buyBlocked || 0}</b></span><span class="k">Approval requests <b>${s.asks || 0}</b></span></div>
 ${skips.length ? `<div class="wrap"><table><tr><th>Skipped because</th><th>Count</th><th>Share</th></tr>${skips.map(([r, v]) => `<tr><td>${esc(r)}</td><td>${v}</td><td>${pct(v, total)}</td></tr>`).join('')}</table></div>` : ''}`;
 }
 
@@ -130,18 +130,22 @@ function analysisBlock(an, following) {
   const table = (title, rows) => `<div class="wrap"><table><tr><th>${title}</th><th>Launches</th><th>followed 1h+</th><th>reached 2×</th><th>5×</th><th>10×</th><th>above start after 1h</th><th>dead</th><th>median best ×</th></tr>${rows.map((g) => `<tr><td>${esc(g.name)}</td><td>${g.n}</td><td>${g.done}</td><td>${pc(g.x2)}</td><td>${pc(g.x5)}</td><td>${pc(g.x10)}</td><td>${pc(g.up1h)}</td><td>${pc(g.dead)}</td><td>${g.medMax == null ? '–' : g.medMax.toFixed(2) + '×'}</td></tr>`).join('')}</table></div>`;
   return `<h3>🔬 Launch outcomes – last ${an.days} days <small>(${an.total} launches, ${following} still followed; × = price vs. launch price)</small></h3>
 ${an.total ? table('Decision', an.byDecision) + table('Start liquidity', an.byStart) : '<p><small>No data yet – every launch is followed for 24 h, the table fills up from the first hour on.</small></p>'}
-<p><small>Download: <a href="/export/launches.csv">launches.csv</a> (Excel) · <a href="/export/launches.json">launches.json</a> · <a href="/export/events.jsonl">events.jsonl</a> (every buy, sell, skip, approval, setting change)</small></p>`;
+<p><small>Download: <a href="/export/launches.csv">launches.csv</a> (Excel) · <a href="/export/launches.json">launches.json</a> · <a href="/export/events.jsonl">events.jsonl</a> · copy trades separately: <a href="/export/copies.csv">copies.csv</a> (every buy, sell, skip, approval, setting change)</small></p>`;
 }
 
 // wallets that trade the launches we follow – the best ones are copied
 function smartBlock(sm) {
   if (!sm) return '';
-  const wbtn = (w, what, label, cls = '') => `<form method="post" action="/act"><input type="hidden" name="k" value="${esc(w)}"><input type="hidden" name="do" value="${what}"><button class="${cls}">${label}</button></form>`;
-  const rows = (sm.list || []).map((w) => `<tr><td><a href="https://xrpscan.com/account/${esc(w.wallet)}" target="_blank" rel="noopener">${esc(w.wallet.slice(0, 10))}…</a>${w.copied ? ' <b class="g">copying</b>' : w.smart ? ' <small>smart</small>' : ''}${w.pinned ? ' 📌' : ''}${w.banned ? ' 🚫' : ''}</td><td>${w.launches}</td><td>${w.bigHits ? `<b>${w.bigHits}</b>/${w.big}` : `0/${w.big || 0}`}</td><td>${w.early}</td><td>${Math.round(w.winRate * 100)}%</td><td class="${w.pnl >= 0 ? 'g' : 'r'}">${f(w.pnl, 1)}</td><td><small>${esc((w.tokens || []).join(' '))}</small></td><td>${w.pinned || w.banned ? wbtn(w.wallet, 'wfree', 'Auto') : wbtn(w.wallet, 'wpin', '📌 Copy', 'ok') + wbtn(w.wallet, 'wban', '🚫 Never')}</td></tr>`).join('');
-  return `<h3>🕵️ Smart wallets <small>${sm.on ? `copied automatically: early with ≥ 2× in ≥ ${sm.rules.bigHits} big launches 🚀 – or ≥ ${sm.rules.launches} launches, ≥ ${sm.rules.win}% wins, ≥ +${sm.rules.pnl} XRP` : 'auto-copy is off – 📌 to copy one'}</small></h3>
+  const wbtn = (w, what, label, cls = '', ask = '') => `<form method="post" action="/act"${ask ? ` onsubmit="return confirm('${esc(ask)}')"` : ''}><input type="hidden" name="k" value="${esc(w)}"><input type="hidden" name="do" value="${what}"><button class="${cls}">${label}</button></form>`;
+  const sw = `<form method="post" action="/act" style="display:inline"><input type="hidden" name="do" value="${sm.copyOn ? 'copyoff' : 'copyon'}"><button class="${sm.copyOn ? '' : 'ok'}">${sm.copyOn ? '⏸ Switch copy trading OFF' : '▶️ Switch copy trading ON'}</button></form>`;
+  const rows = (sm.list || []).map((w) => `<tr><td><a href="https://xrpscan.com/account/${esc(w.wallet)}" target="_blank" rel="noopener">${esc(w.wallet.slice(0, 10))}…</a>${w.copied ? ' <b class="g">✅ verified</b>' : w.suggested ? ' <b>🕵️ suggested</b>' : w.smart ? ' <small>smart</small>' : ''}${w.banned ? ' 🚫' : ''}</td><td>${w.launches}</td><td>${w.bigHits ? `<b>${w.bigHits}</b>/${w.big}` : `0/${w.big || 0}`}</td><td>${w.early}</td><td>${Math.round(w.winRate * 100)}%</td><td class="${w.pnl >= 0 ? 'g' : 'r'}">${f(w.pnl, 1)}</td><td><small>${esc((w.tokens || []).join(' '))}</small></td><td>${w.pinned || w.banned ? wbtn(w.wallet, 'wfree', w.pinned ? 'Un-verify' : 'Reset') : wbtn(w.wallet, 'wpin', '✅ Verify', 'ok', 'Copy every buy of this wallet from now on? Check it on xrpscan first.') + wbtn(w.wallet, 'wban', '🚫 Never')}</td></tr>`).join('');
+  return `<h3>🕵️ Smart wallets / copy trading</h3>
+<p>Copy trading: ${sm.copyOn ? '<b class="g">ON</b>' : '<b class="r">OFF</b> – no copy buys'} ${sw}</p>
+<p><small>Nothing is copied automatically. ${sm.on ? `Suggested: early with ≥ 2× in ≥ ${sm.rules.bigHits} big launches 🚀 – or ≥ ${sm.rules.launches} launches, ≥ ${sm.rules.win}% wins, ≥ +${sm.rules.pnl} XRP. ` : ''}A wallet is copied only after you press ✅ Verify (and wallets you entered under Tracked wallets).</small></p>
+${(sm.suggested || []).length ? `<p>🕵️ Waiting for your check: ${sm.suggested.map((c) => esc(c.label)).join(' · ')}</p>` : ''}
 <form method="post" action="/act" class="buy"><input type="hidden" name="do" value="analyze"><input name="k" placeholder="🔍 Analyze a launch: FirstLedger link or NAME.rIssuer (e.g. a big runner)" autocomplete="off"><button>Analyze</button></form>
 <p><small>Reads the token’s whole pool history and books its traders. Dev bundle wallets (same address start as the pool creator) never count. Big launch 🚀 = 5× from the start, 1,000 XRP in the pool or 150 buyers.</small></p>
-${(sm.copying || []).length ? `<p>Copying now: ${sm.copying.map((c) => esc(c.label)).join(' · ')}</p>` : ''}
+${(sm.copying || []).length || (sm.tracked || []).length ? `<p>${sm.copyOn ? 'Copying now' : 'Verified (paused)'}: ${[...sm.copying.map((c) => c.label), ...(sm.tracked || []).map((n) => '👀 ' + n)].map(esc).join(' · ')}</p>` : ''}
 ${rows ? `<div class="wrap"><table><tr><th>Wallet</th><th>Launches</th><th>🚀 Big hits</th><th>Early (≤ 2 min)</th><th>Wins</th><th>XRP out − in</th><th>Last tokens (+ win / − loss)</th><th></th></tr>${rows}</table></div>` : '<p><small>No data yet – every launch’s traders are scored 3 h after it started.</small></p>'}`;
 }
 // tiny price line of a position's own chart
@@ -177,12 +181,12 @@ ${p.domain ? `🌐 <a href="https://${esc(p.domain.replace(/^https?:\/\//, ''))}
 <form method="post" action="/act"><input type="hidden" name="k" value="${esc(p.k)}"><input type="hidden" name="do" value="buymore"><input class="xr" name="xrp" inputmode="decimal" placeholder="XRP" autocomplete="off"><button class="ok">Buy more</button></form>
 ${p.manual ? act(p, 'auto', '🤖 Back to automatic') : act(p, 'hold', '✋ I decide')}</div></div>`;
   };
-  const hist = st.history.map((h) => `<tr><td>${esc(h.name)}</td><td>${h.cost.toFixed(3)}</td><td>${h.proceeds.toFixed(3)}</td><td class="${h.pnl >= 0 ? 'g' : 'r'}">${f(h.pnl)}</td><td>${esc(h.why)}</td><td>${t(h.closed)}</td></tr>`).join('');
+  const hist = st.history.map((h) => `<tr><td>${esc(h.name)}${h.copy ? ' <small>🕵️ copy</small>' : ''}</td><td>${h.cost.toFixed(3)}</td><td>${h.proceeds.toFixed(3)}</td><td class="${h.pnl >= 0 ? 'g' : 'r'}">${f(h.pnl)}</td><td>${esc(h.why)}</td><td>${t(h.closed)}</td></tr>`).join('');
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>XRPL Sniper</title><script>setInterval(()=>{const a=document.activeElement;if(a&&a.tagName==='INPUT')return;if([...document.querySelectorAll('input[name=xrp],input[name=k]:not([type=hidden])')].some(i=>i.value))return;location.replace('/')},20000)</script>
 <style>body{font:14px system-ui;margin:16px;background:#0e1726;color:#e6edf6}a{color:#6cb8ff}table{border-collapse:collapse;width:100%;margin:8px 0 24px}td,th{padding:4px 6px;border-bottom:1px solid #243247;text-align:left;vertical-align:top}.g{color:#3ad17a}.r{color:#ff6b6b}.k{display:inline-block;margin:0 16px 8px 0}small{color:#8aa0bb}form{display:inline}button{font:inherit;margin:2px 4px 2px 0;padding:4px 10px;border-radius:6px;border:1px solid #3a4d66;background:#1a2638;color:#e6edf6;cursor:pointer}button.ok{background:#1f6e43;border-color:#2c9a5e}button.no{background:#6e3a1f;border-color:#9a5a2c}.card{border:2px solid #f5b942;border-radius:10px;padding:10px 12px;margin:8px 0;line-height:1.7}.row{margin-top:6px}.wrap{overflow-x:auto}.pc{border:1px solid #2c3d55;background:#121d2e;border-radius:10px;padding:10px 12px;margin:8px 0}.pr{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:4px}.hb{font-size:13px;margin-left:6px}input.xr{width:70px}input{font:inherit;padding:4px 8px;border-radius:6px;border:1px solid #3a4d66;background:#0e1726;color:#e6edf6}form.buy{display:flex;gap:6px;flex-wrap:wrap}form.buy input[name=k]{flex:1;min-width:220px}.msg{border-color:#6cb8ff}</style>
 <h2>XRPL Sniper ${st.dryRun ? '(DRY RUN)' : ''} <span style="float:right"><a href="/arb"><button type="button">⇄ Arbitrage</button></a> <a href="/settings"><button type="button">⚙️ Settings</button></a> <form method="post" action="/logout"><button>Log out</button></form></span></h2>
 ${st.paused ? '<div class="card" style="border-color:#ff6b6b">⏸ <b>Buying paused</b> – open positions are still sold by the rules. <a href="/settings">Change</a></div>' : ''}
-<div><span class="k">Wallet ${esc(st.wallet)}</span><span class="k">Cash result <b class="${st.cash >= 0 ? 'g' : 'r'}">${f(st.cash)} XRP</b></span><span class="k">Moonbags worth <b class="g">${st.moonValue.toFixed(3)} XRP</b></span><span class="k">${st.wins} wins / ${st.losses} losses</span><span class="k">Buys today ${st.buysToday}</span>${st.tracking.length ? `<span class="k">👀 ${st.tracking.map(esc).join(', ')}</span>` : ''}${st.mcapApproval ? `<span class="k">Approval from ${cap(st.mcapApproval)}</span>` : ''}</div>
+<div><span class="k">Wallet ${esc(st.wallet)}</span><span class="k">Cash result <b class="${st.cash >= 0 ? 'g' : 'r'}">${f(st.cash)} XRP</b></span><span class="k">Moonbags worth <b class="g">${st.moonValue.toFixed(3)} XRP</b></span><span class="k">Launch trades: ${st.wins} wins / ${st.losses} losses (<span class="${st.launchCash >= 0 ? 'g' : 'r'}">${f(st.launchCash)} XRP</span>)</span>${st.copyTrades?.n || st.copyTrades?.open ? `<span class="k">🕵️ Copy trades (not in the launch stats): ${st.copyTrades.wins} wins / ${st.copyTrades.losses} losses${st.copyTrades.open ? `, ${st.copyTrades.open} open` : ''} (<span class="${st.copyTrades.cash >= 0 ? 'g' : 'r'}">${f(st.copyTrades.cash)} XRP</span>)</span>` : ''}<span class="k">Buys today ${st.buysToday}</span>${st.tracking.length ? `<span class="k">👀 ${st.tracking.map(esc).join(', ')}</span>` : ''}${st.mcapApproval ? `<span class="k">Approval from ${cap(st.mcapApproval)}</span>` : ''}</div>
 ${asks.length ? `<h3>🙋 Waiting for your approval (${asks.length})</h3>${askCards}` : ''}
 ${msg ? `<div class="card msg">${esc(msg)}</div>` : ''}
 <h3>🛒 Buy a token</h3>
@@ -317,6 +321,13 @@ if (process.env.PORT) {
     if (!bot) return html(503, 'Bot is starting …');
     if (u.pathname === '/act' && req.method === 'POST') {
       return readBody(req, async (f) => {
+        if (/^copy(on|off)$/.test(f.get('do') || '')) { // master switch for copy trading
+          const on = f.get('do') === 'copyon';
+          applyOverrides({ ...overrides, COPY_TRADING: on ? '1' : '0' });
+          bot.say(`⚙️ Copy trading ${on ? 'ON' : 'OFF'} (status page)`);
+          res.writeHead(303, { location: '/?msg=' + encodeURIComponent(on ? '✅ Copy trading is ON – verified and tracked wallets are copied' : '⏸ Copy trading is OFF – no copy buys') });
+          return res.end();
+        }
         const r = await bot.answer(f.get('k') || '', f.get('do') || '', { pct: f.get('pct'), xrp: String(f.get('xrp') || '').replace(',', '.') }).catch((e) => e.message);
         console.log(`status page: ${f.get('do')} ${f.get('k')} → ${r}`);
         res.writeHead(303, { location: '/?msg=' + encodeURIComponent(String(r || '')).slice(0, 600) });
@@ -338,8 +349,11 @@ if (process.env.PORT) {
     if (u.pathname.startsWith('/export/')) {
       const name = u.pathname.slice(8);
       const send = (type, body) => { res.writeHead(200, { 'content-type': type, 'content-disposition': `attachment; filename="sniper-${new Date().toISOString().slice(0, 10)}-${name}"`, 'cache-control': 'no-store' }); res.end(body); };
-      if (name === 'launches.csv') return send('text/csv; charset=utf-8', bot.rec.csv(bot.rec.rows()));
-      if (name === 'launches.json') return send('application/json', JSON.stringify(bot.rec.rows()));
+      // launch statistics = launches only; copy trades have their own file
+      const launches = () => bot.rec.rows().filter((r) => r.kind !== 'copy');
+      if (name === 'launches.csv') return send('text/csv; charset=utf-8', bot.rec.csv(launches()));
+      if (name === 'launches.json') return send('application/json', JSON.stringify(launches()));
+      if (name === 'copies.csv') return send('text/csv; charset=utf-8', bot.rec.csv(bot.rec.rows().filter((r) => r.kind === 'copy')));
       if (name === 'events.jsonl') return send('application/x-ndjson', bot.rec.events().map((e) => JSON.stringify(e)).join('\n'));
       return html(404, 'not found');
     }

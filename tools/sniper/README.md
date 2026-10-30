@@ -109,12 +109,24 @@ The recorder follows every launch for 24 h and now also notes every wallet that 
 or the issuer): XRP paid in, XRP taken out, seconds after the launch. 3 h after a launch its traders are booked
 into `DATA_DIR/data/wallets.json`: launches traded, early entries (≤ 2 min), wins (took out ≥ 10 % more XRP than
 put in) and XRP out − in. Every 30 min the best wallets that pass `AUTO_MIN_LAUNCHES` (3), `AUTO_MIN_WIN` (60 %),
-`AUTO_MIN_PNL` (+5 XRP) and `AUTO_MIN_EARLY` (0) are copied like `TRACK_WALLETS` (up to `AUTO_MAX` = 5, copy
-rules and `COPY_BUY_XRP`). The status page lists the top 20 with **📌 Copy** (always) and **🚫 Never**. Note: a
-wallet's tokens still held count at the price of the moment (−10 %).
+`AUTO_MIN_PNL` (+5 XRP) and `AUTO_MIN_EARLY` (0) are **suggested** (up to `AUTO_MAX` = 5; message + "Waiting for
+your check" on the page) – **nothing is copied automatically**. A wallet is copied (copy rules, `COPY_BUY_XRP`)
+only after you checked it and pressed **✅ Verify** (asks once more), or entered it under `TRACK_WALLETS`.
+**Un-verify** stops it, **🚫 Never** hides it from the suggestions. Note: a wallet's tokens still held count at
+the price of the moment (−10 %).
+
+**Master switch `COPY_TRADING`** (on): off = no copy buys at all, from verified or tracked wallets. Wallets are
+still scored and suggested, open copy positions are still sold by their rules. Switch it on the status page
+(▶️ / ⏸ in the smart-wallet block) or under ⚙️ Settings → Wallet tracking / copy trading. Crowd entry (buying a
+missed launch because many wallets buy it) is not copy trading and has its own switch.
+
+**Clean launch statistics:** copy trades are kept out of everything about launches – launch outcomes,
+`launches.csv/json`, "Bought", the launch wins/losses and their XRP result. They have their own line on the page
+("🕵️ Copy trades"), the counter `copyBought`, a 🕵️ mark in the closed trades and their own `copies.csv`. Older
+closed copy trades are marked once at the start from the recorder.
 
 **Big launches first:** a launch is big 🚀 if it went 5× from its start, had 1,000 XRP in the pool or 150 buyers.
-A wallet that was in within 2 minutes and made ≥ 2× on `AUTO_BIG_HITS` (2) big launches is copied even before
+A wallet that was in within 2 minutes and made ≥ 2× on `AUTO_BIG_HITS` (2) big launches is suggested even before
 the other rules apply, and the list is ranked by those big hits. **Dev bundles** – wallets whose address starts
 like the pool creator's or the issuer's (e.g. `rwdDGoVpCs…` at BOROS, `rh13rh2s…` at CROSS, buying seconds
 after the create) – never count. **🔍 Analyze a launch** on the status page reads a token's whole pool history
