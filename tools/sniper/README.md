@@ -120,6 +120,24 @@ still scored and suggested, open copy positions are still sold by their rules. S
 (▶️ / ⏸ in the smart-wallet block) or under ⚙️ Settings → Wallet tracking / copy trading. Crowd entry (buying a
 missed launch because many wallets buy it) is not copy trading and has its own switch.
 
+**Copy quality (wallet analysis, `wallets.mjs`):** every wallet is analysed from its own ledger history
+(up to 1,200 transactions) before it is copied – on ✅ Verify, for every suggestion, by hand with **🔍 Analyze
+wallet** on the page, and again every 24 h; a copied wallet's first buy waits for it (≤ 20 s). The analysis
+gives per wallet: tokens traded per day, median time until its first sale, median result, wins, XRP result
+(realized + held at today's price −10 %), median buy size and the result by pool size at its buy
+(<100 / 100–300 / 300–1000 / 1000+ XRP). From that:
+- **scalper / flipper** (sells within ~15 min, most within 10 min) → never copied (`COPY_SKIP_FLIPPERS`): we buy
+  after it and would be its exit liquidity. Measured 29 Oct: `rP9CDJq4…` = scalper (20 tokens/day, median
+  hold 13 min, median 1.03×), `rB79X9AE…` = flipper (median hold 2 min).
+- **holder** → copied only in the pool sizes where it makes ≥ 10 % (`COPY_GOOD_POOLS_ONLY`) and only buys ≥ its
+  usual size (`COPY_CONVICTION` × median buy). `rKs7NssX…` (median hold 4–6 h) lost in 100–300 XRP pools and made
+  its money in 300+; `rwBERUpJ…` the same. `COPY_MIN_POOL_XRP` is now 300 by default.
+- ⚠️ when almost all of its profit comes from 3 tokens while most trades lose (lottery style).
+- **Mirror sell** (`COPY_MIRROR_SELL`): the wallet sells ≥ `COPY_MIRROR_PCT` (50 %) of a token we copied → we
+  sell all of ours.
+- **Auto stop** (`COPY_AUTO_STOP`): after `COPY_STOP_AFTER` (4) copies of a wallet with a negative result and
+  under 50 % wins it is un-verified (message; ✅ Verify again to resume). The page shows our copies per wallet.
+
 **Clean launch statistics:** copy trades are kept out of everything about launches – launch outcomes,
 `launches.csv/json`, "Bought", the launch wins/losses and their XRP result. They have their own line on the page
 ("🕵️ Copy trades"), the counter `copyBought`, a 🕵️ mark in the closed trades and their own `copies.csv`. Older

@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import { createRecorder, ammAccountOf, ammTokDelta, bundleOf, isBigLaunch } from './recorder.mjs';
 import { chartHealth, createChartLearner } from './chart.mjs';
 import { createSocials, hasSocials, socialsText } from './socials.mjs';
+import { profileWallet, profileText, poolBucket, walletMove } from './wallets.mjs';
 import path from 'node:path';
 
 const DROPS = 1_000_000;
@@ -128,7 +129,15 @@ export function readConfig(env = process.env) {
     // big launches: a wallet that was in early (≤ 2 min) and made ≥ 2× on this many of them is copied
     autoBigHits: num('AUTO_BIG_HITS', 2),
     copyMinXrp: num('COPY_MIN_XRP', 5), // ignore buys of the tracked wallet below this many XRP
-    copyMinPoolXrp: num('COPY_MIN_POOL_XRP', num('MIN_POOL_XRP', 100)),
+    copyMinPoolXrp: num('COPY_MIN_POOL_XRP', 300), // smaller pools: even good holders lose there (29 Oct data)
+    // copy quality: every copied wallet is analysed from its own ledger history (wallets.mjs)
+    copySkipFlippers: bool('COPY_SKIP_FLIPPERS', true), // scalpers / flippers sell minutes after – never copied
+    copyGoodPoolsOnly: bool('COPY_GOOD_POOLS_ONLY', true), // only buys in pool sizes where that wallet makes money
+    copyConviction: num('COPY_CONVICTION', 1), // only buys ≥ this × its median buy (0 = off)
+    copyMirrorSell: bool('COPY_MIRROR_SELL', true), // the wallet sells ≥ COPY_MIRROR_PCT of the token → we sell all
+    copyMirrorPct: num('COPY_MIRROR_PCT', 50),
+    copyAutoStop: bool('COPY_AUTO_STOP', true), // our copies of a wallet lose → it is un-verified
+    copyStopAfter: num('COPY_STOP_AFTER', 4),
     // copied buys sell by classic rules (no moonbag): half at +100 %, rest on a 30 % trailing stop,
     // everything at −50 %, on a 40 % pool drop or after 24 h
     copyRules: {
@@ -369,6 +378,21 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   // Ranked from the followed launches. The best ones are only *suggested*: a wallet is copied after
   // you verified it on the page (S.walletPin = verified), never automatically.
   S.walletPin ||= {}; S.walletBan ||= {}; S.walletSuggested ||= {};
+  S.walletProfile ||= {}; S.copyStats ||= {};
+  // trading profile of a wallet from its ledger history, one at a time, kept 24 h
+  let profiling = Promise.resolve();
+  const profileFresh = (a) => S.walletProfile[a] && now() - S.walletProfile[a].at < 24 * 3600e3;
+  function profileOf(a, force = false) {
+    if (!force && profileFresh(a)) return Promise.resolve(S.walletProfile[a]);
+    profiling = profiling.then(async () => {
+      if (!force && profileFresh(a)) return S.walletProfile[a];
+      const p = await profileWallet(req, a, { now: now() });
+      S.walletProfile[a] = { ...p, recent: p.recent };
+      save();
+      return p;
+    }).catch((e) => { log(`wallet profile ${a.slice(0, 8)}: ${e.message}`); return S.walletProfile[a] || null; });
+    return profiling;
+  }
   // older closed copy trades (before they were marked): mark them from the recorder's copy rows
   if (!S.copyMarked) {
     try { const ks = new Set((rec.rows ? rec.rows() : []).filter((r) => r.kind === 'copy').map((r) => r.k)); for (const h of S.history || []) if (!h.copy && ks.has(h.k)) h.copy = 'copy'; S.copyMarked = true; } catch {}
@@ -388,9 +412,13 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     if (cfg.autoTrack) for (const w of list.filter((x) => isSmart(x) && !S.walletBan[x.wallet] && !S.walletPin[x.wallet]).slice(0, cfg.autoMax)) sug.set(w.wallet, label(w, w.wallet).replace('✅', '🕵️'));
     for (const a of sug.keys()) if (!S.walletSuggested[a]) {
       S.walletSuggested[a] = now();
-      say(`🕵️ New smart wallet ${sug.get(a)} – not copied yet: check it and press ✅ Verify on the page to copy it`);
-      rec.event('smart_wallet', { wallet: a, label: sug.get(a), suggested: true });
+      profileOf(a).then((p) => {
+        say(p && !p.copyable && p.style !== 'unknown' ? `🕵️ Smart wallet ${sug.get(a)} – ⚠️ ${p.why}: better not copy it`
+          : p && p.style === 'unknown' ? `🕵️ Smart wallet ${sug.get(a)} – its trading history could not be read (${p.why}): check it yourself before ✅ Verify` : `🕵️ New smart wallet ${sug.get(a)}${p ? ` – ${p.why}` : ''} – not copied yet: check it and press ✅ Verify on the page to copy it`);
+        rec.event('smart_wallet', { wallet: a, label: sug.get(a), suggested: true, profile: p ? { style: p.style, copyable: p.copyable, why: p.why } : null });
+      });
     }
+    for (const a of auto.keys()) if (!profileFresh(a)) profileOf(a); // verified ones stay up to date
     suggested = sug;
   }
   // copied: wallets from TRACK_WALLETS (entered by you) and verified ones – only with copy trading on
@@ -429,6 +457,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     const h = ev.hash || tx.hash;
     if (h) { if (seenValidated.has(h)) return; seenValidated.add(h); if (seenValidated.size > 20000) seenValidated.clear(); }
     rec.tx(ev);
+    if (tx.Account !== me && cfg.copyMirrorSell) mirrorSell(tx, ev);
     if (tracked(tx.Account) && tx.Account !== me) onTracked(tx, ev);
     // the issuer of a waiting launch did something (unfreeze, blackhole, fee change) → re-check now
     const ws = waiters.get(tx.Account);
@@ -484,18 +513,70 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   }
 
   // A tracked wallet bought a token → run the same checks and buy it too (once per token).
+  // The wallet we copied sells (most of) that token → we sell all of ours too: it knows something,
+  // and a copy without its own exit plan is the one left holding the bag.
+  function mirrorSell(tx, ev) {
+    const mine = Object.values(S.positions).filter((p) => p.copyWallet === tx.Account);
+    if (!mine.length) return;
+    const m = walletMove(tx, ev.meta, tx.Account);
+    for (const pos of mine) {
+      const d = m.tokens[pos.k];
+      if (!(d < 0)) continue;
+      const left = Math.max(0, m.bal[pos.k] ?? 0);
+      const frac = -d / (-d + left);
+      if (frac * 100 < cfg.copyMirrorPct) continue;
+      stat('copyMirrorSells');
+      rec.event('copy_mirror', { k: pos.k, wallet: tx.Account, pct: Math.round(frac * 100) });
+      locked(() => (S.positions[pos.k] ? sell(pos, 1, `copied wallet sold ${Math.round(frac * 100)}% of its ${pos.name}`) : null)).catch((e) => say(`⚠️ ${pos.name}: mirror sell failed – ${e.message}`));
+    }
+  }
+
+  // Is this buy of a copied wallet worth copying? Its profile (how it trades) decides.
+  function copyFilter(a, b, poolXrp) {
+    const p = S.walletProfile[a];
+    if (!p) return null; // not analysed yet (first signal starts it) – the other checks still apply
+    if (cfg.copySkipFlippers && (p.style === 'scalper' || p.style === 'flipper')) return `${p.style} – sells after ~${Math.round(p.holdMin ?? 0)} min, we would be its exit`;
+    if (cfg.copyGoodPoolsOnly && p.goodPools?.length && poolXrp > 0 && !p.goodPools.includes(poolBucket(poolXrp))) return `pool ${Math.round(poolXrp)} XRP – it doesn't make money in pools of ${poolBucket(poolXrp)} XRP (only ${p.goodPools.join(', ')})`;
+    if (cfg.copyConviction > 0 && p.medBuy > 0 && b.xrp < p.medBuy * cfg.copyConviction) return `small buy (${b.xrp.toFixed(1)} XRP, it usually buys ${p.medBuy})`;
+    return null;
+  }
   function onTracked(tx, ev) {
     if (tx.TransactionType === 'AMMDeposit' || tx.TransactionType === 'AMMCreate') return;
     const who = trackedName(tx.Account);
-    for (const b of buysOf(ev.meta, tx.Account, Number(tx.Fee || 0))) {
-      if (b.issuer === tx.Account || b.xrp < cfg.copyMinXrp) continue;
+    const poolXrp = walletMove(tx, ev.meta, tx.Account).pool;
+    const buys = buysOf(ev.meta, tx.Account, Number(tx.Fee || 0)).filter((b) => b.issuer !== tx.Account && b.xrp >= cfg.copyMinXrp);
+    if (!buys.length) return;
+    S.copied ||= {};
+    // not analysed yet: read its history first (≤ 20 s) – no blind copy
+    if (!profileFresh(tx.Account)) {
+      const todo = buys.filter((b) => !S.copied[key(b.currency, b.issuer)]);
+      for (const b of todo) S.copied[key(b.currency, b.issuer)] = now(); // no double signal meanwhile
+      if (!todo.length) return;
+      say(`👀 ${who} bought – reading its trading history first`);
+      Promise.race([profileOf(tx.Account), new Promise((r) => setTimeout(r, 20000))]).then(() => {
+        for (const b of todo) delete S.copied[key(b.currency, b.issuer)];
+        copyBuys(tx, ev, who, poolXrp, todo);
+      });
+      return;
+    }
+    copyBuys(tx, ev, who, poolXrp, buys);
+  }
+  function copyBuys(tx, ev, who, poolXrp, buys) {
+    for (const b of buys) {
       const k = key(b.currency, b.issuer);
-      S.copied ||= {};
       if (S.copied[k] || pending.has(k) || S.positions[k]) continue;
+      const no = copyFilter(tx.Account, b, poolXrp);
+      if (no) {
+        S.copied[k] = now();
+        stat('copySkipped');
+        rec.event('copy_skip', { k, who, wallet: tx.Account, xrp: +b.xrp.toFixed(3), why: no });
+        say(`🙅 ${who} bought ${currencyName(b.currency)} for ${b.xrp.toFixed(1)} XRP – not copied: ${no}`);
+        continue;
+      }
       S.copied[k] = now();
       const l = {
         k, currency: b.currency, issuer: b.issuer, name: currencyName(b.currency), at: now(),
-        copy: who, buyXrp: cfg.copyBuyXrp, minPool: cfg.copyMinPoolXrp, poolWait: 0,
+        copy: who, copyWallet: tx.Account, buyXrp: cfg.copyBuyXrp, minPool: cfg.copyMinPoolXrp, poolWait: 0,
       };
       pending.set(k, l);
       stat('copySignals');
@@ -865,7 +946,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   function position(l, cost, amount, p) {
     return {
       k: l.k, currency: l.currency, issuer: l.issuer, name: l.name, cost, amount, sold: 0, proceeds: 0,
-      entryPoolXrp: p.xrp, peak: cost, value: cost, tp1Done: false, at: now(), fails: 0, copy: l.copy || '',
+      entryPoolXrp: p.xrp, peak: cost, value: cost, tp1Done: false, at: now(), fails: 0, copy: l.copy || '', copyWallet: l.copyWallet || '',
       startPoolXrp: l.copy ? null : l.poolXrp, launchedAt: l.at, // pool size at launch (unknown for copies)
       supply: l.supply || null, byHand: !!l.byHand,
       socials: l.socials ? { x: l.socials.x, telegram: l.socials.telegram, website: l.socials.website, discord: l.socials.discord } : null,
@@ -925,7 +1006,17 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     delete S.positions[pos.k];
     const pnl = pos.proceeds - pos.cost;
     S.realized += pnl;
-    S.history.unshift({ name: pos.name, k: pos.k, cost: pos.cost, proceeds: pos.proceeds, pnl, why, at: pos.at, closed: now(), ...(isCopyTrade(pos) ? { copy: pos.copy } : {}) });
+    S.history.unshift({ name: pos.name, k: pos.k, cost: pos.cost, proceeds: pos.proceeds, pnl, why, at: pos.at, closed: now(), ...(isCopyTrade(pos) ? { copy: pos.copy, copyWallet: pos.copyWallet || '' } : {}) });
+    if (pos.copyWallet) {
+      const c = (S.copyStats[pos.copyWallet] ||= { n: 0, wins: 0, pnl: 0 });
+      c.n++; if (pnl > 0) c.wins++; c.pnl = +(c.pnl + pnl).toFixed(6);
+      if (cfg.copyAutoStop && S.walletPin[pos.copyWallet] && c.n >= cfg.copyStopAfter && c.pnl < 0 && c.wins / c.n < 0.5) {
+        delete S.walletPin[pos.copyWallet];
+        refreshSmart();
+        say(`🛑 Stopped copying ${pos.copyWallet.slice(0, 8)}…: our ${c.n} copies made ${c.pnl.toFixed(2)} XRP (${c.wins} wins). ✅ Verify again on the page to copy it again.`);
+        rec.event('copy_autostop', { wallet: pos.copyWallet, ...c });
+      }
+    }
     S.history = S.history.slice(0, 500);
     save();
     rec.trade(pos.k, { proceeds: +pos.proceeds.toFixed(6), pnl: +pnl.toFixed(6), closeWhy: why, heldMin: Math.round((now() - pos.at) / 60000), peak: +pos.peak.toFixed(6), runner: !!pos.runner });
@@ -1234,7 +1325,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
 
   // Your answers from the status page.
   const answer = (k, what, o = {}) => (what === 'buy' ? buyByHand(k, o.xrp)
-    : what === 'wpin' || what === 'wban' || what === 'wfree' ? walletAct(k, what)
+    : what === 'wpin' || what === 'wban' || what === 'wfree' || what === 'wanalyze' ? walletAct(k, what)
     : what === 'analyze' ? analyzeLaunch(k)
     : what === 'cleanup' ? locked(cleanupSweep).then((n) => (n === 'off' ? 'clean-up is off (or already running)' : `🧹 clean-up done: ${n} trust line(s) deleted`))
     : locked(() => answerNow(k, what, o)));
@@ -1353,13 +1444,20 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     return `🔍 ${name}: ${txs.length} trades, ${buyers} buyers, best ${maxX.toFixed(1)}× from the start, pool up to ${maxPool.toFixed(0)} XRP${big ? ' – 🚀 big launch' : ''}; ${res?.booked ?? 0} wallets booked. Best early buyers: ${best.map((b) => `${b.w.slice(0, 8)}… ${b.x.toFixed(1)}× (${b.s}s)`).join(', ') || '–'}`;
   }
 
-  function walletAct(a, what) {
+  async function walletAct(a, what) {
+    a = String(a || '').trim();
     if (!/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(a)) return 'not a wallet address';
+    if (what === 'wanalyze') { const p = await profileOf(a, true); return p ? `🔍 ${a.slice(0, 8)}…: ${profileText(p)}` : 'could not read the wallet'; }
     delete S.walletPin[a]; delete S.walletBan[a];
     if (what === 'wpin') S.walletPin[a] = now();
     if (what === 'wban') S.walletBan[a] = now();
     save(); refreshSmart();
     if (what === 'wpin') rec.event('wallet_verified', { wallet: a });
+    if (what === 'wpin') {
+      const p = await profileOf(a);
+      const warn = p && !p.copyable ? `\n⚠️ ${p.why}${cfg.copySkipFlippers && (p.style === 'scalper' || p.style === 'flipper') ? ' – its buys are skipped (COPY_SKIP_FLIPPERS)' : ''}` : p ? `\n${profileText(p)}` : '';
+      return `✅ ${a.slice(0, 8)}… verified: copied from now on${cfg.copyOn === false ? ' (copy trading is OFF – switch it on to buy)' : ''}${warn}`;
+    }
     return what === 'wpin' ? `✅ ${a.slice(0, 8)}… verified: copied from now on${cfg.copyOn === false ? ' (copy trading is OFF – switch it on to buy)' : ''}` : what === 'wban' ? `🚫 ${a.slice(0, 8)}…: never copied` : `${a.slice(0, 8)}…: not verified any more (not copied)`;
   }
 
@@ -1451,7 +1549,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       ruggers: (rec.devs ? rec.devs() : []).slice(0, 15),
       buysToday: S.buysToday, open: open.map((p) => ({ ...p, hist: undefined, bundle: bundles.get(p.k) ? { wallets: bundles.get(p.k).wallets.size, holds: [...bundles.get(p.k).hold.values()].reduce((a, b) => a + b, 0) } : null, spark: (p.hist || []).filter((_, i, a) => i % Math.ceil(a.length / 60) === 0 || i === a.length - 1).map((x) => x.price) })), history: S.history.slice(0, 50),
       chart: { ...chart.summary(), on: cfg.chartSmart, add: cfg.chartAdd },
-      smart: { on: cfg.autoTrack, copyOn: cfg.copyOn !== false, tracked: [...cfg.track.values()], copying: [...auto.entries()].map(([wallet, label]) => ({ wallet, label })), suggested: [...suggested.entries()].map(([wallet, label]) => ({ wallet, label })), list: (rec.wallets ? rec.wallets() : []).slice(0, 20).map((w) => ({ ...w, smart: isSmart(w), suggested: suggested.has(w.wallet), copied: auto.has(w.wallet), pinned: !!S.walletPin[w.wallet], banned: !!S.walletBan[w.wallet] })), rules: { launches: cfg.autoMinLaunches, win: cfg.autoMinWin, pnl: cfg.autoMinPnl, bigHits: cfg.autoBigHits } },
+      smart: { on: cfg.autoTrack, copyOn: cfg.copyOn !== false, tracked: [...cfg.track.values()], copying: [...auto.entries()].map(([wallet, label]) => ({ wallet, label })), suggested: [...suggested.entries()].map(([wallet, label]) => ({ wallet, label })), profiles: Object.fromEntries([...new Set([...auto.keys(), ...suggested.keys(), ...Object.keys(S.walletProfile)])].map((a) => [a, S.walletProfile[a] ? { style: S.walletProfile[a].style, copyable: S.walletProfile[a].copyable, why: S.walletProfile[a].why, text: profileText(S.walletProfile[a]), at: S.walletProfile[a].at } : null])), copyStats: S.copyStats, list: (rec.wallets ? rec.wallets() : []).slice(0, 20).map((w) => ({ ...w, smart: isSmart(w), suggested: suggested.has(w.wallet), copied: auto.has(w.wallet), pinned: !!S.walletPin[w.wallet], banned: !!S.walletBan[w.wallet] })), rules: { launches: cfg.autoMinLaunches, win: cfg.autoMinWin, pnl: cfg.autoMinPnl, bigHits: cfg.autoBigHits } },
       cleanup: { on: cfg.cleanup, cleared: S.stats.linesCleared || 0, freed: S.stats.reserveFreed || 0 },
       // launch trades only – copy trades have their own line
       wins: S.history.filter((h) => !isCopyTrade(h) && h.pnl > 0).length, losses: S.history.filter((h) => !isCopyTrade(h) && h.pnl <= 0).length,

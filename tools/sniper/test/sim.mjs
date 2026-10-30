@@ -894,10 +894,11 @@ await test('smart wallets: a good trader is found and only suggested; copied aft
     assert.ok(smart && smart.launches === 3 && smart.winRate === 1 && smart.pnl > 20 && smart.early === 3, JSON.stringify(smart));
     assert.ok(dumb && dumb.pnl < 0 && dumb.winRate === 0);
     bot._refreshSmart();
+    await settle(bot);
     let sm = bot.status().smart;
     assert.deepEqual(sm.copying, [], 'nothing copied automatically');
     assert.deepEqual(sm.suggested.map((c) => c.wallet), [SMART], 'only the good trader is suggested');
-    assert.ok(logs.join('\n').includes('press ✅ Verify'), 'owner is told');
+    assert.ok(/Smart wallet.*rSmart/.test(logs.join('\n')), 'owner is told (with the wallet analysis)');
     const smartBuys = (name, iss, hash) => {
       const cur = sim.launch({ name, issuer: iss, poolXrp: 400, poolTok: 1e9, silent: true });
       sim.emit('transaction', { validated: true, hash, tx_json: { TransactionType: 'Payment', Account: SMART, Fee: '12' }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [
@@ -937,6 +938,74 @@ await test('smart wallets: a good trader is found and only suggested; copied aft
     assert.deepEqual(bot.status().smart.copying.map((c) => c.wallet), [DUMB]);
     bot.stop();
   } finally { Date.now = realNow; }
+});
+
+await test('copy quality: wallets are analysed from their history – a flipper is never copied, a holder only with real buys in its good pool sizes; its sale is mirrored; losing copies stop the wallet', async () => {
+  const FLIP = 'rFLipper1111111111111111111111', HOLD = 'rHoLder11111111111111111111111';
+  const { sim, bot } = setup(100, { COPY_BUY_XRP: '2', COPY_STOP_AFTER: '1', COPY_MIN_POOL_XRP: '100' });
+  // ledger history: one buy and one sale per token
+  const t0 = 800000000;
+  const hist = (w, trades) => trades.flatMap(([cur, xin, xout, pool, holdMin], i) => {
+    const iss = 'rIss' + cur;
+    const leg = (dx, dt, date) => ({ tx: { TransactionType: 'Payment', Account: w, Fee: '12', date }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [
+      { ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: w, Balance: String(Math.round((1000 + dx) * 1e6 - 12)) }, PreviousFields: { Balance: String(1000e6) } } },
+      { ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: 'rAmm' + cur, AMMID: 'X', Balance: String(pool * 1e6) }, PreviousFields: { Balance: '1' } } },
+      { ModifiedNode: { LedgerEntryType: 'RippleState', FinalFields: { Balance: { currency: cur, value: String(dt > 0 ? 1000 : 0) }, LowLimit: { issuer: w }, HighLimit: { issuer: iss } }, PreviousFields: { Balance: { currency: cur, value: String(dt > 0 ? 0 : 1000) } } } },
+    ] } });
+    const at = t0 + i * 7200;
+    return [leg(-xin, 1000, at), leg(xout, -1000, at + holdMin * 60)].reverse();
+  }).reverse();
+  sim.history = {
+    [FLIP]: hist(FLIP, Array.from({ length: 10 }, (_, i) => ['F' + String.fromCharCode(65 + i) + 'X', 20, 24, 200, 2])),
+    [HOLD]: hist(HOLD, [...Array.from({ length: 6 }, (_, i) => ['G' + String.fromCharCode(65 + i) + 'X', 10, 20, 500, 300]), ...Array.from({ length: 4 }, (_, i) => ['B' + String.fromCharCode(65 + i) + 'X', 10, 5, 150, 300])]),
+  };
+  await bot.start();
+  assert.match(await bot.answer(FLIP, 'wpin'), /flipper.*skipped/s);
+  const r = await bot.answer(HOLD, 'wpin');
+  assert.match(r, /copyable.*holder.*300–1000/s, r);
+  const prof = bot.status().smart.profiles;
+  assert.equal(prof[FLIP].style, 'flipper'); assert.equal(prof[HOLD].copyable, true);
+  // a buy of w for xrp in a pool of poolXrp XRP
+  let n = 0;
+  const buy = (w, name, xrp, poolXrp, sell = 0) => {
+    const iss = 'rT' + name + 'x'.repeat(28 - name.length);
+    const cur = sim.amm[`${name}.${iss}`] ? name : sim.launch({ name, issuer: iss, poolXrp: Math.max(poolXrp, 120), poolTok: 1e9, silent: true });
+    const k = `${cur}.${iss}`;
+    const tok = sell ? -sell : 5e6;
+    sim.emit('transaction', { validated: true, hash: 'CQ' + ++n, tx_json: { TransactionType: 'Payment', Account: w, Fee: '12' }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [
+      { ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: w, Balance: String(Math.round((500 - (sell ? -xrp : xrp)) * 1e6)) }, PreviousFields: { Balance: String(500e6 + 12) } } },
+      { ModifiedNode: { LedgerEntryType: 'AccountRoot', FinalFields: { Account: 'rAmmQ' + name, AMMID: 'X', Balance: String(poolXrp * 1e6) }, PreviousFields: { Balance: '1' } } },
+      { ModifiedNode: { LedgerEntryType: 'RippleState', FinalFields: { Balance: { currency: cur, value: String(sell ? 5e6 - sell : 5e6) }, LowLimit: { issuer: w }, HighLimit: { issuer: iss } }, PreviousFields: { Balance: { currency: cur, value: String(sell ? 5e6 : 0) } } } },
+    ] } });
+    return k;
+  };
+  let k = buy(FLIP, 'FLA', 30, 500);
+  await settle(bot);
+  assert.equal(bot.state().positions[k], undefined, 'flipper not copied');
+  assert.ok(logs.join('\n').includes('not copied: flipper'));
+  k = buy(HOLD, 'SMA', 6, 500); await settle(bot);
+  assert.equal(bot.state().positions[k], undefined, 'small buy (it usually buys 10) not copied');
+  k = buy(HOLD, 'POO', 15, 150); await settle(bot);
+  assert.equal(bot.state().positions[k], undefined, 'pool size where it loses not copied');
+  assert.ok(logs.join('\n').includes("doesn't make money in pools of 100–300"));
+  k = buy(HOLD, 'GOO', 15, 500); await settle(bot);
+  const pos = bot.state().positions[k];
+  assert.ok(pos && pos.copyWallet === HOLD, 'real buy in its good pool size copied');
+  assert.equal(bot.status().stats.copySkipped, 3);
+  // it sells 80 % → we sell everything
+  buy(HOLD, 'GOO', 12, 500, 4e6); await settle(bot);
+  assert.equal(bot.state().positions[k], undefined, 'mirror sell');
+  assert.match(bot.state().history[0].why, /copied wallet sold 80%/);
+  assert.equal(bot.status().stats.copyMirrorSells, 1);
+  // that copy lost (fees/slippage) and COPY_STOP_AFTER=1 → the wallet is no longer copied
+  assert.ok(bot.status().smart.copyStats[HOLD].n === 1);
+  if (bot.state().history[0].pnl < 0) {
+    assert.ok(!bot.status().smart.copying.some((c) => c.wallet === HOLD), 'auto-stopped');
+    assert.ok(logs.join('\n').includes('Stopped copying'));
+  }
+  // analyse any wallet by hand
+  assert.match(await bot.answer(FLIP, 'wanalyze'), /🔍 .*flipper/);
+  bot.stop();
 });
 
 await test('FirstLedger two-step launch: pool created with 1 % of the supply, the rest deposited seconds later → bought right after the deposit', async () => {
