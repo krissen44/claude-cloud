@@ -103,6 +103,15 @@ trend, liquidity, higher lows, drawdown from the high, buy vs. sell pressure, ne
   decision?). Under 50 % good calls → the score needed goes up 5; over 75 % → down 3 (55–95). The status page
   shows the score per position (📈) and the learned thresholds.
 
+## FirstLedger only (`FIRSTLEDGER_ONLY`, on)
+
+The bot buys only tokens launched on FirstLedger: their issuer's domain is `<id>.toml.firstledger.net` (set before
+the pool – UBER, XRB, FRIZZY, CROSS all had it 1 s after the launch). Everything else is skipped ("not a
+FirstLedger token (domain …)") – e.g. Swell (`xrpl.fun`, rugged) and PAXG. An issuer without any domain yet is
+checked every 2 s for `FIRSTLEDGER_WAIT_S` (15 s). Applies to launches, crowd entries, copy trades and the
+watchlist; a buy by hand on the status page is not limited. Launches of other platforms are still recorded
+(launch outcomes, smart wallets), only not bought.
+
 ## Watchlist (expected launches)
 
 `WATCH_TOKENS` (⚙️ Settings → 🎯 Watchlist), one per line: `NAME | handle | min XRP | max XRP`, default

@@ -176,7 +176,7 @@ function setup(balance = 50, env = {}, usd = true) {
   const sim = new Sim(balance);
   if (usd) sim.amm[RLUSD] = { xrp: 1e6, tok: 2.5e6, fee: 0 }; // 1 XRP = $2.50
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'snipe-'));
-  const cfg = readConfig({ DATA_DIR: dir, BLACKHOLE_WAIT_S: '6', POOL_WAIT_MIN: '0', SUPPLY_WAIT_S: '0', SOCIALS_REQUIRED: 'off', ...env });
+  const cfg = readConfig({ DATA_DIR: dir, BLACKHOLE_WAIT_S: '6', POOL_WAIT_MIN: '0', SUPPLY_WAIT_S: '0', SOCIALS_REQUIRED: 'off', FIRSTLEDGER_ONLY: '0', ...env });
   const bot = createBot({ client: sim, wallet: { address: ME }, cfg, log: (m) => logs.push(m), fetchFn: null });
   return { sim, bot, cfg };
 }
@@ -1117,7 +1117,7 @@ function customSetup(env, fetchFn) {
   const sim = new Sim(100);
   sim.amm[RLUSD] = { xrp: 1e6, tok: 2.5e6, fee: 0 };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'snipe-'));
-  const cfg = readConfig({ DATA_DIR: dir, BLACKHOLE_WAIT_S: '6', POOL_WAIT_MIN: '0', SUPPLY_WAIT_S: '0', ...env });
+  const cfg = readConfig({ DATA_DIR: dir, BLACKHOLE_WAIT_S: '6', POOL_WAIT_MIN: '0', SUPPLY_WAIT_S: '0', FIRSTLEDGER_ONLY: '0', ...env });
   const bot = createBot({ client: sim, wallet: { address: ME }, cfg, log: (m) => logs.push(m), fetchFn });
   return { sim, bot, cfg };
 }
@@ -1190,6 +1190,29 @@ await test('watchlist: not enough XRP for the minimum → not bought, owner told
   launchBy(sim, { name: 'NEXY', issuer: 'rPoorNexy11111111111111111111111', creator: 'rCrPoor111111111111111111111111', domain: 'p.toml.firstledger.net' });
   await settle(bot);
   assert.match(logs.join('\n'), /NEXY \(watchlist\): only .* needs 25 XRP/);
+  bot.stop();
+});
+
+await test('FirstLedger only: a FirstLedger token is bought at once, other domains are skipped, a domain set a few seconds later is waited for, a buy by hand is not limited', async () => {
+  const { sim, bot, cfg } = customSetup({ FIRSTLEDGER_ONLY: '1', FIRSTLEDGER_WAIT_S: '3' }, null);
+  assert.equal(readConfig({}).firstLedgerOnly, true, 'on by default');
+  await bot.start();
+  const fl = launchBy(sim, { name: 'FLTOKEN', issuer: 'rFLtoken1111111111111111111111', creator: 'rCrFL11111111111111111111111111', domain: 'abc123xyz.toml.firstledger.net' });
+  const ot = launchBy(sim, { name: 'FUNTOKEN', issuer: 'rFuntoken111111111111111111111', creator: 'rCrFun1111111111111111111111111', domain: 'xrpl.fun' });
+  const nd = launchBy(sim, { name: 'LATEDOM', issuer: 'rLateDom111111111111111111111', creator: 'rCrLate11111111111111111111111' });
+  const no = launchBy(sim, { name: 'NODOM', issuer: 'rNoDom11111111111111111111111', creator: 'rCrNoDom111111111111111111111' });
+  await settle(bot);
+  assert.ok(bot.state().positions[`${fl}.rFLtoken1111111111111111111111`], 'FirstLedger token bought');
+  assert.equal(bot.state().positions[`${ot}.rFuntoken111111111111111111111`], undefined);
+  assert.match(logs.join('\n'), /Skip FUNTOKEN: not a FirstLedger token \(domain xrpl\.fun\)/);
+  assert.equal(bot.state().positions[`${nd}.rLateDom111111111111111111111`], undefined, 'no domain yet: waits');
+  sim.acc['rLateDom111111111111111111111'].Domain = Buffer.from('late.toml.firstledger.net').toString('hex').toUpperCase();
+  await wait(2200); await settle(bot);
+  assert.ok(bot.state().positions[`${nd}.rLateDom111111111111111111111`], 'bought once the FirstLedger domain is there');
+  await wait(1500); await settle(bot);
+  assert.equal(bot.state().positions[`${no}.rNoDom11111111111111111111111`], undefined);
+  assert.match(logs.join('\n'), /Skip NODOM: firstledger: issuer has no domain yet/);
+  assert.match(await bot.answer(`NODOM.rNoDom11111111111111111111111`, 'buy', { xrp: '1' }), /Bought|bought/);
   bot.stop();
 });
 
@@ -1285,7 +1308,7 @@ await test('settings change live: pause stops buys, unpause buys again, open tra
   await bot.start();
   const a = sim.launch({ name: 'PRE', issuer: 'rPre', poolXrp: 100, poolTok: 1e9 });
   await settle(bot);
-  Object.assign(cfg, readConfig({ DATA_DIR: cfg.dataDir, PAUSE_BUYS: '1', SOCIALS_REQUIRED: 'off' }), { dataDir: cfg.dataDir });
+  Object.assign(cfg, readConfig({ DATA_DIR: cfg.dataDir, PAUSE_BUYS: '1', SOCIALS_REQUIRED: 'off', FIRSTLEDGER_ONLY: '0' }), { dataDir: cfg.dataDir });
   const b = sim.launch({ name: 'PAUSED', issuer: 'rPau', poolXrp: 100, poolTok: 1e9 });
   await settle(bot);
   assert.equal(bot.state().positions[`${b}.rPau`], undefined, 'no buy while paused');
@@ -1293,7 +1316,7 @@ await test('settings change live: pause stops buys, unpause buys again, open tra
   sim.trade(a, 'rPre', 150);
   await settle(bot);
   assert.ok(bot.state().positions[`${a}.rPre`].tp1Done, 'still sells while paused');
-  Object.assign(cfg, readConfig({ DATA_DIR: cfg.dataDir, BUY_XRP: '2', SOCIALS_REQUIRED: 'off' }), { dataDir: cfg.dataDir });
+  Object.assign(cfg, readConfig({ DATA_DIR: cfg.dataDir, BUY_XRP: '2', SOCIALS_REQUIRED: 'off', FIRSTLEDGER_ONLY: '0' }), { dataDir: cfg.dataDir });
   const c = sim.launch({ name: 'AFTER', issuer: 'rAft', poolXrp: 100, poolTok: 1e9 });
   await settle(bot);
   assert.ok(Math.abs(bot.state().positions[`${c}.rAft`].cost - 2) < 1e-3, 'buys again with the new stake');

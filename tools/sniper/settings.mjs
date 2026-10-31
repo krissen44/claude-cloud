@@ -28,6 +28,8 @@ export const GROUPS = [
     ['BLACKHOLE_WAIT_S', 'Wait for the blackhole (s)', 'num', '120', '', 0, 3600],
     ['PROTECT_WAIT_MIN', 'Wait for a launch protection to end (min)', 'num', '60', 'frozen / approval-only / fee at launch – bought the moment it is lifted', 0, 1440],
     ['PROTECT_MAX_X', 'After a protection: skip above x × launch price', 'num', '12', 'early buyers already pumped it; 0 = off', 0, 100000],
+    ['FIRSTLEDGER_ONLY', 'Only FirstLedger tokens', 'bool', '1', 'issuer domain <id>.toml.firstledger.net – launches, crowd entries, copy trades and the watchlist; a buy by hand is not limited'],
+    ['FIRSTLEDGER_WAIT_S', 'Issuer without a domain yet: wait (s)', 'num', '15', 'FirstLedger sets it before the pool – checked every 2 s', 0, 600],
     ['MIN_POOL_SUPPLY_PCT', 'Min. share of all tokens in the pool (%)', 'num', '20', '', 0, 100],
     ['SUPPLY_WAIT_S', 'Wait for the rest of the supply (s)', 'num', '60', 'FirstLedger creates the pool with ~1 % and deposits the rest seconds later – bought the moment it arrives', 0, 3600],
     ['SOCIALS_REQUIRED', 'Socials needed to buy', 'text', 'off', '“off” = never hold up a buy (read in the background, shown on the card); “x” = needs an X/Twitter link; “any” = X, Telegram, Discord or a website'],

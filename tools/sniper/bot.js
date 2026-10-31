@@ -94,6 +94,10 @@ export function readConfig(env = process.env) {
     // default 'off' = socials never hold up a buy: they're read in the background and shown
     socials: /^(x|any)$/i.test(env.SOCIALS_REQUIRED || '') ? env.SOCIALS_REQUIRED.toLowerCase() : 'off',
     socialsWaitS: num('SOCIALS_WAIT_S', 60),
+    // only tokens launched on FirstLedger (issuer domain <id>.toml.firstledger.net) – launches, crowd
+    // entries, copies, watchlist; a buy by hand is your call
+    firstLedgerOnly: bool('FIRSTLEDGER_ONLY', true),
+    firstLedgerWaitS: num('FIRSTLEDGER_WAIT_S', 15), // issuer without a domain yet: wait this long for it
     watch: parseWatch(env.WATCH_TOKENS ?? DEFAULT_WATCH),
     watchVerifyS: num('WATCH_VERIFY_S', 90), // how long to wait for the token file with the right socials
     // launches by a creator – or a wallet funded by the same wallet – that rugged before are skipped
@@ -173,6 +177,7 @@ export function readConfig(env = process.env) {
 // WATCH_TOKENS: expected launches, one per line "NAME | handle/handle | min XRP | max XRP" (lines
 // joined with ";"). The handle (X or Telegram, without @) must be in the token's socials – a
 // same-named fake launched before the real one is never bought.
+export const isFirstLedger = (domain) => /(^|\.)toml\.firstledger\.net\/?$/i.test(String(domain || '').trim().replace(/^https?:\/\//i, ''));
 export const DEFAULT_WATCH = 'NEXY | nexyonxrp | 25 | 50';
 export function parseWatch(s) {
   return String(s || '').split(/[;\n]+/).map((line) => line.split('|').map((x) => x.trim())).filter((p) => p[0]).map(([name, handles = '', min = '25', max = '']) => ({
@@ -361,7 +366,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   const SKIP_KINDS = [
     [/blackholed/, 'not blackholed'], [/pool only/, 'pool too small'], [/> max/, 'pool too big'],
     [/clawback/, 'clawback'], [/froze/, 'frozen'], [/transfer fee/, 'transfer fee'], [/AMM fee/, 'AMM fee'],
-    [/not the real|watch: /, 'watchlist: not verified'], [/rugged before/, 'dev rugged before'], [/no socials/, 'no socials'], [/bundle is selling/, 'bundle selling'],
+    [/not a FirstLedger|^firstledger: /, 'not FirstLedger'], [/not the real|watch: /, 'watchlist: not verified'], [/rugged before/, 'dev rugged before'], [/no socials/, 'no socials'], [/bundle is selling/, 'bundle selling'],
     [/supply/, 'dev holds the supply'], [/pumped/, 'pumped during protection'], [/pool gone/, 'pool gone'], [/approval/, 'trust lines need approval'],
   ];
   const skipKind = (text) => (SKIP_KINDS.find(([re]) => re.test(text)) || [0, 'other'])[1];
@@ -732,6 +737,10 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       l.big = p.xrp >= cfg.bigLaunchXrp;
     }
     const domain = info.Domain ? Buffer.from(info.Domain, 'hex').toString('utf8').slice(0, 80) : '';
+    if (cfg.firstLedgerOnly && !l.byHand && !isFirstLedger(domain)) {
+      if (!domain) reasons.push('firstledger: issuer has no domain yet');
+      else reasons.push(`not a FirstLedger token (domain ${domain.slice(0, 40)})`);
+    }
     // socials: X / Telegram / … from the issuer's xrp-ledger.toml. They only hold up a buy if
     // SOCIALS_REQUIRED says so – otherwise they are read in the background and shown.
     if (l.watch) {
@@ -791,11 +800,12 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       const holeBy = l.at + (l.protected ? Math.max(cfg.blackholeWaitS, cfg.protectWaitMin * 60) : cfg.blackholeWaitS) * 1000;
       const poolBy = Math.max(l.at + (l.poolWait ?? cfg.poolWaitMin) * 60000, l.protected ? holeBy : 0);
       // waitable: the rest of the supply (FirstLedger deposit) and socials that may come a little later
-      const waitS = (x) => (/of supply in the pool/.test(x) ? cfg.supplyWaitS : /no socials/.test(x) ? cfg.socialsWaitS : /^watch: /.test(x) ? cfg.watchVerifyS : -1);
+      const waitS = (x) => (/^firstledger: /.test(x) ? cfg.firstLedgerWaitS : /of supply in the pool/.test(x) ? cfg.supplyWaitS : /no socials/.test(x) ? cfg.socialsWaitS : /^watch: /.test(x) ? cfg.watchVerifyS : -1);
       const softOnly = c.reasons.length && c.reasons.every((x) => waitS(x) >= 0 && now() - l.at < waitS(x) * 1000);
       if (softOnly) {
         const sup = c.reasons.find((x) => /of supply/.test(x));
         if (sup) { l.supplyWait = true; if (!l.supplyTold) { l.supplyTold = true; say(`⏳ ${l.name}: ${sup} – waiting up to ${cfg.supplyWaitS}s for the rest to be deposited (FirstLedger launch)`); } }
+        if (c.reasons.some((x) => /^firstledger: /.test(x))) l.flWait = true;
         const wv = c.reasons.find((x) => /^watch: /.test(x));
         if (wv && !l.watchTold) { l.watchTold = true; say(`⏳ ${l.name}: ${wv.slice(7)} – checking every few seconds for ${cfg.watchVerifyS}s`); }
         const soc = c.reasons.find((x) => /no socials/.test(x));
@@ -855,7 +865,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       if (c.wait.length && !told) { told = true; say(`⏳ ${l.name}: ${c.wait.join(', ')} – launch protection? Waiting up to ${Math.round((holeBy - l.at) / 60000)} min, buying the moment it is lifted`); }
       if (c.small && !told) { told = true; say(`⏳ ${l.name}: ${c.small} – watching for ${l.poolWait ?? cfg.poolWaitMin} min`); }
       // sleep until the next poll – or until the issuer sends a transaction (unfreeze, blackhole, …)
-      const ms = (l.supplyWait && !l.supplyOk) || l.socialsTold || l.watchTold ? 2000 : now() - l.at < 120000 ? 4000 : 15000;
+      const ms = (l.supplyWait && !l.supplyOk) || l.socialsTold || l.watchTold || l.flWait ? 2000 : now() - l.at < 120000 ? 4000 : 15000;
       await new Promise((r) => {
         const t = setTimeout(done, ms);
         function done(fromIssuer) {
