@@ -1055,6 +1055,11 @@ async function dashRunPut(env, id, v) {
   DASH_RUNS.set(id, v);
   for (const [k, r] of DASH_RUNS) if (Date.now() - r.at > DASH_RUN_TTL * 1000) DASH_RUNS.delete(k);
 }
+async function dashRunPeek(env, id) {
+  if (!/^[0-9a-f]{18}$/.test(id || "")) return null;
+  if (dashKV(env)) { const v = await env.KV.get("dashrun:" + id, "json").catch(() => null); return v && typeof v === "object" ? v : null; }
+  return DASH_RUNS.get(id) || null;
+}
 async function dashRunTake(env, id) {
   if (!/^[0-9a-f]{18}$/.test(id || "")) return null;
   if (dashKV(env)) { const v = await env.KV.get("dashrun:" + id, "json"); if (v) await env.KV.put("dashrun:" + id, "0", {expirationTtl: 60}); return v || null; }
@@ -1144,13 +1149,56 @@ async function dashOverall(env, A) {
 }
 const dashSort = (m, k) => Object.entries(m).filter(([, r]) => r[k] > 0).sort((x, y) => y[1][k] - x[1][k] || (x[1].at || 0) - (y[1].at || 0));
 const dashRows = (env, names, account, list, k, n) => list.slice(0, n).map(([a, r]) => ({name: displayName(names, a), score: r[k], ...(r.dog ? {dog: r.dog} : {}),
-  ...(r.days ? {days: r.days} : {}), ...(isTeam(env, a) ? {team: true} : {}), ...(a === account ? {you: true} : {})}));
+  ...(r.days ? {days: r.days} : {}), ...(isTeam(env, a) ? {team: true} : {}), ...(isGuest(a) ? {guest: true} : {}), ...(a === account ? {you: true} : {})}));
+/* Guests fly Dash too (owner, 2 Nov): without a wallet the page sends a device id (`guest`, 16 hex) and, after the
+   run, a name. The run is replayed like everyone's and counts in the rankings as `g:<id>`, marked GUEST. A guest name
+   follows the player-name rules and may not be a registered player's name or another guest's (blob `dashguests`
+   {id: {name, at}}). Prizes need a wallet to send the NFT to, so guests never take a prize place. */
+const isGuest = a => typeof a === "string" && a.startsWith("g:");
+const GUEST_RE = /^[0-9a-f]{16}$/;
+const DASH_GUESTS_PER_IP = 3;                        // new guest ids per address and day
+async function dashNames(env) {
+  const st = storeOf(env), g = (await st.blobGet("dashguests")) || {}, out = {...(await st.profiles())};
+  for (const [id, x] of Object.entries(g)) out["g:" + id] = {name: x.name};
+  return out;
+}
+const prizeable = (env, a) => !isTeam(env, a) && !isGuest(a);
+async function dashGuestStart(env, req, b) {
+  const id = String(b.guest || ""); if (!GUEST_RE.test(id)) return json({error: "bad_guest"}, 400);
+  const known = ((await storeOf(env).blobGet("dashguests")) || {})[id];
+  if (!known && env.KV) {
+    const ip = (req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "?").split(",")[0].trim();
+    const k = "dashgip:" + ip + ":" + today(), seen = JSON.parse((await env.KV.get(k)) || "[]");
+    if (!seen.includes(id)) {
+      if (seen.length >= DASH_GUESTS_PER_IP) return json({error: "slow_down"}, 429);
+      seen.push(id); await env.KV.put(k, JSON.stringify(seen), {expirationTtl: 86400});
+    }
+  }
+  return dashStart(env, "g:" + id, {...b, dogId: null});
+}
+async function dashGuestEnd(env, b) {
+  const id = String(b.guest || ""); if (!GUEST_RE.test(id)) return json({error: "bad_guest"}, 400);
+  const name = String(b.name || "").replace(/\s+/g, " ").trim();
+  if (!name) {                                       // a tester's run (before the opening) needs no name: it is never booked
+    const run = await dashRunPeek(env, String(b.id || ""));
+    return run && run.test ? dashEnd(env, "g:" + id, b) : json({error: "bad_name"}, 400);
+  }
+  if (!NAME_RE.test(name) || /^r[1-9A-HJ-NP-Za-km-z]{5,}/.test(name)) return json({error: "bad_name"}, 400);
+  const st = storeOf(env), lc = name.toLowerCase();
+  // checked before the run is taken, so a refused name can be changed and sent again
+  if (Object.values(await st.profiles()).some(x => x && x.name && x.name.toLowerCase() === lc)) return json({error: "name_taken"}, 409);
+  const g = (await st.blobGet("dashguests")) || {};
+  if (Object.entries(g).some(([o, x]) => o !== id && x.name.toLowerCase() === lc)) return json({error: "name_taken"}, 409);
+  const r = await dashEnd(env, "g:" + id, b);
+  if (r.status === 200 && (!g[id] || g[id].name !== name)) { g[id] = {name, at: Date.now()}; await st.blobSet("dashguests", g); }
+  return r;
+}
 /* Rocket Dash is ranking only (owner, 23 Oct): its runs go to their own boards (`rdashday:` / `rdash:`), no calendar,
    no prizes. Sleigh Dash keeps `dashday:` / `dash:`, which the Advent calendar and its prizes are built on. */
 const dashBoardKeys = skin => skin === "rocket" ? {day: "rdashday:", week: "rdash:"} : {day: "dashday:", week: "dash:"};
 async function dashBoard(env, account, skinQ) {
   const skin = ["sleigh", "rocket"].includes(skinQ) ? skinQ : dashTheme(env), K = dashBoardKeys(skin);
-  const st = storeOf(env), names = await st.profiles(), day = today(), yday = dayAdd(day, -1), A = dashAdvent(env);
+  const st = storeOf(env), names = await dashNames(env), day = today(), yday = dayAdd(day, -1), A = dashAdvent(env);
   const m = (await st.blobGet(K.day + day)) || {}, y = (await st.blobGet(K.day + yday)) || {}, w = (await st.blobGet(K.week + weekOf())) || {};
   const out = {theme: dashTheme(env), skin, opens: dashOpens(env), day,
     today: {top: dashRows(env, names, account, dashSort(m, "best"), "best", 10), players: Object.keys(m).length},
@@ -1176,7 +1224,7 @@ async function dashBoard(env, account, skinQ) {
     }
     if (state !== "future") {
       const dm = d === day ? m : d === yday ? y : ((await st.blobGet("dashday:" + d)) || {});
-      const top = dashSort(dm, "best").find(([a]) => !isTeam(env, a));
+      const top = dashSort(dm, "best").find(([a]) => prizeable(env, a));
       if (top) row.winner = {name: displayName(names, top[0]), score: top[1].best};
       if (account && dm[account]) row.mine = dm[account].best;
     }
@@ -1199,13 +1247,13 @@ async function dashResult(env, key) {
   const grand = key === "dash-grand-" + A.from, day = grand ? A.to : key.slice(5);
   if (!grand && !(/^\d{4}-\d{2}-\d{2}$/.test(day) && day >= A.from && day <= A.to)) return null;
   if (Date.now() < Date.parse(day + "T00:00:00Z") + 864e5 + DASH_FREEZE_MS) return null;
-  const names = await st.profiles(), m = grand ? await dashOverall(env, {...A, done: true}) : ((await st.blobGet("dashday:" + day)) || {});
+  const names = await dashNames(env), m = grand ? await dashOverall(env, {...A, done: true}) : ((await st.blobGet("dashday:" + day)) || {});
   const k = grand ? "total" : "best", list = dashSort(m, k), places = grand ? A.grandPlaces : A.dayPlaces;
   const n = Math.round((Date.parse(day) - Date.parse(A.from)) / 864e5) + 1;
-  const winners = list.filter(([a]) => !isTeam(env, a)).slice(0, places).map(([a, r], i) => ({place: String(i + 1), account: a, name: displayName(names, a), score: r[k],
+  const winners = list.filter(([a]) => prizeable(env, a)).slice(0, places).map(([a, r], i) => ({place: String(i + 1), account: a, name: displayName(names, a), score: r[k],
     ...(grand ? {want: A.grand[i]} : {})}));
   const label = grand ? `Advent Dash overall ranking (${A.from} – ${A.to})` : `Advent Dash day ${n} (${day})`;
-  const players = list.slice(0, 20).map(([a, r]) => ({name: displayName(names, a), score: r[k], ...(isTeam(env, a) ? {team: true} : {})}));
+  const players = list.slice(0, 20).map(([a, r]) => ({name: displayName(names, a), score: r[k], ...(isTeam(env, a) ? {team: true} : {}), ...(isGuest(a) ? {guest: true} : {})}));
   const canon = JSON.stringify({key, label, players, winners: winners.map(w => ({place: w.place, name: w.name, score: w.score, ...(w.want ? {prize: w.want} : {})}))});
   rec = {week: key, kind: "dash", label, json: canon, sha256: await sha256hex(canon), winners, prizes: {}, frozen: Date.now()};
   await st.resultSet(key, rec);
@@ -2584,6 +2632,10 @@ export default {
       if (p === "/public/dash/claim") {
         const r = await dashClaimStatus(env, url.searchParams.get("uuid")); r.headers.set("access-control-allow-origin", "*"); return r;
       }
+      if ((p === "/public/dash/start" || p === "/public/dash/end") && req.method === "POST") {   // guests without a wallet
+        let b = {}; try { b = JSON.parse(await req.text()); } catch {}
+        return withCors(p.endsWith("start") ? await dashGuestStart(env, req, b) : await dashGuestEnd(env, b), cors);
+      }
       if (p === "/public/dash/code" && req.method === "POST") {   // the page's tester field (text/plain, no wallet)
         let b = {}; try { b = JSON.parse(await req.text()); } catch {}
         return withCors(await dashCode(env, req, b), cors);
@@ -2602,7 +2654,8 @@ export default {
 
       const account = await readSession(env, (req.headers.get("authorization") || "").replace(/^Bearer /, ""));
       if (p === "/ladder") return withCors(await ladder(env, account, url.searchParams.get("week")), cors);
-      if (p === "/dash/board") return withCors(json(await dashBoard(env, account, url.searchParams.get("skin"))), cors);
+      if (p === "/dash/board") { const gq = url.searchParams.get("guest") || "";   // a guest sees its own rows marked
+        return withCors(json(await dashBoard(env, account || (GUEST_RE.test(gq) ? "g:" + gq : null), url.searchParams.get("skin"))), cors); }
       if (!account) return withCors(json({error:"unauthorized"}, 401), cors);
 
       if (p === "/me/kennel") return withCors(await kennel(env, account, url.searchParams.has("fresh")), cors);

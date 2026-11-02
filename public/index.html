@@ -432,6 +432,10 @@ button.dashgo:active{transform:translateY(3px);box-shadow:0 1px 0 #0e1726}
 .dashcard p.big{font-family:'Press Start 2P',monospace;font-size:clamp(14px,4.4vw,22px);color:#ffd54f;margin-top:10px}
 .dashcard .mini2{font-size:10px;color:#b9c6e6}
 .dashcard button{pointer-events:auto}
+.dashcard .dguest{pointer-events:auto;margin:6px 0 0}
+.dashcard .dguest input{pointer-events:auto;width:150px;padding:8px 10px;border-radius:8px;border:2px solid #0e1726;font-size:14px;background:#fff;color:#0e1726;margin-top:8px}
+.dashcard .dguest .dashgo{margin-top:8px;padding:8px 14px;font-size:11px}
+.dashcard a{color:#9fd2ff;pointer-events:auto}
 .dashrow{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap}
 .advent{background:linear-gradient(180deg,rgba(198,40,40,.07),rgba(46,125,50,.07))}
 .adoors{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
@@ -5766,11 +5770,20 @@ function dashSave(){
   return d.dash;
 }
 const dashCanPost = () => LIVE() && !WALLET.demo && !!WALLET.token;
+/* Guests (no wallet signed in, owner 2 Nov): runs still go to the server with a device id; after the run the player
+   types a name and the run counts in the rankings, marked GUEST. Prizes need a wallet, so guests never take one. */
+const dashGuest = () => LIVE() && !WALLET.token;
+function dashGuestId(){
+  let id = lsGet('ba_guest_id');
+  if (!/^[0-9a-f]{16}$/.test(id || '')){ id = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, '0')).join(''); lsSet('ba_guest_id', id); }
+  return id;
+}
+const dashInpDeltas = G => { const d = []; for (let i = 0, t = 0; i < G.inp.length; i += 2){ d.push(G.inp[i] - t, G.inp[i + 1]); t = G.inp[i]; } return d; };
 async function dashLoad(){
   if (!LIVE() || DASH.loading) return;
   DASH.loading = true;
   const sk = dashTheme();   // Rocket and Sleigh have their own boards (Rocket: ranking only, no calendar)
-  try { const r = await api('/dash/board?skin=' + sk); if (r.ok) DASH.board = await r.json(); } catch(e){}
+  try { const r = await api('/dash/board?skin=' + sk + (WALLET.token ? '' : '&guest=' + dashGuestId())); if (r.ok) DASH.board = await r.json(); } catch(e){}
   if (!PRIZE.list.length) loadPrizes();   // an Advent prize can be claimed right here
   DASH.loading = false;
   if (tab === 'dash' && !DASH.g){ if (dashTheme() !== sk) return dashLoad(); menu(); }   // the look changed while loading
@@ -5782,7 +5795,7 @@ function dashPickDog(){
 function dashBoardRows(rows, prizes){
   if (!rows || !rows.length) return '<p class="mini" style="margin:0">No runs yet — the first one takes the top spot.</p>';
   let k = 0;   // prize places go to the first rows that aren't team wallets
-  return rows.map((r, i) => `<div class="lb${r.you ? ' you' : ''}"><span>${i + 1}</span><span>${esc(r.name)}${r.team ? ' <span class="tag">TEAM</span>' : prizes && k < prizes.length ? ` <span class="tag">🎁 ${esc(prizes[k++])}</span>` : ''}${r.dog && r.dog.token ? ` <span style="opacity:.6">· #${r.dog.token}</span>` : r.dog && r.dog.name ? ` <span style="opacity:.6">· ${esc(r.dog.name)}</span>` : ''}</span><b>${r.score.toLocaleString()}</b></div>`).join('');
+  return rows.map((r, i) => `<div class="lb${r.you ? ' you' : ''}"><span>${i + 1}</span><span>${esc(r.name)}${r.team ? ' <span class="tag">TEAM</span>' : r.guest ? ' <span class="tag">GUEST</span>' : prizes && k < prizes.length ? ` <span class="tag">🎁 ${esc(prizes[k++])}</span>` : ''}${r.dog && r.dog.token ? ` <span style="opacity:.6">· #${r.dog.token}</span>` : r.dog && r.dog.name ? ` <span style="opacity:.6">· ${esc(r.dog.name)}</span>` : ''}</span><b>${r.score.toLocaleString()}</b></div>`).join('');
 }
 // "🥇 Epic · 🥈 Rare · 🥉 Rare · 4th Uncommon · 5th Uncommon" — one Pixel Scrappy per overall place
 const dashGrandText = A => (A.grand || []).map((g, i) => `${['🥇', '🥈', '🥉'][i] || (i + 1) + 'th'} <b>${esc(g)}</b>`).join(' · ') + ' Pixel Scrappy';
@@ -5977,6 +5990,7 @@ function dashPlay(dog){
   cv.addEventListener('pointerdown', down); cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up); cv.addEventListener('pointerleave', up);
   cv.addEventListener('contextmenu', e => e.preventDefault());
   G.onKey = e => {
+    if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;      // typing a guest name
     if (e.repeat) { if ([' ', 'ArrowUp', 'w', 'W'].includes(e.key)) e.preventDefault(); return; }
     const dn = e.type === 'keydown';
     if ([' ', 'ArrowUp', 'w', 'W'].includes(e.key)) { e.preventDefault(); dashPress(G, dn); }
@@ -6131,9 +6145,10 @@ function dashPress(G, on){
 }
 // a run id + seed from the server: fetched for the ready screen, and the next one while the result card shows
 function dashFetchRun(G, next){
-  if (!dashCanPost()) return;
-  api('/dash/start', {method: 'POST', body: {dogId: G.dog.borrowed ? null : G.dog.id, dog: {name: G.dog.name, token: tokenOf(G.dog) || null},
-    skin: G.th, ...(G.test ? {code: lsGet('ba_dash_code') || ''} : {})}})
+  const guest = !dashCanPost() && dashGuest();
+  if (!dashCanPost() && !guest) return;
+  api(guest ? '/public/dash/start' : '/dash/start', {method: 'POST', body: {dogId: G.dog.borrowed || guest ? null : G.dog.id, dog: {name: G.dog.name, token: tokenOf(G.dog) || null},
+    skin: G.th, ...(G.test ? {code: lsGet('ba_dash_code') || ''} : {}), ...(guest ? {guest: dashGuestId()} : {})}})
     .then(r => r.ok ? r.json() : null).then(j => {
       if (!j || DASH.g !== G || !(j.seed >= 0)) return;
       if (next) G.next = {id: j.id, seed: j.seed, bonus: j.bonus || 0};
@@ -6230,13 +6245,40 @@ function dashOver(G){
   SAVE.save();
   if (G.pb && score > 0) S.win();
   if (!(G.runId && G.runSeed === G.seed)) G.runId = null;   // no server seed in time: a run for fun only
+  G.guest = !!G.runId && !dashCanPost() && dashGuest();
   dashOverlay(G);
-  if (G.runId){
-    const d = []; for (let i = 0, t = 0; i < G.inp.length; i += 2){ d.push(G.inp[i] - t, G.inp[i + 1]); t = G.inp[i]; }   // ticks as deltas
-    api('/dash/end', {method: 'POST', body: {id: G.runId, score: G.score, ticks: G.tick, w: DASH_W, inp: d}})
+  if (G.guest){
+    // a guest: a remembered name sends the run right away, else the result card asks for one (test runs need none)
+    if (G.test || lsGet('ba_guest_name')) dashGuestSend(G, G.test ? '' : lsGet('ba_guest_name'));
+  } else if (G.runId){
+    api('/dash/end', {method: 'POST', body: {id: G.runId, score: G.score, ticks: G.tick, w: DASH_W, inp: dashInpDeltas(G)}})
       .then(r => r.json()).then(j => { G.posted = j; dashLoad(true); if (DASH.g === G) dashOverlay(G); }).catch(() => { G.posted = {error: 'offline'}; if (DASH.g === G) dashOverlay(G); });
   }
   dashFetchRun(G, true);
+}
+function dashGuestSend(G, name){
+  G.sending = true; G.nameErr = '';
+  api('/public/dash/end', {method: 'POST', body: {id: G.runId, score: G.score, ticks: G.tick, w: DASH_W, inp: dashInpDeltas(G), guest: dashGuestId(), name}})
+    .then(r => r.json()).then(j => {
+      G.sending = false;
+      if (j.error === 'name_taken' || j.error === 'bad_name'){
+        G.nameErr = j.error === 'name_taken' ? 'That name is taken — pick another.' : '3–16 letters, numbers, space, _ . -';
+        lsSet('ba_guest_name', ''); G.posted = null;
+      } else { G.posted = j; if (j.ok && !G.test){ lsSet('ba_guest_name', name); G.sentName = name; } dashLoad(true); }
+      if (DASH.g === G) dashOverlay(G);
+    }).catch(() => { G.sending = false; G.posted = {error: 'offline'}; if (DASH.g === G) dashOverlay(G); });
+  if (DASH.g === G) dashOverlay(G);
+}
+// the guest's part of the result card: a name field until the run is sent, then the rank
+function dashGuestPost(G){
+  const P = G.posted, nm = lsGet('ba_guest_name');
+  if (G.sending) return '<p class="mini2">The server checks your run…</p>';
+  if (P && P.ok) return `<p class="mini2">${P.pb ? '🏅 New best today! ' : ''}Today: <b>#${P.rank}</b> of ${P.players} as <b>${esc(G.sentName || nm || '')}</b> <span class="tag">GUEST</span> · ${G.renamed ? 'your next run asks for a new name' : '<a href="#" id="dashRename">change name</a>'}</p>
+    <p class="mini2">🎁 Prizes go to a wallet — sign in to win them.</p>`;
+  if (P && P.error) return `<p class="mini2">The server did not take this run${P.error === 'desync' ? ' (it played out differently there — a hiccup, not your fault)' : P.error === 'no_run' ? ' (it took too long to send)' : ''}.</p>`;
+  return `<form class="dguest" id="dashName"><p class="mini2">Put this run on the ranking — your name:</p>
+    <div class="dashrow"><input id="dashNameIn" maxlength="16" placeholder="Your name" autocomplete="nickname" value="${esc(nm || '')}"><button type="submit" class="dashgo">🏆 SAVE</button></div>
+    ${G.nameErr ? `<p class="mini2" style="color:#ff8a80">${esc(G.nameErr)}</p>` : ''}<p class="mini2">No wallet needed. Prizes need a wallet — sign in to win them.</p></form>`;
 }
 function dashOverlay(G){
   const ov = document.getElementById('dashOv'); if (!ov) return;
@@ -6251,6 +6293,7 @@ function dashOverlay(G){
   }
   const P = G.posted, sv = dashSave(), score = dashFinal(G), best = Math.max(sv.best, P && P.best || 0);
   const post = G.test ? `<p class="mini2">🧪 Test run${P && P.test ? ' — the server replayed it and got the same score' : ''}. ${K.title} opens ${dashDate(dashOpensOf(G.th))}; until then nothing counts.</p>`
+    : G.guest ? dashGuestPost(G)
     : !dashCanPost() ? '<p class="mini2">Sign in to put your runs on the daily ranking.</p>'
     : !G.runId ? '<p class="mini2">The server was not reachable — this run counts for fun only.</p>'
     : !P ? '<p class="mini2">The server checks your run…</p>'
@@ -6265,6 +6308,15 @@ function dashOverlay(G){
     <div class="dashrow"><button id="dashAgain" class="dashgo">↻ AGAIN</button><button id="dashBack" class="sm">Hangar</button></div></div>`;
   document.getElementById('dashAgain').onclick = e => { e.stopPropagation(); if (Date.now() - G.overAt < 400) return; S.click(); dashPress(G, true); dashPress(G, false); };
   document.getElementById('dashBack').onclick = e => { e.stopPropagation(); S.click(); dashQuit(); };
+  const nf = document.getElementById('dashName');
+  if (nf){
+    nf.onpointerdown = e => e.stopPropagation();
+    nf.onsubmit = e => { e.preventDefault(); e.stopPropagation(); const v = document.getElementById('dashNameIn').value.replace(/\s+/g, ' ').trim();
+      if (!/^[A-Za-z0-9][A-Za-z0-9 _.\-]{1,14}[A-Za-z0-9_.]$/.test(v)){ G.nameErr = '3–16 letters, numbers, space, _ . -'; dashOverlay(G); return; }
+      S.click(); dashGuestSend(G, v); };
+  }
+  const rn = document.getElementById('dashRename');
+  if (rn) rn.onclick = e => { e.preventDefault(); e.stopPropagation(); lsSet('ba_guest_name', ''); G.renamed = true; S.click(); dashOverlay(G); };
 }
 function dashStop(){
   const G = DASH.g; if (!G) return;

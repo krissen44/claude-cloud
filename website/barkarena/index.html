@@ -316,6 +316,7 @@ details.card .body p{color:var(--muted);margin:0 0 8px;line-height:1.6}
       <p style="margin:12px 0 0"><button class="btn ghost" type="button" id="claimClose">Close</button></p></div></div>
     <div class="boards" style="margin-top:16px"><div class="card board"><h3>Today's best runs</h3><div id="dashTop"><p class="empty">Loading…</p></div></div>
       <div class="card board" id="dashAllCard" hidden><h3>🎄 Advent overall</h3><div id="dashAll"></div></div></div>
+    <p class="meta" style="margin-top:12px">No wallet? Play anyway — type a name after your run and you're on the ranking. Prizes go to a wallet, so sign in to win them.</p>
     <div class="row" style="margin-top:14px"><a class="btn" href="https://game.scrappyxrp.fun/dash" data-ev="play">▶ Play the Dash</a></div>
   </section>
 
@@ -599,7 +600,7 @@ function claimPrize(key, place, token){
     var esc = function(t){ return String(t).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };
     if (d.skin === "rocket" || (!d.skin && d.theme === "rocket")){ rocket(); }
     var list = function(rows, empty){ rows = (rows || []).slice(0, 5); return rows.length ? '<ol>' + rows.map(function(r, i){
-      return '<li><span class="rk">' + (["🥇","🥈","🥉"][i] || (i + 1) + ".") + '</span><span>' + esc(r.name) + (r.team ? ' <small class="team">TEAM</small>' : '') + '</span><b>' + Number(r.score).toLocaleString() + '</b></li>'; }).join("") + '</ol>'
+      return '<li><span class="rk">' + (["🥇","🥈","🥉"][i] || (i + 1) + ".") + '</span><span>' + esc(r.name) + (r.team ? ' <small class="team">TEAM</small>' : r.guest ? ' <small class="team">GUEST</small>' : '') + '</span><b>' + Number(r.score).toLocaleString() + '</b></li>'; }).join("") + '</ol>'
       : '<p class="empty">' + empty + '</p>'; };
     document.getElementById("dashTop").innerHTML = list(d.today && d.today.top, "No runs yet today — the first one takes the top spot.");
     var A = d.advent;
@@ -639,7 +640,7 @@ function claimPrize(key, place, token){
   var esc = function(t){ return String(t).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };
   function board(title, rows, sfx){
     return '<div class="card board"><h3>' + title + '</h3>' + (rows && rows.length
-      ? '<ol>' + rows.map(function(r, i){ return '<li><span class="rk">' + (["🥇","🥈","🥉"][i] || (i + 1) + ".") + '</span><span>' + esc(r.who) + (r.team ? ' <small class="team">TEAM</small>' : '') + '</span><b>' + r.v + (sfx || "") + '</b></li>'; }).join("") + '</ol>'
+      ? '<ol>' + rows.map(function(r, i){ return '<li><span class="rk">' + (["🥇","🥈","🥉"][i] || (i + 1) + ".") + '</span><span>' + esc(r.who) + (r.team ? ' <small class="team">TEAM</small>' : r.guest ? ' <small class="team">GUEST</small>' : '') + '</span><b>' + r.v + (sfx || "") + '</b></li>'; }).join("") + '</ol>'
       : '<p class="empty">Nobody on this board yet.</p>') + '</div>';
   }
   function packs(rows){

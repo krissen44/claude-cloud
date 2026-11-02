@@ -1,8 +1,25 @@
 # Next release — upload at the week roll (Monday 00:00 UTC)
 
 Changes collect here during the week and go live together when the new week starts.
-Live (owner, 24 Oct): game **v34 komplett** (24 Oct: v34.2 = Joey + Shorts fix handed over) (bond fix, hit flash, new /clip) — no Dash yet (no
-`dashday:` data on the server). Website: v31/v32.1. Shorts factory (new, 1 a day) on GitHub Actions, 05:10 UTC.
+Live (backup 2 Nov): game **v39** (uploaded for the week of 26 Oct: rules v2, bond 20, weekly badges, Dash gates —
+Rocket Dash open since 1 Nov) + website v39. Shorts factory daily on GitHub Actions.
+
+## v40 — for Monday 9 Nov: guests on the Dash rankings → `bark-arena-game-v40-komplett.zip` + `scrappyxrp-website-v40.zip`
+- **Why** (owner, 2 Nov): "if you play without signing in, you should be able to enter a name at the end of your run to
+  count in the ranking" (for Sleigh Dash; Rocket gets it too, same code).
+- **How it works**: without a wallet the page sends a device id (`ba_guest_id`, 16 hex) to `/api/public/dash/start`;
+  the run is replayed by the server like any other. After the run the result card asks for a name (3–16 chars, same
+  rules as player names; not a registered player's name, not another guest's, no wallet look-alikes) →
+  `/api/public/dash/end`. The name is remembered on the device, later runs go in by themselves ("change name" asks again
+  on the next run). Guests show as **GUEST** on the boards (game + website), the device's own rows as "you".
+- **Prizes need a wallet**: guests never take a prize place — a frozen Advent day / the overall ranking skip them like
+  team wallets, and the calendar names the best wallet player as the day's winner. The card says "Prizes go to a
+  wallet — sign in to win them".
+- **Limits**: 3 new guest ids per address and day (`DASH_GUESTS_PER_IP`), the name is checked before the run is used
+  (a refused name can be changed and sent again), tester runs need no name and are never booked.
+- Website Dash section: "No wallet? Play anyway — type a name after your run…".
+- Test `tools/test/dash-guest.mjs` (API rules, limits, prize skip, page flow) + dash, dash-gate, dash-prize, season-api.
+- Upload: game ZIP via Node.js → "Neue Dateien hochladen", restart; website ZIP → `public_html/`. No env changes.
 
 ## v39.3 — weekly prizes never take an Advent Scrappy (same package, 26 Oct, before the week close)
 - **Why** (owner): the week close pre-picks the rarest free Scrappys — which would have been the Epic and Rares planned
