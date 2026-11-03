@@ -219,9 +219,23 @@ takes the price after the deposit as the launch price.
   It sells by the copy rules (half at +100 %, rest on a 30 % trailing stop, −50 %, rug alarm, 24 h). Data
   from 27–28 Oct: the "dev holds the supply" rugs had 11–23 buyers; UBER had 558 buyers and 1,383 XRP in the
   pool after 1 h (UBER was really a FirstLedger two-step launch – see below).
-- **Protection cap** (`PROTECT_MAX_X`, 12): after a launch protection ends, the token is skipped if the
-  early (approved) buyers already pumped it above 12× the launch price. FRIZZY was bought at ≈ 25× after its
-  protection and hit the stop loss; XRB at ≈ 9× ran on.
+- **After a protection** – as early as possible (since 3 Nov). During an approval-only phase only the issuer's
+  approved wallets (insiders / presale) can buy, so the launch price means little: YELLOW (2 Nov) was 38× the
+  launch price when its protection ended and went on to 179×; the old cap (`PROTECT_MAX_X` 12×, now 0 = off)
+  skipped it. Now:
+  - the price while protected is sampled every 5 s (and on every issuer transaction); at the lift it is compared
+    with the median of the last `PROTECT_REF_MIN` (5) min before it – skipped only above `PROTECT_PUMP_X` (2.5×),
+    i.e. a pump right before the lift. YELLOW sat at ~21–23× for 10 min before its lift → bought.
+  - the issuer lifting the protection or blackholing is seen in the **open ledger** (~4 s before validation);
+    the check runs on the open ledger and the buy goes out at once.
+  - **FirstLedger tokens** (`PROTECT_EARLY`): bought at the lift without waiting for the blackhole (YELLOW:
+    lift 23:59:02, blackhole 23:59:20, the rush in between). Not blackholed within `PROTECT_HOLE_MIN` (5) min after
+    our buy → sold.
+  - the supply check uses the pool's share **at launch** (or after the FirstLedger deposit), not the current one:
+    YELLOW had 100 % in the pool at launch but only ~16 % after the insider buys – it was skipped as "dev holds
+    the supply" too.
+  Note: FRIZZY was bought at ≈ 25× after its protection and hit the stop loss – early buys after a protection
+  are a risk the stop loss and bundle exit have to carry.
 
 ## Data collection
 

@@ -663,8 +663,77 @@ await test('crowd entry: a skipped launch (dev holds the supply, not blackholed)
   } finally { Date.now = realNow; }
 });
 
+await test('YELLOW: approval-only FirstLedger launch – insiders trade at ~25×, the lift is seen in the open ledger and bought at once (no blackhole wait), compared with the price just before the lift', async () => {
+  const { sim, bot, cfg } = setup(100, { BLACKHOLE_WAIT_S: '1', PROTECT_HOLE_MIN: '0.002' });
+  assert.equal(cfg.protectMaxX, 0, 'old launch-price rule off by default');
+  await bot.start();
+  const ISS = 'rYeLLow1111111111111111111111';
+  const cur = sim.launch({ name: 'YELLOWX', issuer: ISS, poolXrp: 51, poolTok: 49e6, flags: 0x00800000 | 0x00040000, silent: true });
+  sim.acc[ISS].Domain = Buffer.from('vfoez.toml.firstledger.net').toString('hex').toUpperCase();
+  sim.emit('transaction', { validated: true, hash: 'YCREATE', tx_json: { TransactionType: 'AMMCreate', Account: 'rDEV', Amount: String(51e6), Amount2: { currency: cur, issuer: ISS, value: '49000000' } }, meta: { TransactionResult: 'tesSUCCESS' } });
+  await settle(bot);
+  assert.equal(bot.state().positions[`${cur}.${ISS}`], undefined, 'approval only: waits');
+  // the approved insiders buy: ~23× – checks run on every issuer transaction (trust line approvals)
+  sim.trade(cur, ISS, 190);
+  for (let i = 0; i < 4; i++) { sim.emit('transaction', { validated: true, hash: 'YAUTH' + i, tx_json: { TransactionType: 'TrustSet', Account: ISS }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [] } }); await settle(bot); }
+  // the issuer lifts the protection – seen in the open ledger; not blackholed yet
+  sim.acc[ISS].Flags = 0x00800000;
+  sim.trade(cur, ISS, 40); // the rush at the lift (≈ 1.4×)
+  const t0 = Date.now();
+  sim.emit('transaction', { validated: false, engine_result: 'tesSUCCESS', ledger_current_index: 9100, tx_json: { TransactionType: 'AccountSet', Account: ISS, ClearFlag: 2 } });
+  await settle(bot);
+  const pos = bot.state().positions[`${cur}.${ISS}`];
+  assert.ok(pos, 'bought at the lift');
+  assert.ok(Date.now() - t0 < 1500, 'at once');
+  assert.ok(pos.needHole, 'waits for the blackhole after the buy');
+  assert.equal(bot.status().stats.protectLive >= 1, true);
+  assert.match(logs.join('\n'), /protection lifted – buying now at 1\.\d\d× the price before the lift \(FirstLedger: not waiting for the blackhole\)/);
+  // blackholed seconds later → fine
+  sim.acc[ISS].Flags = 0x00800000 | 0x00100000;
+  await bot.tick(); await settle(bot);
+  assert.ok(bot.state().positions[`${cur}.${ISS}`] && !bot.state().positions[`${cur}.${ISS}`].needHole, 'blackhole seen');
+  assert.ok(logs.join('\n').includes('issuer blackholed now'));
+  bot.stop();
+});
+
+await test('after a protection: a pump right before the lift is skipped; a FirstLedger issuer that never blackholes after our buy is sold', async () => {
+  const { sim, bot } = setup(100, { BLACKHOLE_WAIT_S: '1', PROTECT_HOLE_MIN: '0.002' });
+  await bot.start();
+  const mk = (name, iss) => {
+    const cur = sim.launch({ name, issuer: iss, poolXrp: 50, poolTok: 1e9, flags: 0x00800000 | 0x00040000, silent: true });
+    sim.acc[iss].Domain = Buffer.from(name.toLowerCase() + '.toml.firstledger.net').toString('hex').toUpperCase();
+    sim.emit('transaction', { validated: true, hash: 'C' + name, tx_json: { TransactionType: 'AMMCreate', Account: 'rDEV', Amount: String(50e6), Amount2: { currency: cur, issuer: iss, value: '1000000000' } }, meta: { TransactionResult: 'tesSUCCESS' } });
+    return cur;
+  };
+  const wake = async (iss, n) => { for (let i = 0; i < n; i++) { sim.emit('transaction', { validated: true, hash: 'W' + iss + Math.random(), tx_json: { TransactionType: 'TrustSet', Account: iss }, meta: { TransactionResult: 'tesSUCCESS', AffectedNodes: [] } }); await settle(bot); } };
+  // 1) pumped right before the lift: 3× in the last moment → skipped
+  const P = 'rPumpLate111111111111111111111';
+  const pc = mk('PUMPLATE', P);
+  await settle(bot);
+  sim.trade(pc, P, 100); await wake(P, 3);
+  sim.trade(pc, P, 200); // the insiders push it ×3 just before
+  sim.acc[P].Flags = 0x00800000;
+  sim.emit('transaction', { validated: false, engine_result: 'tesSUCCESS', ledger_current_index: 9200, tx_json: { TransactionType: 'AccountSet', Account: P, ClearFlag: 2 } });
+  await settle(bot);
+  assert.equal(bot.state().positions[`${pc}.${P}`], undefined, 'not bought');
+  assert.match(logs.join('\n'), /Skip PUMPLATE: \d\.\d× the price of the last 5 min before the protection was lifted/);
+  // 2) bought at the lift, issuer never blackholes → sold
+  const N = 'rNoHole1111111111111111111111';
+  const nc = mk('NOHOLE', N);
+  await settle(bot);
+  sim.trade(nc, N, 100); await wake(N, 3);
+  sim.acc[N].Flags = 0x00800000;
+  sim.emit('transaction', { validated: false, engine_result: 'tesSUCCESS', ledger_current_index: 9300, tx_json: { TransactionType: 'AccountSet', Account: N, ClearFlag: 2 } });
+  await settle(bot);
+  assert.ok(bot.state().positions[`${nc}.${N}`], 'bought at the lift');
+  await wait(200); await bot.tick(); await settle(bot);
+  assert.equal(bot.state().positions[`${nc}.${N}`], undefined, 'sold');
+  assert.match(logs.join('\n'), /NOHOLE: issuer still not blackholed/);
+  bot.stop();
+});
+
 await test('after a launch protection: skipped if the early buyers already pumped it above PROTECT_MAX_X', async () => {
-  const { sim, bot } = setup(50, { BLACKHOLE_WAIT_S: '1' });
+  const { sim, bot } = setup(50, { BLACKHOLE_WAIT_S: '1', PROTECT_MAX_X: '12' });
   await bot.start();
   const cur = sim.launch({ name: 'PUMPD', issuer: 'rPmp', poolXrp: 50, poolTok: 1e9, flags: 0x00800000 | 0x00040000 });
   await settle(bot);

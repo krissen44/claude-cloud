@@ -63,7 +63,14 @@ export function readConfig(env = process.env) {
     blackholeWaitS: num('BLACKHOLE_WAIT_S', 120),
     protectWaitMin: num('PROTECT_WAIT_MIN', 60), // launch protection phase: wait this long for it to be lifted
     // after a protection the early buyers are in already: skip if the price is above this many × launch (0 = off)
-    protectMaxX: num('PROTECT_MAX_X', 12),
+    protectMaxX: num('PROTECT_MAX_X', 0), // vs. the launch price – off: during a protection only insiders could buy (YELLOW, 2 Nov)
+    // after a protection: compare with the price of the last PROTECT_REF_MIN minutes before it was lifted
+    protectPumpX: num('PROTECT_PUMP_X', 2.5),
+    protectRefMin: num('PROTECT_REF_MIN', 5),
+    // FirstLedger token, protection lifted: buy at once instead of waiting for the blackhole (it follows
+    // seconds later); not blackholed within PROTECT_HOLE_MIN after our buy → sold
+    protectEarly: bool('PROTECT_EARLY', true),
+    protectHoleMin: num('PROTECT_HOLE_MIN', 5),
     // crowd entry: a launch that was skipped (dev holds the supply / pool too small) but then draws a
     // real crowd – many different buyers and a deep pool within the first hour – is bought after all,
     // with the classic exits (half at +100 %, trailing 30 %, stop −50 %, rug alarm, max 24 h)
@@ -471,6 +478,16 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       if (cfg.fastLaunch && tx.TransactionType === 'AMMCreate' && /^tes/.test(ev.engine_result || '')) onLaunch(tx, ev, true);
       if (cfg.fastLaunch && tx.TransactionType === 'AMMDeposit' && /^tes/.test(ev.engine_result || '')) onDeposit(tx, false);
       if (/^tes/.test(ev.engine_result || '')) bundleProposed(tx);
+      // the issuer of a protected launch acts in the open ledger (lifts the protection, blackholes):
+      // check on the open ledger now instead of waiting ~4 s for validation
+      if (/^tes/.test(ev.engine_result || '') && /^(AccountSet|SetRegularKey|SignerListSet|TrustSet)$/.test(tx.TransactionType)) {
+        const ws = waiters.get(tx.Account);
+        if (ws) {
+          for (const l of pending.values()) if (l.issuer === tx.Account && l.protected) { l.liveIssuer = true; stat('protectLive'); }
+          waiters.delete(tx.Account);
+          for (const wake of ws) setTimeout(() => wake(true), 0);
+        }
+      }
       return;
     }
     if (ev.meta?.TransactionResult !== 'tesSUCCESS') return;
@@ -701,7 +718,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     let supply = null;
     const t0 = now();
     // a launch seen in the open ledger isn't validated yet: check it on the open ledger
-    const li = l.fast && !l.validated ? 'current' : 'validated';
+    const li = (l.fast && !l.validated) || l.liveIssuer ? 'current' : 'validated';
     // everything at once – a big launch must be bought within seconds
     const [infoR, p, gb, funder] = await Promise.all([
       req('account_info', { account: l.issuer, ledger_index: li }),
@@ -730,7 +747,9 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       if (p.fee > cfg.maxAmmFee) reasons.push(`AMM fee ${p.fee}%`);
       if (gb) {
         supply = Number(gb.obligations?.[l.currency] || 0);
-        const pct = supply > 0 ? (p.tok / supply) * 100 : 100;
+        // the pool's share at launch (or after the FirstLedger deposit), not now: tokens bought since
+        // are with the buyers, not with the dev (YELLOW: 100 % at launch, 16 % after insider buys)
+        const pct = supply > 0 ? (Math.max(p.tok, l.poolTok || 0) / supply) * 100 : 100;
         supplyPct = +pct.toFixed(1);
         if (pct < cfg.minPoolSupplyPct) reasons.push(`only ${pct.toFixed(0)}% of supply in the pool`);
       }
@@ -776,7 +795,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     });
     if (supply > 0) l.supply = supply;
     if (p) { l.lastPool = p; l.lastPoolAt = now(); }
-    return { blackholed: !!blackholed, reasons, wait, small, pool: p, supply };
+    return { blackholed: !!blackholed, reasons, wait, small, pool: p, supply, domain };
   }
 
   // Hard problems skip at once; a missing blackhole or a pool below the minimum is waited for.
@@ -785,15 +804,22 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
     for (;;) {
       if (stopped) return;
       const c = await checks(l);
-      const hole = c.blackholed || !cfg.requireBlackhole;
+      let hole = c.blackholed || !cfg.requireBlackhole;
       // a launch protection phase (frozen / approval-only / fee while not blackholed) gets the
       // longer PROTECT_WAIT_MIN – the bot buys the moment it is lifted
       if (c.wait.length && !l.protected) {
         l.protected = now();
         rec.event('protection', { k: l.k, name: l.name, what: c.wait });
       }
+      // the price while only insiders / approved wallets could trade – the reference for after the lift
+      if (l.protected && !l.liftedAt && c.pool && c.wait.length) {
+        (l.protHist ||= []).push({ at: now(), price: c.pool.xrp / c.pool.tok });
+        if (l.protHist.length > 400) l.protHist.shift();
+      }
       if (l.protected && !c.wait.length && !l.liftedAt) {
         l.liftedAt = now();
+        const recent = (l.protHist || []).filter((x) => x.at >= l.liftedAt - cfg.protectRefMin * 60e3).map((x) => x.price).sort((a, b) => a - b);
+        if (recent.length) l.protRef = recent[Math.floor(recent.length / 2)];
         rec.event('protection_lifted', { k: l.k, name: l.name, afterS: Math.round((now() - l.at) / 1000) });
         say(`🔓 ${l.name}: launch protection lifted after ${Math.round((now() - l.at) / 1000)}s`);
       }
@@ -838,16 +864,26 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
         rec.event('supply_deposited', { k: l.k, name: l.name, afterS: Math.round((now() - l.at) / 1000), poolXrp: c.pool.xrp, poolTok: c.pool.tok });
         say(`📥 ${l.name}: the rest of the supply is in the pool now (after ${Math.round((now() - l.at) / 1000)}s)`);
       }
+      // FirstLedger blackholes the issuer seconds after lifting the protection: don't wait for it
+      if (!hole && l.liftedAt && cfg.protectEarly && isFirstLedger(c.domain)) { hole = true; l.earlyHole = true; }
       if (hole && !c.small && !c.wait.length && !c.reasons.length && !stillBlocked) {
         pending.delete(l.k);
         // bought late after a protection: the early buyers may have pumped it already
         const x0 = l.poolXrp && l.poolTok ? l.poolXrp / l.poolTok : null;
-        const xNow = c.pool && x0 ? c.pool.xrp / c.pool.tok / x0 : null;
+        const pNow = c.pool ? c.pool.xrp / c.pool.tok : null;
+        const xNow = pNow && x0 ? pNow / x0 : null;
         if (l.protected && cfg.protectMaxX > 0 && xNow && xNow > cfg.protectMaxX) {
           stat(0, 'pumped during protection');
           rec.decision(l.k, 'skipped', 'pumped during protection');
           return say(`⛔ Skip ${l.name}: already ${xNow.toFixed(1)}× the launch price when the protection ended (max ${cfg.protectMaxX}×)`);
         }
+        // vs. the price right before the lift (insider trading): a normal rush is fine, a pump is not
+        if (l.liftedAt && l.protRef && pNow && cfg.protectPumpX > 0 && pNow / l.protRef > cfg.protectPumpX) {
+          stat(0, 'pumped during protection');
+          rec.decision(l.k, 'skipped', 'pumped during protection');
+          return say(`⛔ Skip ${l.name}: ${(pNow / l.protRef).toFixed(1)}× the price of the last ${cfg.protectRefMin} min before the protection was lifted (max ${cfg.protectPumpX}×)`);
+        }
+        if (l.liftedAt) say(`⚡ ${l.name}: protection lifted – buying now${l.protRef && pNow ? ` at ${(pNow / l.protRef).toFixed(2)}× the price before the lift` : ''}${l.earlyHole ? ' (FirstLedger: not waiting for the blackhole)' : ''}`);
         return buy(l, c.pool);
       }
       if (!hole && now() > holeBy) {
@@ -865,7 +901,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       if (c.wait.length && !told) { told = true; say(`⏳ ${l.name}: ${c.wait.join(', ')} – launch protection? Waiting up to ${Math.round((holeBy - l.at) / 60000)} min, buying the moment it is lifted`); }
       if (c.small && !told) { told = true; say(`⏳ ${l.name}: ${c.small} – watching for ${l.poolWait ?? cfg.poolWaitMin} min`); }
       // sleep until the next poll – or until the issuer sends a transaction (unfreeze, blackhole, …)
-      const ms = (l.supplyWait && !l.supplyOk) || l.socialsTold || l.watchTold || l.flWait ? 2000 : now() - l.at < 120000 ? 4000 : 15000;
+      const ms = (l.supplyWait && !l.supplyOk) || l.socialsTold || l.watchTold || l.flWait || l.liftedAt ? 2000 : l.protected ? 5000 : now() - l.at < 120000 ? 4000 : 15000;
       await new Promise((r) => {
         const t = setTimeout(done, ms);
         function done(fromIssuer) {
@@ -943,7 +979,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       TransactionType: 'OfferCreate', Account: me, Flags: TF_IOC | TF_SELL,
       TakerGets: toDrops(stake),
       TakerPays: { currency: l.currency, issuer: l.issuer, value: iouValue(min) },
-    }, !!l.fast);
+    }, !!(l.fast || l.liveIssuer));
     const fx = okResult(r) ? txEffects(r.meta, me, l.currency, l.issuer) : { tokDelta: 0, xrpDelta: 0 };
     const got = fx.tokDelta;
     if (!(got > 0)) {
@@ -1004,7 +1040,7 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
       k: l.k, currency: l.currency, issuer: l.issuer, name: l.name, cost, amount, sold: 0, proceeds: 0,
       entryPoolXrp: p.xrp, peak: cost, value: cost, tp1Done: false, at: now(), fails: 0, copy: l.copy || '', copyWallet: l.copyWallet || '',
       startPoolXrp: l.copy ? null : l.poolXrp, launchedAt: l.at, // pool size at launch (unknown for copies)
-      supply: l.supply || null, byHand: !!l.byHand,
+      supply: l.supply || null, byHand: !!l.byHand, ...(l.earlyHole ? { needHole: now() + cfg.protectHoleMin * 60e3 } : {}),
       socials: l.socials ? { x: l.socials.x, telegram: l.socials.telegram, website: l.socials.website, discord: l.socials.discord } : null,
     };
   }
@@ -1208,6 +1244,14 @@ export function createBot({ client, wallet, cfg, log = console.log, fetchFn = gl
   async function watch(pos) {
     const p = await pool(pos.currency, pos.issuer);
     if (!p) return close(pos, 'pool deleted – tokens worthless');
+    // bought right after a protection was lifted, before the blackhole: it must follow
+    if (pos.needHole) {
+      try {
+        const d = (await req('account_info', { account: pos.issuer, ledger_index: 'validated' })).account_data;
+        if ((d.Flags & F.disableMaster) && (!d.RegularKey || BLACKHOLES.has(d.RegularKey))) { delete pos.needHole; save(); say(`🔒 ${pos.name}: issuer blackholed now`); }
+        else if (now() > pos.needHole) { delete pos.needHole; say(`🚨 ${pos.name}: issuer still not blackholed ${cfg.protectHoleMin} min after our buy – selling`); return sell(pos, 1, 'issuer not blackholed after the protection'); }
+      } catch {}
+    }
     pos.value = swapOut(pos.amount, p.tok, p.xrp, p.fee) + pos.proceeds; // what the trade is worth now
     pos.peak = Math.max(pos.peak, pos.value);
     pos.mcap = await marketCap(pos, p);
