@@ -518,6 +518,18 @@ free tickets are re-read from the ledger every ~50 ledgers and after any ticket 
 - **Data:** every opportunity (taken or not), every attempt, every rival cycle → `opportunities.csv`,
   `trades.csv`, `rivals.csv` on the page.
 
+## Putting the arb bot to sleep (`close-arb.sh`)
+
+```
+bash close-arb.sh --dry            # only shows what it would do
+bash close-arb.sh --send sniper    # stops `arb`, empties the wallet, sends the free XRP to the sniper wallet
+```
+It stops the `arb` process (and `pm2 save`, so it stays stopped after a reboot), then: uses up the unused
+Tickets (no-op AccountSet each – every ticket locks 0.2 XRP), cancels open offers, sells every token balance for
+XRP (LP tokens are withdrawn first; what can't be sold or dust goes back to its issuer), deletes every trust
+line (0.2 XRP each) and, with `--send sniper` (the WALLET_* key in .env) or `--send rAddress`, sends everything
+above the 1 XRP base reserve. It asks for YES first. Start the bot again with `pm2 start arb`.
+
 ## Setup
 
 After the sniper is running:
